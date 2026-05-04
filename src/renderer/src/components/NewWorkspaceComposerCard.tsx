@@ -252,12 +252,12 @@ export default function NewWorkspaceComposerCard({
       onDragEnter={dragHandlers.onDragEnter}
       onDragLeave={dragHandlers.onDragLeave}
       className={cn(
-        'grid gap-1 rounded-md transition',
+        'grid min-w-0 gap-1 rounded-md transition',
         isFileDragOver && 'ring-2 ring-ring/30',
         containerClassName
       )}
     >
-      <div className="space-y-4 pt-3">
+      <div className="min-w-0 space-y-4 pt-3">
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-2">
             <label className="text-xs font-medium text-muted-foreground">Repository</label>
@@ -296,7 +296,7 @@ export default function NewWorkspaceComposerCard({
           />
         </div>
 
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <label className="text-xs font-medium text-muted-foreground">
             Name or &apos;Create From&apos;{' '}
             <span className="text-muted-foreground/70">[Optional]</span>

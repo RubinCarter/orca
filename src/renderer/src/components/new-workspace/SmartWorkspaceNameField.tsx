@@ -501,7 +501,7 @@ export default function SmartWorkspaceNameField({
             : 'Workspace name'
 
   return (
-    <div className="space-y-1.5">
+    <div className="min-w-0 space-y-1.5">
       <Tabs
         value={mode}
         onValueChange={(next) => {
@@ -539,9 +539,13 @@ export default function SmartWorkspaceNameField({
           className="overflow-visible bg-transparent"
         >
           <PopoverAnchor asChild>
-            <div className="relative">
+            <div className="relative min-w-0">
               {selectedSource ? (
-                <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+                // Why: min-w-0 + w-full lets the pill shrink to its flex
+                // parent; without them the inner truncate's intrinsic
+                // min-content (long PR title) propagates up and pushes the
+                // dialog wider than its max-w.
+                <div className="flex h-9 w-full min-w-0 items-center gap-2 rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
                   <SelectionIcon kind={selectedSource.kind} />
                   <div className="min-w-0 flex-1 truncate">
                     <span className="font-medium text-foreground">{selectedSource.label}</span>
