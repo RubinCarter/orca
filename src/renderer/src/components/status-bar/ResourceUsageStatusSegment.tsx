@@ -823,16 +823,15 @@ export function ResourceUsageStatusSegment({
     })
   }, [])
 
+  // Why: navigation handlers leave the popover open so users can chain
+  // multiple jumps (e.g. browse worktrees, hop between terminals) without
+  // having to re-open the popover each time. The popover still closes via
+  // its own outside-click / Escape handlers.
   const navigateToWorktree = useCallback((worktreeId: string): void => {
     if (worktreeId === ORPHAN_WORKTREE_ID || worktreeId.startsWith(`${UNATTRIBUTED_REPO_ID}::`)) {
-      setOpen(false)
       return
     }
-    const result = activateAndRevealWorktree(worktreeId)
-    if (result === false) {
-      return
-    }
-    setOpen(false)
+    activateAndRevealWorktree(worktreeId)
   }, [])
 
   const navigateToTab = useCallback(
@@ -847,7 +846,6 @@ export function ResourceUsageStatusSegment({
       }
       setActiveView('terminal')
       setActiveTab(tabId)
-      setOpen(false)
     },
     [tabsByWorktree, setActiveTab, setActiveView]
   )
