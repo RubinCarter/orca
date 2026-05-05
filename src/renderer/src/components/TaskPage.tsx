@@ -675,7 +675,7 @@ export default function TaskPage(): React.JSX.Element {
   const listLinearIssues = useAppStore((s) => s.listLinearIssues)
   const checkLinearConnection = useAppStore((s) => s.checkLinearConnection)
   // Why: in workspace view (a worktree is active) App.tsx hides its
-  // full-width titlebar, so this page renders its own 42px titlebar strip to
+  // full-width titlebar, so this page renders its own 36px titlebar strip to
   // keep the top band continuous with the sidebar header and tab rows. When
   // the sidebar is also collapsed, App.tsx floats its titlebar-left controls
   // (traffic lights, sidebar toggle, agent badge) over our strip — reserve
@@ -1731,7 +1731,7 @@ export default function TaskPage(): React.JSX.Element {
           paint above our content and receive the click cleanly. */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {/* Why: in workspace view App.tsx suppresses its full-width titlebar,
-            so render a matching 42px strip here to keep the top band
+            so render a matching 36px strip here to keep the top band
             continuous with the sidebar header and tab rows. When the sidebar
             is collapsed, App.tsx floats its titlebar-left controls (traffic
             lights, sidebar toggle, agent badge) over the top-left of this
@@ -1744,7 +1744,7 @@ export default function TaskPage(): React.JSX.Element {
             non-workspace mode because App.tsx already owns the top titlebar
             and a second strip would produce a duplicate band. */}
         {workspaceActive ? (
-          <div className="flex-none flex h-[42px]">
+          <div className="flex-none flex h-9">
             {reserveCollapsedHeaderSpace ? (
               // Why: the floating titlebar-left hosts real interactive chrome
               // (sidebar-expand toggle, agent badge) under this segment. Both
@@ -1771,7 +1771,13 @@ export default function TaskPage(): React.JSX.Element {
           </div>
         ) : null}
 
-        <div className="mx-auto flex w-full flex-1 flex-col min-h-0 px-5 pt-3 pb-5 md:px-8 md:pt-3 md:pb-7">
+        {/* Why: pt-1.5 vertically centers this row's 32px icon cluster (X +
+            source toggles) with the sidebar's "Tasks" nav row. Sidebar Tasks
+            center sits 22px below the titlebar (pt-2 + py-1.5 + half size-4
+            icon). Matching that here needs 6px top padding above the 32px
+            cluster (6 + 16 = 22). The previous pt-3 placed the cluster 6px
+            too low, breaking the visual band across the top chrome. */}
+        <div className="mx-auto flex w-full flex-1 flex-col min-h-0 px-5 pt-1.5 pb-5 md:px-8 md:pt-1.5 md:pb-7">
           <div className="flex-none flex flex-col gap-3">
             <section className="flex flex-col gap-3">
               <div className="flex flex-col gap-3">
