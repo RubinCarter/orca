@@ -14,27 +14,16 @@ import { grantDirAcl, isPermissionError } from '../win32-utils'
 
 // Why: single source of truth for the agent-hooks directory name so
 // `getAgentHooksDir` (the dir where the endpoint file + managed scripts
-// live) and `createManagedCommandMatcher` (which sweeps stale entries
-// by matching this substring) cannot drift apart. Renaming the dir
-// means updating exactly one place.
+// live) and `createManagedCommandMatcher` (which sweeps stale entries by
+// matching this substring) cannot drift apart. Renaming the dir means
+// updating exactly one place.
 const AGENT_HOOKS_DIR_NAME = 'agent-hooks'
 
-// CRITICAL INVARIANT: the managed hook scripts and the endpoint file MUST
-// live in the same directory on disk.
-//
-// Why this matters: a daemon-revived PTY (one that survived an Orca restart)
-// has stale PORT/TOKEN in its env and — if it was spawned before PR #1196 —
-// no ORCA_AGENT_HOOK_ENDPOINT at all. The only way its managed hook script
-// can find the live endpoint file is by deriving the path from its *own*
-// location (`$(dirname "$0")/endpoint.env` on POSIX, `%~dp0endpoint.cmd` on
-// Windows). That trick only works if the two files are co-located.
-//
-// Every read or write of a path under this directory MUST go through
-// `getAgentHooksDir()` (or an adjacent helper that does) so a future
-// refactor that moves one file cannot silently break the other. Changing
-// the directory name here is a deliberate, coordinated change — search for
-// `getAgentHooksDir` to find every caller; the invariant test in
-// `installer-utils.test.ts` asserts script and endpoint share a dirname.
+// Why: every read or write of a path under this directory should go through
+// this helper (or an adjacent helper that does) so the writer (server.ts,
+// which writes the endpoint file) and the matcher's sweep needle
+// (`agent-hooks/<scriptName>` in `createManagedCommandMatcher`) cannot drift
+// apart. Renaming the dir is a one-line change here.
 export function getAgentHooksDir(userDataPath: string): string {
   return join(userDataPath, AGENT_HOOKS_DIR_NAME)
 }
@@ -53,80 +42,17 @@ export function getEndpointFileName(): string {
 }
 
 // Why: single accessor for the endpoint file path. Composing it from
-// `getAgentHooksDir` + `getEndpointFileName` guarantees the discovery
-// invariant: the endpoint file always sits in the directory the scripts
-// resolve at invocation time via `$0`/`%~dp0`.
+// `getAgentHooksDir` + `getEndpointFileName` keeps the writer (server.ts)
+// and any future reader on the same path convention.
 export function getEndpointFilePath(userDataPath: string): string {
   return join(getAgentHooksDir(userDataPath), getEndpointFileName())
 }
 
-// Why: single accessor for a managed-script path. Used by every agent's
-// hook-service so the co-location invariant cannot be accidentally violated
-// by one service drifting to a different directory from the others.
+// Why: single accessor for a managed-script path. Routes every agent's
+// hook-service through one helper so a rename of the dir or layout is a
+// one-line change here instead of four parallel edits.
 export function getManagedScriptPathForAgent(userDataPath: string, scriptFileName: string): string {
   return join(getAgentHooksDir(userDataPath), scriptFileName)
-}
-
-// Why: PTYs kept alive by the persistent-terminal daemon survive Orca
-// restarts, so the PORT/TOKEN baked into their env at original spawn time
-// goes stale the moment Orca restarts and rebinds the hook server. The
-// endpoint file (written by the server on every start) carries the current
-// coordinates — but hook scripts could previously only find it via
-// $ORCA_AGENT_HOOK_ENDPOINT, which is also frozen in the PTY's env. PTYs
-// spawned before the endpoint-file feature landed (PR #1196) have no
-// ORCA_AGENT_HOOK_ENDPOINT at all, so their managed hook scripts post to
-// the dead old port and the dashboard silently shows nothing for any agent
-// CLI started inside them after the restart.
-//
-// Fix: the managed script lives in a known location
-// (`userData/agent-hooks/<agent>-hook.sh`) and the endpoint file sits right
-// next to it (`userData/agent-hooks/endpoint.env`). Derive the endpoint
-// path from the script's own location at invocation time and source that as
-// a fallback when the env var is absent. Both POSIX (via `$0`) and Windows
-// (via `%~dp0`) expose the script's own path, so the discovery is
-// self-contained and survives any future renames of the `ORCA_AGENT_HOOK_*`
-// env contract.
-export function getEndpointDiscoveryShellSnippet(): string[] {
-  // Why: resolve via `$0` → `dirname` so it works whether the agent invoked
-  // the script by basename, relative path, or absolute path. The guard
-  // blocks `.`-sourcing a non-regular file (e.g. a directory with the same
-  // name, which `.` would error on). `|| :` swallows parse errors from a
-  // TOCTOU race or malformed line the same way the env-var path does.
-  return [
-    'if [ -n "$ORCA_AGENT_HOOK_ENDPOINT" ] && [ -r "$ORCA_AGENT_HOOK_ENDPOINT" ]; then',
-    '  . "$ORCA_AGENT_HOOK_ENDPOINT" 2>/dev/null || :',
-    `elif _orca_ep="$(dirname "$0")/${getEndpointFileName()}"; [ -r "$_orca_ep" ]; then`,
-    '  . "$_orca_ep" 2>/dev/null || :',
-    'fi',
-    'unset _orca_ep 2>/dev/null || :'
-  ]
-}
-
-export function getEndpointDiscoveryCmdSnippet(): string[] {
-  // Why: `%~dp0` already includes a trailing backslash, so concatenating the
-  // filename produces a well-formed absolute path even when the script is
-  // invoked by basename via PATH.
-  //
-  // Why the `_orca_loaded` flag (and not `if not defined ORCA_AGENT_HOOK_PORT`):
-  // the exact scenario this fallback exists for is a daemon-revived PTY that
-  // was spawned before the endpoint-file feature landed (PR #1196). That PTY
-  // has a *stale* ORCA_AGENT_HOOK_PORT baked into its env from the prior
-  // Orca, and no ORCA_AGENT_HOOK_ENDPOINT at all. Gating the fallback on
-  // "PORT undefined" would short-circuit in exactly this case and leave the
-  // script posting to the dead port. Gating on "env-var branch did not
-  // successfully source a file" mirrors the POSIX `if/elif` semantics and
-  // fires whenever the env-var branch was skipped or its file was missing.
-  //
-  // We use `&&` (not `&`) so the flag fires only when the `call` itself
-  // returned 0; a parse error inside the endpoint file then correctly falls
-  // through to the script-adjacent endpoint rather than being masked by an
-  // unconditional `_orca_loaded=1`.
-  return [
-    'set _orca_loaded=',
-    'if defined ORCA_AGENT_HOOK_ENDPOINT if exist "%ORCA_AGENT_HOOK_ENDPOINT%" (call "%ORCA_AGENT_HOOK_ENDPOINT%" 2>nul && set _orca_loaded=1)',
-    `if not defined _orca_loaded if exist "%~dp0${getEndpointFileName()}" call "%~dp0${getEndpointFileName()}" 2>nul`,
-    'set _orca_loaded='
-  ]
 }
 
 export type HookCommandConfig = {

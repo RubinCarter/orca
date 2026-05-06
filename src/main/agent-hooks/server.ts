@@ -1055,10 +1055,8 @@ function normalizeHookPayload(
 
 // Endpoint file path construction lives in installer-utils
 // (getAgentHooksDir / getEndpointFilePath / getEndpointFileName) so the
-// hook server (which writes the file) and the managed-script generators
-// (which source it from the script) share one source of truth for the
-// directory + filename convention. The co-location invariant is what
-// makes the `$0`/`%~dp0` discovery in the hook scripts work.
+// hook server (writer) and the managed-script generators (readers) share
+// one source of truth for the directory + filename convention.
 
 // Why: every value in the endpoint file is sourced as shell. Reject any
 // value that contains shell/cmd metacharacters so a future field whose
@@ -1123,10 +1121,6 @@ export class AgentHookServer {
       this.env = options.env
     }
     if (options?.userDataPath) {
-      // Why: route through the shared helpers so the server's endpoint file
-      // stays in the same directory as the managed hook scripts. Scripts
-      // rely on that co-location to discover the endpoint file via
-      // `$0`/`%~dp0` when their env var is stale; see `getAgentHooksDir`.
       this.endpointDir = getAgentHooksDir(options.userDataPath)
       this.endpointFilePathCache = getEndpointFilePath(options.userDataPath)
     }
