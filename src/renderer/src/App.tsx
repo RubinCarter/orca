@@ -174,6 +174,15 @@ function App(): React.JSX.Element {
     // one would serialize those defaults back to disk — silently erasing
     // sidebar width, sort order, filters, etc.
     let uiHydrated = false
+    // Why (issue #1158): track whether the success-path call to
+    // reconnectPersistedTerminals started so the catch path doesn't run it a
+    // second time. Reconnect mutates store state via set() blocks inside its
+    // loops (assigning ptyIds, draining pendingReconnect* maps); re-entering
+    // it on partially-mutated state would double-set ptyIds and drain pending*
+    // maps twice. If the success-path call started and threw mid-loop, those
+    // set() blocks may have already flipped workspaceSessionReady — but if
+    // they didn't, we still need to force the flag true so the UI mounts.
+    let reconnectStarted = false
     void (async () => {
       try {
         await actions.fetchRepos()
@@ -279,6 +288,7 @@ function App(): React.JSX.Element {
             }
           }
 
+          reconnectStarted = true
           await actions.reconnectPersistedTerminals(abortController.signal)
           syncZoomCSSVar()
           // Why (issue #1158): unlock the debounced session writer only after
@@ -308,11 +318,11 @@ function App(): React.JSX.Element {
         if (!cancelled) {
           // Why (issue #1158): only hydrate UI with defaults if the real
           // hydration never ran. If fetchRepos/fetchAllWorktrees/session.get/
-          // fetchSettings threw before line 183, persistedUIReady is still
-          // false and the UI cannot mount until we hydrate something. But if
-          // the real hydrate already ran and a later step threw, overwriting
-          // with defaults would flow through the debounced UI writer and
-          // clobber ui.json (sidebar width, sort, filters, etc.).
+          // fetchSettings threw before `hydratePersistedUI` runs, persistedUIReady
+          // is still false and the UI cannot mount until we hydrate something.
+          // But if the real hydrate already ran and a later step threw,
+          // overwriting with defaults would flow through the debounced UI
+          // writer and clobber ui.json (sidebar width, sort, filters, etc.).
           if (!uiHydrated) {
             actions.hydratePersistedUI({
               lastActiveRepoId: null,
@@ -333,25 +343,80 @@ function App(): React.JSX.Element {
               lastUpdateCheckAt: null
             })
           }
+          // Why (issue #1158): surface a sticky, dismissible toast so the
+          // user knows they're in degraded "no-save" mode. Without this, every
+          // new tab/file/browse becomes silently ephemeral — `hydrationSucceeded`
+          // stays false for the rest of the process and the session writer is
+          // a no-op. The "Restart now" action calls app.relaunch (defined in
+          // src/main/ipc/app.ts) so the user can recover with one click instead
+          // of having to find a quit/relaunch path themselves.
+          toast.error('Session restore failed', {
+            description:
+              "Changes won't be saved until restart. Your previous tabs are safe on disk.",
+            duration: Infinity,
+            dismissible: true,
+            action: {
+              label: 'Restart now',
+              onClick: () => {
+                void window.api.app.relaunch?.()
+              }
+            }
+          })
           // Why: reconnectPersistedTerminals flips workspaceSessionReady so the
           // UI mounts; auto-tab-creation becomes unblocked. hydrationSucceeded
           // is intentionally NOT set — the session writer must stay a no-op
           // until the user gets a clean restart, so we don't overwrite the
           // on-disk file we failed to load.
-          try {
-            await actions.reconnectPersistedTerminals(abortController.signal)
-          } catch (reconnectErr) {
-            console.error(
-              '[startup] reconnectPersistedTerminals failed in error path:',
-              reconnectErr
-            )
-            // Why (issue #1158): this is already the recovery path from a
-            // failed hydration. If the recovery itself throws, the async IIFE
-            // rejects as an unhandled promise and workspaceSessionReady never
-            // flips — leaving the user staring at a blank window. Forcing the
-            // flag true lets the app shell mount with an empty session, which
-            // is strictly better than a non-functional UI.
-            useAppStore.setState({ workspaceSessionReady: true })
+          if (!reconnectStarted) {
+            try {
+              await actions.reconnectPersistedTerminals(abortController.signal)
+            } catch (reconnectErr) {
+              console.error(
+                '[startup] reconnectPersistedTerminals failed in error path:',
+                reconnectErr
+              )
+              // Why (issue #1158): re-check !cancelled before mutating store
+              // state. The await above may have run while the effect was being
+              // torn down (StrictMode pass 1 cleanup) — in that case the
+              // second pass owns hydration and we must not stomp its work
+              // from a cancelled run.
+              if (!cancelled) {
+                // Why (issue #1158): this is already the recovery path from a
+                // failed hydration. If the recovery itself throws, the async IIFE
+                // rejects as an unhandled promise and workspaceSessionReady never
+                // flips — leaving the user staring at a blank window. Forcing the
+                // flag true lets the app shell mount with an empty session, which
+                // is strictly better than a non-functional UI.
+                //
+                // Also clear pendingReconnect* maps because reconnectPersistedTerminals
+                // normally drains them as part of its post-conditions
+                // (see terminals.ts post-loop cleanup). Bypassing that drain by
+                // flipping only the flag would leave stale reconnect data in
+                // memory — any later reader of pending* maps could trigger
+                // phantom reconnect attempts on PTYs that no longer exist.
+                useAppStore.setState({
+                  workspaceSessionReady: true,
+                  pendingReconnectWorktreeIds: [],
+                  pendingReconnectTabByWorktree: {},
+                  pendingReconnectPtyIdByTabId: {}
+                })
+              }
+            }
+          } else {
+            // Why (issue #1158): the success-path call to
+            // reconnectPersistedTerminals already started; its set() blocks
+            // may have flipped workspaceSessionReady before throwing mid-loop.
+            // Don't re-run reconnect over partially-mutated state (it would
+            // double-set ptyIds and drain pending* maps twice). Force the
+            // flag true so the UI mounts even if the partial run never
+            // reached the line that flips it. The same pending* clear applies
+            // here for the same reason as above.
+            useAppStore.setState({
+              workspaceSessionReady: true,
+              pendingReconnectWorktreeIds: [],
+              pendingReconnectTabByWorktree: {},
+              pendingReconnectPtyIdByTabId: {}
+            })
           }
         }
       }
@@ -394,7 +459,19 @@ function App(): React.JSX.Element {
       }
       timer = window.setTimeout(() => {
         timer = null
-        void window.api.session.set(buildWorkspaceSessionPayload(state))
+        // Why (issue #1158): re-read state and re-check the gate at fire time.
+        // The subscribe callback only checks the gate at scheduling time, but
+        // setHydrationSucceeded(false) may be called between schedule and fire
+        // (no production caller does this today, but the setter accepts a
+        // boolean and tests exercise it). If the gate flipped closed after we
+        // armed the timer, the captured `state` from the subscribe arg would
+        // bypass the gate and write stale state to disk. Mirroring the
+        // defensive re-read in beforeunload below keeps the writer honest.
+        const fresh = useAppStore.getState()
+        if (!shouldPersistWorkspaceSession(fresh)) {
+          return
+        }
+        void window.api.session.set(buildWorkspaceSessionPayload(fresh))
       }, 150)
     })
     return () => {

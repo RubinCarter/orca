@@ -599,39 +599,55 @@ describe('Store', () => {
       advanceFn()
     }
 
-    it('does not rotate when orca-data.json does not yet exist', async () => {
-      // First write creates orca-data.json and snapshots nothing (there was
-      // nothing to back up). Rotation must only engage once a prior file is
-      // present on disk.
+    it('snapshots the just-written file to .bak.0 on the very first write', async () => {
+      // Why (issue #1158): rotation runs AFTER a successful write so .bak.0
+      // is always a known-good copy of the file currently on disk. On the
+      // very first write there is no prior .bak.0 to rotate forward, but the
+      // newly written dataFile is copied to .bak.0 so load() has a recovery
+      // source if a subsequent write corrupts dataFile.
       const s = await createStore()
       s.addRepo(makeRepo())
       s.flush()
       expect(existsSync(dataFile())).toBe(true)
-      expect(existsSync(backupFile(0))).toBe(false)
+      expect(existsSync(backupFile(0))).toBe(true)
+      expect(readBackup(0).repos.map((r) => r.id)).toEqual(['r1'])
     })
 
-    it('snapshots the previous file to .bak.0 before overwriting', async () => {
+    it('rotates older .bak.0 to .bak.1 when the interval elapses', async () => {
+      // Why (issue #1158): rotation runs AFTER a successful write so .bak.0
+      // always holds a known-good state on disk. If the write fails (ENOSPC,
+      // EIO), .bak.0 stays untouched — load() can recover the prior good
+      // state rather than a fresh duplicate of the file we just failed to
+      // overwrite.
       vi.useFakeTimers()
       try {
-        // First launch: seed repo r1, flush to disk.
+        // First launch: seed repo r1, flush to disk. The first write also
+        // creates .bak.0 as a copy of the just-written file (no prior
+        // .bak.0 exists, so the gate fires).
         const first = await createStore()
         first.addRepo(makeRepo({ id: 'r1' }))
         first.flush()
         expect((readDataFile() as { repos: Repo[] }).repos[0].id).toBe('r1')
+        expect(readBackup(0).repos.map((r) => r.id)).toEqual(['r1'])
 
         // Jump past BACKUP_MIN_INTERVAL_MS (1h) so the next flush rotates.
         vi.setSystemTime(new Date(Date.now() + 61 * 60 * 1000))
 
-        // Second launch: load existing file, add r2, flush. The old file
-        // (just r1) should land in .bak.0; current file should have r1 + r2.
+        // Second launch: load existing file, add r2, flush. Rotation moves
+        // the prior .bak.0 (r1 alone) to .bak.1, and the newly written file
+        // (r1 + r2) becomes the new .bak.0.
         const second = await createStore()
         second.addRepo(makeRepo({ id: 'r2', path: '/repo2' }))
         second.flush()
 
         const current = readDataFile() as { repos: Repo[] }
         expect(current.repos.map((r) => r.id).sort()).toEqual(['r1', 'r2'])
-        expect(existsSync(backupFile(0))).toBe(true)
-        expect(readBackup(0).repos.map((r) => r.id)).toEqual(['r1'])
+        expect(
+          readBackup(0)
+            .repos.map((r) => r.id)
+            .sort()
+        ).toEqual(['r1', 'r2'])
+        expect(readBackup(1).repos.map((r) => r.id)).toEqual(['r1'])
       } finally {
         vi.useRealTimers()
       }
@@ -684,17 +700,20 @@ describe('Store', () => {
           workspaceSession: {}
         })
 
-        // First post-seed flush rotates (interval since lastBackupAt=0 is
-        // huge). Subsequent flushes within the same hour must not touch
-        // .bak.0 — rotating on every debounced tick would burn the ring.
+        // First post-seed flush rotates (no .bak.0 yet, so the gate fires).
+        // Rotation runs AFTER the write, so .bak.0 captures the just-written
+        // state (seed + after-seed). Subsequent flushes within the same hour
+        // must not touch .bak.0 — rotating on every debounced tick would
+        // burn the ring.
         const store = await createStore()
         store.addRepo(makeRepo({ id: 'after-seed' }))
         store.flush()
 
         const bak0After1 = readBackup(0)
-        expect(bak0After1.repos.map((r) => r.id)).toEqual(['seed'])
+        expect(bak0After1.repos.map((r) => r.id).sort()).toEqual(['after-seed', 'seed'])
 
-        // Advance only 5 minutes; flush again. .bak.0 must still be "seed".
+        // Advance only 5 minutes; flush again. .bak.0 must still match the
+        // first post-seed write, NOT the new state.
         advanceMockedTime(
           () => {
             store.addRepo(makeRepo({ id: 'within-hour', path: '/within' }))
@@ -704,7 +723,7 @@ describe('Store', () => {
         )
 
         const bak0After2 = readBackup(0)
-        expect(bak0After2.repos.map((r) => r.id)).toEqual(['seed'])
+        expect(bak0After2.repos.map((r) => r.id).sort()).toEqual(['after-seed', 'seed'])
       } finally {
         vi.useRealTimers()
       }
@@ -730,25 +749,27 @@ describe('Store', () => {
 
         const store = await createStore()
 
-        // First async write (debounced) — rotates because .bak.0 doesn't exist
-        // yet, so shouldRotateBackups returns true on statSync ENOENT.
+        // First async write (debounced) — rotates because .bak.0 doesn't
+        // exist yet, so shouldRotateBackups returns true on statSync ENOENT.
+        // Rotation runs AFTER the write, so .bak.0 captures the just-written
+        // state (seed + first-async).
         store.addRepo(makeRepo({ id: 'first-async' }))
         vi.advanceTimersByTime(300)
         await store.waitForPendingWrite()
 
         const bak0AfterFirst = readBackup(0)
-        expect(bak0AfterFirst.repos.map((r) => r.id)).toEqual(['seed'])
+        expect(bak0AfterFirst.repos.map((r) => r.id).sort()).toEqual(['first-async', 'seed'])
 
-        // Advance only 5 minutes, then trigger another async write. The 1-hour
-        // gate must block rotation: .bak.0 should still reflect the seed state,
-        // NOT the "first-async" state from the previous write.
+        // Advance only 5 minutes, then trigger another async write. The
+        // 1-hour gate must block rotation: .bak.0 should still reflect the
+        // first-async write, NOT the new "within-hour-async" write.
         vi.setSystemTime(new Date(Date.now() + 5 * 60 * 1000))
         store.addRepo(makeRepo({ id: 'within-hour-async', path: '/within-async' }))
         vi.advanceTimersByTime(300)
         await store.waitForPendingWrite()
 
         const bak0AfterSecond = readBackup(0)
-        expect(bak0AfterSecond.repos.map((r) => r.id)).toEqual(['seed'])
+        expect(bak0AfterSecond.repos.map((r) => r.id).sort()).toEqual(['first-async', 'seed'])
       } finally {
         vi.useRealTimers()
       }
@@ -770,25 +791,168 @@ describe('Store', () => {
 
         const store = await createStore()
 
-        // First async write: snapshots "seed" into .bak.0.
+        // First async write: rotation runs AFTER the write, so .bak.0
+        // captures the just-written state (seed + first-async).
         store.addRepo(makeRepo({ id: 'first-async' }))
         vi.advanceTimersByTime(300)
         await store.waitForPendingWrite()
 
-        expect(readBackup(0).repos.map((r) => r.id)).toEqual(['seed'])
+        expect(
+          readBackup(0)
+            .repos.map((r) => r.id)
+            .sort()
+        ).toEqual(['first-async', 'seed'])
 
         // Jump past BACKUP_MIN_INTERVAL_MS (1h). The next async write should
-        // rotate: the previous on-disk state (seed + first-async) lands in
-        // .bak.0, and the prior .bak.0 ("seed" alone) shifts to .bak.1.
+        // rotate: the prior .bak.0 (seed + first-async) shifts to .bak.1,
+        // and the newly written file (seed + first-async + after-hour-async)
+        // becomes the new .bak.0.
         vi.setSystemTime(new Date(Date.now() + 61 * 60 * 1000))
         store.addRepo(makeRepo({ id: 'after-hour-async', path: '/after-async' }))
         vi.advanceTimersByTime(300)
         await store.waitForPendingWrite()
 
         const bak0After = readBackup(0)
-        expect(bak0After.repos.map((r) => r.id).sort()).toEqual(['first-async', 'seed'])
+        expect(bak0After.repos.map((r) => r.id).sort()).toEqual([
+          'after-hour-async',
+          'first-async',
+          'seed'
+        ])
         expect(existsSync(backupFile(1))).toBe(true)
-        expect(readBackup(1).repos.map((r) => r.id)).toEqual(['seed'])
+        expect(
+          readBackup(1)
+            .repos.map((r) => r.id)
+            .sort()
+        ).toEqual(['first-async', 'seed'])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    // ── Backup recovery on load() (issue #1158) ─────────────────────────
+
+    function writeBackup(index: number, data: unknown): void {
+      mkdirSync(testState.dir, { recursive: true })
+      writeFileSync(backupFile(index), JSON.stringify(data, null, 2), 'utf-8')
+    }
+
+    it('recovers from .bak.0 when the primary file is corrupt', async () => {
+      // Why (issue #1158): a corrupt/empty primary write must not silently
+      // wipe the user's repos. load() falls through to .bak.0 before giving
+      // up to defaults — backups exist for exactly this reason.
+      mkdirSync(testState.dir, { recursive: true })
+      writeFileSync(dataFile(), '{{{corrupt-json', 'utf-8')
+      writeBackup(0, {
+        schemaVersion: 1,
+        repos: [makeRepo({ id: 'recovered' })],
+        worktreeMeta: {},
+        settings: {},
+        ui: {},
+        githubCache: { pr: {}, issue: {} },
+        workspaceSession: {}
+      })
+
+      const store = await createStore()
+      expect(store.getRepos().map((r) => r.id)).toEqual(['recovered'])
+    })
+
+    it('falls through to .bak.1 when both primary and .bak.0 are corrupt', async () => {
+      // Why (issue #1158): a single corrupt slot shouldn't strand the user.
+      // load() walks the ring in order and uses the first slot that parses.
+      mkdirSync(testState.dir, { recursive: true })
+      writeFileSync(dataFile(), '{{{corrupt-json', 'utf-8')
+      writeFileSync(backupFile(0), '{{also-corrupt', 'utf-8')
+      writeBackup(1, {
+        schemaVersion: 1,
+        repos: [makeRepo({ id: 'from-bak1' })],
+        worktreeMeta: {},
+        settings: {},
+        ui: {},
+        githubCache: { pr: {}, issue: {} },
+        workspaceSession: {}
+      })
+
+      const store = await createStore()
+      expect(store.getRepos().map((r) => r.id)).toEqual(['from-bak1'])
+    })
+
+    it('falls back to defaults only when every backup is also unusable', async () => {
+      mkdirSync(testState.dir, { recursive: true })
+      writeFileSync(dataFile(), '{{{corrupt', 'utf-8')
+      for (let i = 0; i < 5; i++) {
+        writeFileSync(backupFile(i), `{{slot-${i}-corrupt`, 'utf-8')
+      }
+
+      const store = await createStore()
+      // Default state: empty repos, no error thrown.
+      expect(store.getRepos()).toEqual([])
+    })
+
+    it('uses .bak.0 even when primary file is missing entirely', async () => {
+      // Why (issue #1158): a wiped userData (e.g., partial uninstall) leaves
+      // backups but no primary file. load() should still recover.
+      mkdirSync(testState.dir, { recursive: true })
+      writeBackup(0, {
+        schemaVersion: 1,
+        repos: [makeRepo({ id: 'rescued' })],
+        worktreeMeta: {},
+        settings: {},
+        ui: {},
+        githubCache: { pr: {}, issue: {} },
+        workspaceSession: {}
+      })
+
+      const store = await createStore()
+      expect(store.getRepos().map((r) => r.id)).toEqual(['rescued'])
+    })
+
+    it('still recovers repos/worktrees from a backup with corrupt workspaceSession', async () => {
+      // Why (issue #1158): the workspace session is the most volatile
+      // surface. Zod validation on load defaults a corrupt session to empty
+      // — but that must not throw away the rest of the persisted state on
+      // either the primary file or its backups.
+      mkdirSync(testState.dir, { recursive: true })
+      writeFileSync(dataFile(), '{{{corrupt', 'utf-8')
+      writeBackup(0, {
+        schemaVersion: 1,
+        repos: [makeRepo({ id: 'survives' })],
+        worktreeMeta: {},
+        settings: { theme: 'dark' },
+        ui: {},
+        githubCache: { pr: {}, issue: {} },
+        // Type-shape violation that makes the Zod parse fail.
+        workspaceSession: { activeRepoId: 12345 }
+      })
+
+      const store = await createStore()
+      expect(store.getRepos().map((r) => r.id)).toEqual(['survives'])
+      expect(store.getSettings().theme).toBe('dark')
+    })
+  })
+
+  // ── Concurrent write serialization (issue #1158) ─────────────────────
+
+  describe('concurrent write serialization', () => {
+    it('chains debounced writes via pendingWrite so they run sequentially', async () => {
+      // Why (issue #1158): scheduleSave used to overwrite this.pendingWrite,
+      // letting two writeToDiskAsync calls race on the same dataFile and
+      // .bak.* paths. Chaining via promise guarantees at most one runs at a
+      // time; the final state on disk reflects the last scheduled save.
+      vi.useFakeTimers()
+      try {
+        const store = await createStore()
+        store.addRepo(makeRepo({ id: 'first' }))
+        vi.advanceTimersByTime(300)
+        // Schedule a second write before the first completes.
+        store.addRepo(makeRepo({ id: 'second', path: '/second' }))
+        vi.advanceTimersByTime(300)
+        await store.waitForPendingWrite()
+
+        const persisted = JSON.parse(readFileSync(dataFile(), 'utf-8')) as { repos: Repo[] }
+        // Both writes serialized; the final on-disk state contains both
+        // entries (the second write happens after the first, so its state
+        // — which already includes 'first' — wins).
+        expect(persisted.repos.map((r) => r.id).sort()).toEqual(['first', 'second'])
       } finally {
         vi.useRealTimers()
       }

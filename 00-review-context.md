@@ -51,10 +51,25 @@
 
 <!-- Issues validated but deemed not worth fixing. Do not re-validate these in future iterations. -->
 
-(none yet)
+- src/main/persistence.ts:144,171 | Low | non-atomic copyFile of .bak.0 — design comment explicitly accepts trade-off ("losing a rolling backup is strictly better than skipping the write")
+- src/main/persistence.ts:286-298 | Low | rotation runs even when writeGeneration aborts — wasted IO only; addressed by moving rotation after successful write
+- src/main/persistence.ts:112-123 | Low | statSync on async path — microsecond cost; refactor would expand scope
+- src/main/persistence.ts:130-147 | Low | rotateBackupsAsync/Sync drift — extracting helper expands scope; close enough
+- src/main/persistence.test.ts:640-671 | Low | per-slot content assertions — testing improvement, not a defect
+- src/main/persistence.ts:286-298 | Medium | persistence-boundary hydration gate (architectural) — out of PR scope; renderer gate is sufficient
+- src/renderer/src/App.tsx:342 | Low | reconnectPersistedTerminals signal not honored today — speculative future-proofing
+- src/renderer/src/lib/workspace-session.test.ts:162-185 | Low | 10-iteration test trivial — defensive smoke test
+- src/renderer/src/lib/workspace-session.ts:22-26 | Low | Pick<AppState> structural type coupling — minor style
+- src/renderer/src/store/slices/terminals.ts:105-106 | Low | setHydrationSucceeded(boolean) accepts false — narrowing API would break test
+- src/renderer/src/store/slices/terminals-hydration.test.ts:280-286 | Low | "toggles both ways" test — coupled to terminals.ts:105 skip
+- src/renderer/src/lib/workspace-session.test.ts:144-202 | Low | integration test naming — describes block content
+- src/renderer/src/store/slices/terminals.ts:98-106 | Low | hydrationSucceeded in TerminalSlice — matches existing convention
 
 ## Iteration State
 
-Current iteration: 1
-Last completed phase: Setup
-Files fixed this iteration: []
+Current iteration: 2
+Last completed phase: Iteration 1 fixes complete (typecheck + tests pass)
+Files fixed iteration 1:
+- src/main/persistence.ts (load() backup fallback, chained writes, rotation-after-write, ENOENT handling)
+- src/main/persistence.test.ts (updated existing tests for new semantics + 6 new tests)
+- src/renderer/src/App.tsx (gate re-check at fire time, cancelled re-check, reconnect dedup, hydration-fail toast, pending* cleanup, comment fix)

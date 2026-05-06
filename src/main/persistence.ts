@@ -104,11 +104,11 @@ export class Store {
   // source of truth and survives process boundaries. This also narrows the
   // concurrent-rotation window: once the first caller finishes
   // copyFile(dataFile, .bak.0), the updated mtime closes the gate for any
-  // later caller — though a rotation already in-flight (between its
-  // rename(.bak.0, .bak.1) and copyFile) can still coincide with a concurrent
-  // shouldRotateBackups that sees ENOENT. In practice the async writer is
-  // debounced (one in-flight at a time) and flush() only runs at shutdown,
-  // so this window is narrow.
+  // later caller. Concurrent rotations on the same .bak.* paths are further
+  // prevented by (a) chaining writes through pendingWrite in scheduleSave
+  // (only one writeToDiskAsync runs at a time) and (b) the early
+  // writeGeneration check in writeToDiskAsync that aborts before rotation
+  // when flush() has bumped the generation.
   private shouldRotateBackups(now: number, dataFile: string): boolean {
     try {
       const mtime = statSync(backupPath(dataFile, 0)).mtimeMs
@@ -127,11 +127,23 @@ export class Store {
   // to .bak.0 rather than renamed so dataFile never temporarily disappears —
   // a crash between rotation and the new write would otherwise leave load()
   // falling back to defaults even though .bak.0 held the latest good state.
+  //
+  // Why (issue #1158): rotation runs AFTER a successful write so .bak.0 always
+  // represents the previous-known-good state on disk. If we rotated first and
+  // the write then failed (ENOSPC, EIO), .bak.0 would be a fresh snapshot of
+  // the same state we just failed to overwrite — not useful for recovery —
+  // and the 1-hour interval gate would suppress the next rotation attempt.
   private async rotateBackupsAsync(dataFile: string): Promise<void> {
     if (!existsSync(dataFile)) {
       return
     }
-    await rm(backupPath(dataFile, BACKUP_COUNT - 1)).catch(() => {})
+    await rm(backupPath(dataFile, BACKUP_COUNT - 1)).catch((err: unknown) => {
+      // Why: missing file is expected on first rotations; surface anything
+      // else (EACCES, EBUSY) so silent backup-ring corruption is visible.
+      if (err && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error('[persistence] Failed to remove oldest backup:', err)
+      }
+    })
     for (let i = BACKUP_COUNT - 2; i >= 0; i--) {
       const src = backupPath(dataFile, i)
       const dst = backupPath(dataFile, i + 1)
@@ -152,9 +164,14 @@ export class Store {
     }
     try {
       unlinkSync(backupPath(dataFile, BACKUP_COUNT - 1))
-    } catch {
-      // Missing file is expected on first rotation — any other error is
-      // best-effort; we proceed with rotation rather than skip the write.
+    } catch (err) {
+      // Why: missing file is expected on first rotations; any other error
+      // (EACCES, EBUSY) is logged so silent backup-ring corruption is visible.
+      // We still proceed with rotation — losing one backup slot is better
+      // than skipping the write entirely.
+      if (err && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error('[persistence] Failed to remove oldest backup:', err)
+      }
     }
     for (let i = BACKUP_COUNT - 2; i >= 0; i--) {
       const src = backupPath(dataFile, i)
@@ -174,87 +191,117 @@ export class Store {
     }
   }
 
-  private load(): PersistedState {
-    try {
-      const dataFile = getDataFile()
-      if (existsSync(dataFile)) {
-        const raw = readFileSync(dataFile, 'utf-8')
-        const parsed = JSON.parse(raw) as PersistedState
-        // Merge with defaults in case new fields were added
-        const defaults = getDefaultPersistedState(homedir())
-        // Why: before the layout-aware 'auto' mode shipped (issue #903),
-        // terminalMacOptionAsAlt defaulted to 'true' globally. That silently
-        // broke Option-layer characters (@ on Turkish via Option+Q, @ on
-        // German via Option+L, € on French via Option+E) for non-US users.
-        // We can't distinguish a persisted 'true' that the user chose
-        // explicitly from one they inherited from the old default — so on
-        // first launch after upgrade, flip 'true' back to 'auto' and let
-        // the renderer's keyboard-layout probe pick the right value per
-        // layout. US users land on 'true' via detection (no change); non-US
-        // users land on 'false' (correct). 'false'/'left'/'right' are
-        // definitionally explicit choices (they never matched the old
-        // default) so we carry those forward unchanged. The migrated flag
-        // guards against re-running this on subsequent launches.
-        const rawOptionAsAlt = parsed.settings?.terminalMacOptionAsAlt
-        const alreadyMigrated = parsed.settings?.terminalMacOptionAsAltMigrated === true
-        const migratedOptionAsAlt: 'auto' | 'true' | 'false' | 'left' | 'right' = alreadyMigrated
-          ? (rawOptionAsAlt ?? 'auto')
-          : rawOptionAsAlt === undefined || rawOptionAsAlt === 'true'
-            ? 'auto'
-            : rawOptionAsAlt
-        return {
-          ...defaults,
-          ...parsed,
-          settings: {
-            ...defaults.settings,
-            ...parsed.settings,
-            terminalMacOptionAsAlt: migratedOptionAsAlt,
-            terminalMacOptionAsAltMigrated: true,
-            notifications: {
-              ...getDefaultNotificationSettings(),
-              ...parsed.settings?.notifications
-            }
-          },
-          // Why: 'recent' used to mean the weighted smart sort. One-shot
-          // migration moves it to 'smart'; the flag prevents re-firing after
-          // a user intentionally selects the new last-activity 'recent' sort.
-          ui: (() => {
-            const sort = normalizeSortBy(parsed.ui?.sortBy)
-            const migrate = !parsed.ui?._sortBySmartMigrated && sort === 'recent'
-            return {
-              ...defaults.ui,
-              ...parsed.ui,
-              sortBy: migrate ? ('smart' as const) : sort,
-              _sortBySmartMigrated: true
-            }
-          })(),
-          // Why: the workspace session is the most volatile persisted surface
-          // (schema evolves per release, daemon session IDs embedded in it).
-          // Zod-validate at the read boundary so a field-type flip from an
-          // older build — or a truncated write from a crash — gets rejected
-          // cleanly instead of poisoning Zustand state and crashing the
-          // renderer on mount. On validation failure, fall back to defaults
-          // and log; a corrupt session file shouldn't trap the user out.
-          workspaceSession: (() => {
-            if (parsed.workspaceSession === undefined) {
-              return defaults.workspaceSession
-            }
-            const result = parseWorkspaceSession(parsed.workspaceSession)
-            if (!result.ok) {
-              console.error(
-                '[persistence] Corrupt workspace session, using defaults:',
-                result.error
-              )
-              return defaults.workspaceSession
-            }
-            return { ...defaults.workspaceSession, ...result.value }
-          })(),
-          sshTargets: (parsed.sshTargets ?? []).map(normalizeSshTarget)
+  // Why (issue #1158): parse + migrate + merge is shared between the primary
+  // dataFile read and the .bak.* recovery path. Centralizing here keeps the
+  // migration semantics identical regardless of which slot we recovered from
+  // — a backup must produce the same shape of PersistedState as a fresh
+  // dataFile, otherwise downstream code (settings, UI, workspace session)
+  // would behave inconsistently after a recovery.
+  private mergeParsedState(raw: string): PersistedState {
+    const parsed = JSON.parse(raw) as PersistedState
+    const defaults = getDefaultPersistedState(homedir())
+    // Why: before the layout-aware 'auto' mode shipped (issue #903),
+    // terminalMacOptionAsAlt defaulted to 'true' globally. That silently
+    // broke Option-layer characters (@ on Turkish via Option+Q, @ on
+    // German via Option+L, € on French via Option+E) for non-US users.
+    // We can't distinguish a persisted 'true' that the user chose
+    // explicitly from one they inherited from the old default — so on
+    // first launch after upgrade, flip 'true' back to 'auto' and let
+    // the renderer's keyboard-layout probe pick the right value per
+    // layout. US users land on 'true' via detection (no change); non-US
+    // users land on 'false' (correct). 'false'/'left'/'right' are
+    // definitionally explicit choices (they never matched the old
+    // default) so we carry those forward unchanged. The migrated flag
+    // guards against re-running this on subsequent launches.
+    const rawOptionAsAlt = parsed.settings?.terminalMacOptionAsAlt
+    const alreadyMigrated = parsed.settings?.terminalMacOptionAsAltMigrated === true
+    const migratedOptionAsAlt: 'auto' | 'true' | 'false' | 'left' | 'right' = alreadyMigrated
+      ? (rawOptionAsAlt ?? 'auto')
+      : rawOptionAsAlt === undefined || rawOptionAsAlt === 'true'
+        ? 'auto'
+        : rawOptionAsAlt
+    return {
+      ...defaults,
+      ...parsed,
+      settings: {
+        ...defaults.settings,
+        ...parsed.settings,
+        terminalMacOptionAsAlt: migratedOptionAsAlt,
+        terminalMacOptionAsAltMigrated: true,
+        notifications: {
+          ...getDefaultNotificationSettings(),
+          ...parsed.settings?.notifications
         }
-      }
-    } catch (err) {
-      console.error('[persistence] Failed to load state, using defaults:', err)
+      },
+      // Why: 'recent' used to mean the weighted smart sort. One-shot
+      // migration moves it to 'smart'; the flag prevents re-firing after
+      // a user intentionally selects the new last-activity 'recent' sort.
+      ui: (() => {
+        const sort = normalizeSortBy(parsed.ui?.sortBy)
+        const migrate = !parsed.ui?._sortBySmartMigrated && sort === 'recent'
+        return {
+          ...defaults.ui,
+          ...parsed.ui,
+          sortBy: migrate ? ('smart' as const) : sort,
+          _sortBySmartMigrated: true
+        }
+      })(),
+      // Why: the workspace session is the most volatile persisted surface
+      // (schema evolves per release, daemon session IDs embedded in it).
+      // Zod-validate at the read boundary so a field-type flip from an
+      // older build — or a truncated write from a crash — gets rejected
+      // cleanly instead of poisoning Zustand state and crashing the
+      // renderer on mount. On validation failure, fall back to defaults
+      // and log; a corrupt session file shouldn't trap the user out.
+      // Applies equally to backup files: a backup with corrupt
+      // workspaceSession is still useful for repos/worktrees/settings.
+      workspaceSession: (() => {
+        if (parsed.workspaceSession === undefined) {
+          return defaults.workspaceSession
+        }
+        const result = parseWorkspaceSession(parsed.workspaceSession)
+        if (!result.ok) {
+          console.error('[persistence] Corrupt workspace session, using defaults:', result.error)
+          return defaults.workspaceSession
+        }
+        return { ...defaults.workspaceSession, ...result.value }
+      })(),
+      sshTargets: (parsed.sshTargets ?? []).map(normalizeSshTarget)
     }
+  }
+
+  private load(): PersistedState {
+    const dataFile = getDataFile()
+    // Try the primary file first.
+    if (existsSync(dataFile)) {
+      try {
+        const raw = readFileSync(dataFile, 'utf-8')
+        return this.mergeParsedState(raw)
+      } catch (err) {
+        // Why (issue #1158): a corrupt/empty primary write must not silently
+        // wipe the user's repos/worktrees/session. Fall through to the
+        // backup ring before giving up to defaults. Backups exist for
+        // exactly this reason.
+        console.error('[persistence] Failed to load primary state, trying backups:', err)
+      }
+    }
+    // Iterate .bak.0 → .bak.4. .bak.0 is the most recent known-good state
+    // (rotation runs AFTER successful writes — see rotateBackups* comment).
+    for (let i = 0; i < BACKUP_COUNT; i++) {
+      const path = backupPath(dataFile, i)
+      if (!existsSync(path)) {
+        continue
+      }
+      try {
+        const raw = readFileSync(path, 'utf-8')
+        const merged = this.mergeParsedState(raw)
+        console.warn(`[persistence] Recovered state from backup slot ${i}: ${path}`)
+        return merged
+      } catch (err) {
+        console.error(`[persistence] Backup slot ${i} unusable, trying next:`, err)
+      }
+    }
+    console.error('[persistence] No usable state file or backup found, using defaults')
     return getDefaultPersistedState(homedir())
   }
 
@@ -264,13 +311,26 @@ export class Store {
     }
     this.writeTimer = setTimeout(() => {
       this.writeTimer = null
-      this.pendingWrite = this.writeToDiskAsync()
+      // Why (issue #1158): chain on the previous in-flight write rather than
+      // overwriting the pendingWrite reference. Concurrent writeToDiskAsync
+      // calls would otherwise race on the same tmp/dataFile/.bak.* paths —
+      // e.g. one call's rotation could rename .bak.0 to .bak.1 while another
+      // is mid-copyFile to .bak.0. Serializing via promise chain guarantees
+      // at most one writeToDiskAsync runs at a time.
+      const prev = this.pendingWrite ?? Promise.resolve()
+      const next = prev
+        .then(() => this.writeToDiskAsync())
         .catch((err) => {
           console.error('[persistence] Failed to write state:', err)
         })
         .finally(() => {
-          this.pendingWrite = null
+          // Why: only clear if no newer write has been chained on top.
+          // Otherwise a later scheduleSave would lose its ordering link.
+          if (this.pendingWrite === next) {
+            this.pendingWrite = null
+          }
         })
+      this.pendingWrite = next
     }, 300)
   }
 
@@ -288,14 +348,6 @@ export class Store {
     const dataFile = getDataFile()
     const dir = dirname(dataFile)
     await mkdir(dir, { recursive: true }).catch(() => {})
-    // Why (issue #1158): rotate BEFORE the new write so the soon-to-be
-    // overwritten state is captured as .bak.0. Rotation failures are logged
-    // but non-fatal — losing a rolling backup is strictly better than
-    // skipping the write entirely.
-    const now = Date.now()
-    if (this.shouldRotateBackups(now, dataFile)) {
-      await this.rotateBackupsAsync(dataFile)
-    }
     const tmpFile = `${dataFile}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`
     // Why: wrap write+rename in try/finally-on-error so any failure (ENOSPC,
     // ENFILE, EIO, permission) removes the tmp file rather than leaving a
@@ -316,6 +368,26 @@ export class Store {
         await rm(tmpFile).catch(() => {})
       }
     }
+    // Why (issue #1158): rotate AFTER the rename succeeds so .bak.0 always
+    // represents the previous-known-good state on disk — exactly what
+    // load() needs for recovery. Rotating first would mean a failed write
+    // (ENOSPC, EIO) leaves .bak.0 as a fresh duplicate of the same state we
+    // just failed to overwrite, and the 1-hour interval gate would suppress
+    // the next rotation.
+    //
+    // Why: re-check writeGeneration BEFORE rotation. If flush() ran between
+    // our successful rename and rotation start, our async rotation would
+    // race with flush()'s sync rotation on the same .bak.* paths. flush()
+    // bumps writeGeneration as a barrier; bailing out here keeps only the
+    // sync rotation in flight. Combined with promise-chained scheduleSave,
+    // at most one rotation runs at a time.
+    if (this.writeGeneration !== gen) {
+      return
+    }
+    const now = Date.now()
+    if (this.shouldRotateBackups(now, dataFile)) {
+      await this.rotateBackupsAsync(dataFile)
+    }
   }
 
   // Why: synchronous variant kept only for flush() at shutdown, where the
@@ -325,14 +397,6 @@ export class Store {
     const dir = dirname(dataFile)
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true })
-    }
-    // Why (issue #1158): shutdown is the most important moment to take a
-    // snapshot — the next launch could be the one that hits the hydration
-    // crash. Apply the same min-interval gate as the async path so a
-    // restart-storm still only rotates once per hour.
-    const now = Date.now()
-    if (this.shouldRotateBackups(now, dataFile)) {
-      this.rotateBackupsSync(dataFile)
     }
     const tmpFile = `${dataFile}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`
     // Why: mirror the async path — on any failure between writeFileSync and
@@ -351,6 +415,18 @@ export class Store {
           // Best-effort cleanup; the write already failed, swallow secondary error.
         }
       }
+    }
+    // Why (issue #1158): rotate AFTER the rename succeeds so .bak.0 holds the
+    // previous-known-good state — exactly what load() reads on recovery.
+    // Rotating first would mean a failed write leaves .bak.0 as a duplicate
+    // of the file we just failed to overwrite, and the 1-hour interval gate
+    // would suppress the next rotation. Apply the same min-interval gate as
+    // the async path so a restart-storm still only rotates once per hour.
+    // Shutdown is the most important moment to take a snapshot — the next
+    // launch could be the one that hits the hydration crash.
+    const now = Date.now()
+    if (this.shouldRotateBackups(now, dataFile)) {
+      this.rotateBackupsSync(dataFile)
     }
   }
 
