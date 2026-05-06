@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, Pressable, Linking, Platform } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import { ChevronLeft, Globe } from 'lucide-react-native'
+import { ChevronLeft, Globe, Shield, LifeBuoy } from 'lucide-react-native'
 import Svg, { Path } from 'react-native-svg'
 import Constants from 'expo-constants'
 import { OrcaLogo } from '../src/components/OrcaLogo'
@@ -81,6 +81,24 @@ export default function AboutScreen() {
         </Pressable>
       </View>
 
+      <View style={[styles.section, styles.sectionSpacer]}>
+        <Pressable
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+          onPress={() => void Linking.openURL('https://stably.ai/orca/privacy')}
+        >
+          <Shield size={16} color={colors.textSecondary} />
+          <Text style={styles.rowLabel}>Privacy Policy</Text>
+        </Pressable>
+        <View style={styles.separator} />
+        <Pressable
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+          onPress={() => void Linking.openURL('https://github.com/stablyai/orca/issues')}
+        >
+          <LifeBuoy size={16} color={colors.textSecondary} />
+          <Text style={styles.rowLabel}>Support</Text>
+        </Pressable>
+      </View>
+
       <Text style={styles.versionText}>{getVersionLabel()}</Text>
     </View>
   )
@@ -130,6 +148,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgPanel,
     borderRadius: 12,
     overflow: 'hidden'
+  },
+  sectionSpacer: {
+    marginTop: spacing.md
   },
   row: {
     flexDirection: 'row',
