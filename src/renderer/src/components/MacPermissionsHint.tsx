@@ -1,7 +1,6 @@
 import { ArrowRight, X } from 'lucide-react'
 
 import { useAppStore } from '@/store'
-import { getConnectionId } from '@/lib/connection-context'
 import { openDeveloperPermissionsSettings } from '@/lib/developer-permissions-settings-link'
 import type { WorkspaceVisibleTabType } from '../../../shared/types'
 
@@ -30,7 +29,29 @@ export function MacPermissionsHint({
   // SSH'd into a remote worktree can't grant permissions on the remote.
   // (The Mac platform check itself lives at the call site so non-Mac
   // platforms don't instantiate the component at all.)
-  const isLocalWorktree = getConnectionId(activeWorktreeId) === null
+  // Why: subscribe to the slices getConnectionId would read (worktreesByRepo
+  // + repos) so this hint re-renders when remote metadata hydrates after the
+  // worktree is already active.
+  // Why: until both worktree and repo are resolved we treat the connection
+  // as unknown (undefined), not local (null) — otherwise an SSH worktree
+  // can flash this Mac-only hint during the hydration window where repos
+  // hasn't populated yet.
+  const connectionId = useAppStore((s) => {
+    if (!activeWorktreeId) {
+      return null
+    }
+    const allWorktrees = Object.values(s.worktreesByRepo ?? {}).flat()
+    const worktree = allWorktrees.find((w) => w.id === activeWorktreeId)
+    if (!worktree) {
+      return undefined
+    }
+    const repo = s.repos?.find((r) => r.id === worktree.repoId)
+    if (!repo) {
+      return undefined
+    }
+    return repo.connectionId ?? null
+  })
+  const isLocalWorktree = connectionId === null
   const isTerminalView =
     activeView === 'terminal' && activeTabType === 'terminal' && activeWorktreeId !== null
 
@@ -39,7 +60,11 @@ export function MacPermissionsHint({
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
+    <div
+      role="status"
+      aria-label="macOS permissions hint"
+      className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground"
+    >
       <span className="flex-1 truncate">Need macOS device permissions for CLIs?</span>
       <button
         type="button"
