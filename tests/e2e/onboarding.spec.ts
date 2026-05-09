@@ -34,6 +34,11 @@ async function getDocumentThemeClass(page: Page): Promise<'dark' | 'light'> {
 }
 
 test.describe('Onboarding flow', () => {
+  // Why: the shared fixture pre-seeds onboarding as closed so non-onboarding
+  // tests don't get blocked by the fullscreen overlay. Opt out here so this
+  // spec actually exercises the first-launch flow.
+  test.use({ dismissOnboarding: false })
+
   test.beforeEach(async ({ orcaPage }) => {
     // Per-test userData is freshly minted by the orcaPage fixture, so persisted
     // onboarding state defaults to `closedAt: null, lastCompletedStep: -1` and
@@ -42,9 +47,9 @@ test.describe('Onboarding flow', () => {
   })
 
   test('renders on first launch with the agent step active', async ({ orcaPage }) => {
-    await expect(
-      orcaPage.getByRole('heading', { name: /Pick your default agent/i })
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(orcaPage.getByRole('heading', { name: /Pick your default agent/i })).toBeVisible({
+      timeout: 15_000
+    })
     await expect(orcaPage.getByText('1 of 4')).toBeVisible()
     await expect(orcaPage.getByRole('button', { name: 'Continue' })).toBeVisible()
     await expect(orcaPage.getByRole('button', { name: 'Skip' })).toBeVisible()
@@ -61,9 +66,9 @@ test.describe('Onboarding flow', () => {
   test('Continue advances steps, persists progress, and applies user-visible settings', async ({
     orcaPage
   }) => {
-    await expect(
-      orcaPage.getByRole('heading', { name: /Pick your default agent/i })
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(orcaPage.getByRole('heading', { name: /Pick your default agent/i })).toBeVisible({
+      timeout: 15_000
+    })
 
     // --- Step 1: agent ---
     // Force a deterministic, non-default selection so the assertion below
@@ -87,9 +92,7 @@ test.describe('Onboarding flow', () => {
     await codexButton.click()
 
     await orcaPage.getByRole('button', { name: 'Continue' }).click()
-    await expect(
-      orcaPage.getByRole('heading', { name: /Make it feel like home/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Make it feel like home/i })).toBeVisible()
     await expect(orcaPage.getByText('2 of 4')).toBeVisible()
     await expect
       .poll(async () => (await getOnboardingState(orcaPage)).lastCompletedStep, {
@@ -134,9 +137,9 @@ test.describe('Onboarding flow', () => {
         message: 'lastCompletedStep did not advance to 2 after second Continue'
       })
       .toBe(2)
-    await expect.poll(async () => (await getSettings(orcaPage)).theme, { timeout: 5_000 }).toBe(
-      oppositeTheme
-    )
+    await expect
+      .poll(async () => (await getSettings(orcaPage)).theme, { timeout: 5_000 })
+      .toBe(oppositeTheme)
 
     // --- Step 3: notifications ---
     // Why: the wizard force-defaults every toggle ON (use-onboarding-flow.ts),
@@ -145,9 +148,7 @@ test.describe('Onboarding flow', () => {
     // the post-Continue assertion proves the wizard wrote its opt-in defaults
     // through the IPC boundary, including the inverted suppressWhenFocused.
     await orcaPage.getByRole('button', { name: 'Continue' }).click()
-    await expect(
-      orcaPage.getByRole('heading', { name: /Point Orca at some code/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Point Orca at some code/i })).toBeVisible()
     await expect(orcaPage.getByText('4 of 4')).toBeVisible()
     await expect(orcaPage.getByRole('button', { name: 'Continue' })).toHaveCount(0)
     await expect(orcaPage.getByRole('button', { name: /I'll add one later/ })).toBeVisible()
@@ -182,9 +183,9 @@ test.describe('Onboarding flow', () => {
   })
 
   test('Cmd/Ctrl+Enter advances steps like Continue', async ({ orcaPage }) => {
-    await expect(
-      orcaPage.getByRole('heading', { name: /Pick your default agent/i })
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(orcaPage.getByRole('heading', { name: /Pick your default agent/i })).toBeVisible({
+      timeout: 15_000
+    })
 
     // Why: the OS the renderer reports drives whether Cmd or Ctrl is the
     // accelerator (OnboardingFlow.tsx checks navigator.userAgent).
@@ -196,9 +197,7 @@ test.describe('Onboarding flow', () => {
     // inert area inside the overlay first to anchor focus, then press.
     await orcaPage.locator('footer').click({ position: { x: 1, y: 1 } })
     await orcaPage.keyboard.press(accelerator)
-    await expect(
-      orcaPage.getByRole('heading', { name: /Make it feel like home/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Make it feel like home/i })).toBeVisible()
     await expect
       .poll(async () => (await getOnboardingState(orcaPage)).lastCompletedStep, {
         timeout: 5_000
@@ -207,9 +206,9 @@ test.describe('Onboarding flow', () => {
   })
 
   test('selected agent button reports aria-pressed=true', async ({ orcaPage }) => {
-    await expect(
-      orcaPage.getByRole('heading', { name: /Pick your default agent/i })
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(orcaPage.getByRole('heading', { name: /Pick your default agent/i })).toBeVisible({
+      timeout: 15_000
+    })
 
     const codexButton = orcaPage.getByRole('button', { name: /^Codex\s/ })
     const codexVisible = await codexButton
@@ -227,13 +226,11 @@ test.describe('Onboarding flow', () => {
   })
 
   test('notification toggles flip independently and persist on Continue', async ({ orcaPage }) => {
-    await expect(
-      orcaPage.getByRole('heading', { name: /Pick your default agent/i })
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(orcaPage.getByRole('heading', { name: /Pick your default agent/i })).toBeVisible({
+      timeout: 15_000
+    })
     await orcaPage.getByRole('button', { name: 'Skip' }).click()
-    await expect(
-      orcaPage.getByRole('heading', { name: /Make it feel like home/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Make it feel like home/i })).toBeVisible()
     await orcaPage.getByRole('button', { name: 'Skip' }).click()
     await expect(
       orcaPage.getByRole('heading', { name: /Know when an agent needs you/i })
@@ -248,9 +245,7 @@ test.describe('Onboarding flow', () => {
     await expect(bellSwitch).toHaveAttribute('aria-checked', 'false')
 
     await orcaPage.getByRole('button', { name: 'Continue' }).click()
-    await expect(
-      orcaPage.getByRole('heading', { name: /Point Orca at some code/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Point Orca at some code/i })).toBeVisible()
     await expect
       .poll(
         async () => {
@@ -268,16 +263,14 @@ test.describe('Onboarding flow', () => {
   test('typing in the clone-url input does not hijack Enter as a global shortcut', async ({
     orcaPage
   }) => {
-    await expect(
-      orcaPage.getByRole('heading', { name: /Pick your default agent/i })
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(orcaPage.getByRole('heading', { name: /Pick your default agent/i })).toBeVisible({
+      timeout: 15_000
+    })
     // Skip to the repo step.
     await orcaPage.getByRole('button', { name: 'Skip' }).click()
     await orcaPage.getByRole('button', { name: 'Skip' }).click()
     await orcaPage.getByRole('button', { name: 'Skip' }).click()
-    await expect(
-      orcaPage.getByRole('heading', { name: /Point Orca at some code/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Point Orca at some code/i })).toBeVisible()
 
     // Why: focus the clone-url input and press Cmd/Ctrl+Enter. The capture-
     // phase keydown handler should bail via isEditableTarget, so the folder
@@ -291,22 +284,18 @@ test.describe('Onboarding flow', () => {
     await input.press(accelerator)
     // Brief wait so any (incorrect) handler firing would have already happened.
     await orcaPage.waitForTimeout(250)
-    await expect(
-      orcaPage.getByRole('heading', { name: /Point Orca at some code/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Point Orca at some code/i })).toBeVisible()
     // Onboarding must still be open (closedAt remains null).
     expect((await getOnboardingState(orcaPage)).closedAt).toBeNull()
   })
 
   test('Back returns to the previous step without losing progress', async ({ orcaPage }) => {
-    await expect(
-      orcaPage.getByRole('heading', { name: /Pick your default agent/i })
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(orcaPage.getByRole('heading', { name: /Pick your default agent/i })).toBeVisible({
+      timeout: 15_000
+    })
 
     await orcaPage.getByRole('button', { name: 'Continue' }).click()
-    await expect(
-      orcaPage.getByRole('heading', { name: /Make it feel like home/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Make it feel like home/i })).toBeVisible()
     await expect
       .poll(async () => (await getOnboardingState(orcaPage)).lastCompletedStep, {
         timeout: 5_000
@@ -316,9 +305,7 @@ test.describe('Onboarding flow', () => {
     // Why: exact match — the app sidebar also exposes a "Go back" button that
     // would otherwise match this regex.
     await orcaPage.getByRole('button', { name: 'Back', exact: true }).click()
-    await expect(
-      orcaPage.getByRole('heading', { name: /Pick your default agent/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Pick your default agent/i })).toBeVisible()
     await expect(orcaPage.getByText('1 of 4')).toBeVisible()
 
     // Why: "without losing progress" means persisted lastCompletedStep stays
@@ -332,32 +319,29 @@ test.describe('Onboarding flow', () => {
   })
 
   test('"I\'ll add one later" on the repo step dismisses onboarding', async ({ orcaPage }) => {
-    await expect(
-      orcaPage.getByRole('heading', { name: /Pick your default agent/i })
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(orcaPage.getByRole('heading', { name: /Pick your default agent/i })).toBeVisible({
+      timeout: 15_000
+    })
 
     // Skip through the first three steps. On steps 1–3 the affordance is
     // labelled "Skip"; on the repo step it is "I'll add one later".
     await orcaPage.getByRole('button', { name: 'Skip' }).click()
-    await expect(
-      orcaPage.getByRole('heading', { name: /Make it feel like home/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Make it feel like home/i })).toBeVisible()
     await orcaPage.getByRole('button', { name: 'Skip' }).click()
     await expect(
       orcaPage.getByRole('heading', { name: /Know when an agent needs you/i })
     ).toBeVisible()
     await orcaPage.getByRole('button', { name: 'Skip' }).click()
-    await expect(
-      orcaPage.getByRole('heading', { name: /Point Orca at some code/i })
-    ).toBeVisible()
+    await expect(orcaPage.getByRole('heading', { name: /Point Orca at some code/i })).toBeVisible()
 
     await orcaPage.getByRole('button', { name: /I'll add one later/ }).click()
 
     // The overlay is unmounted once `closedAt` is set, so the heading must
     // disappear from the DOM, not merely become invisible.
-    await expect(
-      orcaPage.getByRole('heading', { name: /Point Orca at some code/i })
-    ).toHaveCount(0, { timeout: 10_000 })
+    await expect(orcaPage.getByRole('heading', { name: /Point Orca at some code/i })).toHaveCount(
+      0,
+      { timeout: 10_000 }
+    )
 
     // Why: DOM unmount fires when closedAt flips in the renderer, but the
     // main-process write can lag by an IPC tick. Poll until the persisted

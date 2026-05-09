@@ -30,6 +30,11 @@ type OrcaTestFixtures = {
   electronApp: ElectronApplication
   sharedPage: Page
   orcaPage: Page
+  // Why: every fresh userData dir paints the first-launch onboarding overlay
+  // (closedAt=null), which is `fixed inset-0 z-[100]` and intercepts pointer
+  // events for every other test. Dismiss it by default; onboarding.spec.ts
+  // opts out via `test.use({ dismissOnboarding: false })`.
+  dismissOnboarding: boolean
 }
 
 type OrcaWorkerFixtures = {
@@ -140,10 +145,38 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
   ],
 
   // Test-scoped: one Electron app per test
-  // oxlint-disable-next-line no-empty-pattern -- Playwright fixture callbacks require object destructuring here.
-  electronApp: async ({}, provideFixture, testInfo) => {
+  electronApp: async ({ dismissOnboarding }, provideFixture, testInfo) => {
     const mainPath = path.join(process.cwd(), 'out', 'main', 'index.js')
     const userDataDir = mkdtempSync(path.join(os.tmpdir(), 'orca-e2e-userdata-'))
+
+    if (dismissOnboarding) {
+      // Why: onboarding renders a fullscreen `fixed inset-0 z-[100]` overlay
+      // when persisted `closedAt` is null, which intercepts pointer events for
+      // every other test. Seed explicit fresh-user state: an empty file would
+      // make persistence treat the profile as an existing-user upgrade cohort
+      // and mount the telemetry notice overlay instead.
+      writeFileSync(
+        path.join(userDataDir, 'orca-data.json'),
+        `${JSON.stringify(
+          {
+            settings: {
+              telemetry: {
+                optedIn: true,
+                installId: '00000000-0000-4000-8000-000000000000',
+                existedBeforeTelemetryRelease: false
+              }
+            },
+            onboarding: {
+              closedAt: 1,
+              outcome: 'completed',
+              lastCompletedStep: 4
+            }
+          },
+          null,
+          2
+        )}\n`
+      )
+    }
     const headful = shouldLaunchHeadful(testInfo)
     // Why: strip ELECTRON_RUN_AS_NODE before spawning. Some host shells (e.g.
     // Orca's own agent runtime) set it so Electron behaves as a plain Node
@@ -161,9 +194,7 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
     // Why: testInfo.outputDir is created lazily by Playwright; on Windows the
     // dir may not exist when the fixture initializes, and Electron silently
     // drops the recording. mkdir up-front so the recorder always has a home.
-    const recordVideoDir = process.env.ORCA_E2E_RECORD_VIDEO === '1'
-      ? testInfo.outputDir
-      : null
+    const recordVideoDir = process.env.ORCA_E2E_RECORD_VIDEO === '1' ? testInfo.outputDir : null
     if (recordVideoDir) {
       mkdirSync(recordVideoDir, { recursive: true })
     }
@@ -211,6 +242,9 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
     }
     rmSync(userDataDir, { recursive: true, force: true })
   },
+
+  // Default: dismiss the onboarding overlay so it doesn't intercept clicks.
+  dismissOnboarding: [true, { option: true }],
 
   // Test-scoped: grab the first BrowserWindow, add the test repo, and wait
   // until the session is fully ready with a worktree active.
