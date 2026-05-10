@@ -827,6 +827,54 @@ describe('createMainWindow', () => {
     expect(menuPopupMock).toHaveBeenCalledWith({ window: browserWindowInstance, x: 42, y: 84 })
   })
 
+  it('does not read destroyed webContents during closed cleanup', () => {
+    const windowHandlers: Record<string, (...args: any[]) => void> = {}
+    const webContents = {
+      on: vi.fn(),
+      setZoomLevel: vi.fn(),
+      setBackgroundThrottling: vi.fn(),
+      invalidate: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      send: vi.fn(),
+      isDevToolsOpened: vi.fn(),
+      openDevTools: vi.fn(),
+      closeDevTools: vi.fn()
+    }
+    let webContentsDestroyed = false
+    const browserWindowInstance = {
+      get webContents() {
+        if (webContentsDestroyed) {
+          throw new Error('Object has been destroyed')
+        }
+        return webContents
+      },
+      on: vi.fn((event, handler) => {
+        windowHandlers[event] = handler
+      }),
+      isDestroyed: vi.fn(() => false),
+      isMaximized: vi.fn(() => true),
+      isFullScreen: vi.fn(() => false),
+      getSize: vi.fn(() => [1200, 800]),
+      setSize: vi.fn(),
+      maximize: vi.fn(),
+      show: vi.fn(),
+      loadFile: vi.fn(),
+      loadURL: vi.fn()
+    }
+    browserWindowMock.mockImplementation(function () {
+      return browserWindowInstance
+    })
+
+    createMainWindow(null)
+
+    webContentsDestroyed = true
+
+    // Why: Electron may destroy webContents before BrowserWindow's `closed`
+    // cleanup runs during updater shutdown. The cleanup must not crash, or
+    // Squirrel.Mac never reaches the relaunch step.
+    expect(() => windowHandlers.closed?.()).not.toThrow()
+  })
+
   it('resets the markdown editor focus flag on renderer crash, navigation, and destroy', () => {
     const windowHandlers: Record<string, (...args: any[]) => void> = {}
     const webContents = {

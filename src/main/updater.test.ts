@@ -49,7 +49,6 @@ const {
     autoUpdaterMock.quitAndInstall.mockReset()
     autoUpdaterMock.setFeedURL.mockClear()
     autoUpdaterMock.allowPrerelease = false
-    autoUpdaterMock.autoRunAppAfterInstall = false
     delete (autoUpdaterMock as Record<string, unknown>).verifyUpdateCodeSignature
   }
 
@@ -57,7 +56,6 @@ const {
     autoDownload: false,
     autoInstallOnAppQuit: false,
     allowPrerelease: false,
-    autoRunAppAfterInstall: false,
     on,
     checkForUpdates: vi.fn(),
     downloadUpdate: vi.fn(),
@@ -73,8 +71,7 @@ const {
       getVersion: vi.fn(() => '1.0.51'),
       on: appOn,
       emit: appEmit,
-      quit: vi.fn(),
-      releaseSingleInstanceLock: vi.fn()
+      quit: vi.fn()
     },
     browserWindowMock: {
       getAllWindows: vi.fn(() => [])
@@ -143,7 +140,6 @@ describe('updater', () => {
     appMock.getVersion.mockReset()
     appMock.getVersion.mockReturnValue('1.0.51')
     appMock.quit.mockReset()
-    appMock.releaseSingleInstanceLock.mockReset()
     appMock.isPackaged = true
     isMock.dev = false
     killAllPtyMock.mockReset()
@@ -283,21 +279,8 @@ describe('updater', () => {
     expect(autoUpdaterMock.quitAndInstall).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(1)
-    expect(appMock.releaseSingleInstanceLock).toHaveBeenCalledTimes(1)
     expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledTimes(1)
     expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(false, true)
-    expect(appMock.releaseSingleInstanceLock.mock.invocationCallOrder[0]).toBeLessThan(
-      autoUpdaterMock.quitAndInstall.mock.invocationCallOrder[0]
-    )
-  })
-
-  it('pins mac relaunch behavior instead of relying on electron-updater defaults', async () => {
-    const mainWindow = { webContents: { send: vi.fn() } }
-    const { setupAutoUpdater } = await import('./updater')
-
-    setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
-
-    expect(autoUpdaterMock.autoRunAppAfterInstall).toBe(true)
   })
 
   it('ignores duplicate quitAndInstall requests while the shared delay is pending', async () => {
