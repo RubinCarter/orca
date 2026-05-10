@@ -1179,11 +1179,10 @@ export type GlobalSettings = {
    *  300 000 (5 min, the standard Anthropic API / Bedrock TTL) and
    *  3 600 000 (1 hr, for extended-TTL plans). */
   promptCacheTtlMs: number
-  /** Why: Codex rate-limit account routing is a durable app preference owned by
-   *  the main process, not transient UI state. Persisting the selected managed
-   *  homes here lets Orca resolve the correct `CODEX_HOME` before the renderer
-   *  hydrates, while keeping this scope explicitly separate from Codex usage
-   *  analytics and external terminal sessions. */
+  /** Why: Codex account routing is a durable app preference owned by the main
+   *  process, not transient UI state. Persisting managed homes here lets Orca
+   *  resolve the correct `CODEX_HOME` before the renderer hydrates, while
+   *  keeping this scope explicitly separate from Codex usage analytics. */
   codexManagedAccounts: CodexManagedAccount[]
   activeCodexManagedAccountId: string | null
   /** Why: Claude Code keeps conversations under one shared config root. Orca

@@ -395,6 +395,38 @@ describe('CodexRuntimeHomeService', () => {
     expect(existsSync(join(testState.fakeHomeDir, '.codex'))).toBe(true)
   })
 
+  it('returns the managed home for managed Codex launch and rate-limit preparation', async () => {
+    const managedHomePath = createManagedAuth(
+      testState.userDataDir,
+      'account-1',
+      '{"account":"managed"}\n'
+    )
+    const store = createStore(
+      createSettings({
+        codexManagedAccounts: [
+          {
+            id: 'account-1',
+            email: 'user@example.com',
+            managedHomePath,
+            providerAccountId: null,
+            workspaceLabel: null,
+            workspaceAccountId: null,
+            createdAt: 1,
+            updatedAt: 1,
+            lastAuthenticatedAt: 1
+          }
+        ],
+        activeCodexManagedAccountId: 'account-1'
+      })
+    )
+
+    const { CodexRuntimeHomeService } = await import('./runtime-home-service')
+    const service = new CodexRuntimeHomeService(store as never)
+
+    expect(service.prepareForCodexLaunch()).toBe(managedHomePath)
+    expect(service.prepareForRateLimitFetch()).toBe(managedHomePath)
+  })
+
   it('does not overwrite auth.json when no managed account was ever active', async () => {
     const runtimeAuthPath = join(testState.fakeHomeDir, '.codex', 'auth.json')
     writeFileSync(runtimeAuthPath, '{"account":"original"}\n', 'utf-8')
