@@ -207,15 +207,15 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
         // on the other hand, bumps only when sort-relevant inputs change —
         // avoiding sidebar re-sorts on every tool/prompt event would stress
         // the smart-sort debounce for no reason. Sort-relevant inputs are:
-        //   1. `state` transitions — sort score is a function of state.
-        //   2. Freshness transitions (stale → fresh) — `computeSmartScoreFromSignals`
-        //      in smart-sort.ts filters entries through
+        //   1. `state` transitions — smart-sort class is a function of state.
+        //   2. Freshness transitions (stale → fresh) — `resolveAttention` in
+        //      smart-attention.ts filters entries through
         //      `isExplicitAgentStatusFresh(entry, now, AGENT_STATUS_STALE_AFTER_MS)`
         //      (30-min TTL). A stale entry that refreshes with the SAME state
-        //      goes from "not contributing" to contributing +60 (working) or
-        //      +35 (blocked/waiting) to the score — order must update. The new
-        //      entry below always has `updatedAt = now`, so it is fresh; we
-        //      only need to detect the stale→fresh flip on `existing`.
+        //      goes from "not contributing" (Class 4) to driving a higher
+        //      class — order must update. The new entry below always has
+        //      `updatedAt = now`, so it is fresh; we only need to detect the
+        //      stale→fresh flip on `existing`.
         const wasFresh =
           !!existing && isExplicitAgentStatusFresh(existing, now, AGENT_STATUS_STALE_AFTER_MS)
         const sortRelevantChange = !existing || existing.state !== payload.state || !wasFresh
@@ -537,8 +537,9 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
     dismissRetainedAgent: (paneKey) => {
       // Why: no agentStatusEpoch / sortEpoch bump here (mirrors retainAgents).
       // Retained rows are a pure read-overlay on top of agentStatusByPaneKey —
-      // they do not contribute to smart-sort scoring (see computeSmartScore*
-      // in smart-sort.ts, which reads agentStatusByPaneKey only) and dashboard
+      // they do not contribute to smart-sort class resolution (see
+      // resolveAttention in smart-attention.ts, which reads
+      // agentStatusByPaneKey only) and dashboard
       // selectors re-render on retainedAgentsByPaneKey identity changes
       // directly. Bumping epochs would force sidebar re-sorts and selector
       // recomputations for a change that cannot affect either result.

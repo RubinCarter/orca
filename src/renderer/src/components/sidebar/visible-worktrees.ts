@@ -180,20 +180,11 @@ export function getVisibleWorktreeIds(): string[] {
       allWorktrees,
       state.tabsByWorktree,
       repoMap,
-      state.prCache,
       state.agentStatusByPaneKey
     ).map((w) => w.id)
   } else {
     const sorted = [...allWorktrees].sort(
-      buildWorktreeComparator(
-        state.sortBy,
-        state.tabsByWorktree,
-        repoMap,
-        state.prCache,
-        Date.now(),
-        null,
-        state.agentStatusByPaneKey
-      )
+      buildWorktreeComparator(state.sortBy, repoMap, Date.now())
     )
     sortedIds = sorted.map((w) => w.id)
   }
