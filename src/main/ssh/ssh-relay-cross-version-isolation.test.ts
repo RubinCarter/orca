@@ -57,8 +57,14 @@ function makeMockConnection(): SshConnection {
     sftp: vi.fn().mockResolvedValue({
       mkdir: vi.fn((_p: string, cb: (err: Error | null) => void) => cb(null)),
       on: vi.fn(),
+      once: vi.fn(),
       createWriteStream: vi.fn().mockReturnValue({
         on: vi.fn((_event: string, cb: () => void) => {
+          if (_event === 'close') {
+            setTimeout(cb, 0)
+          }
+        }),
+        once: vi.fn((_event: string, cb: () => void) => {
           if (_event === 'close') {
             setTimeout(cb, 0)
           }
@@ -98,7 +104,7 @@ describe('cross-version isolation', () => {
       '', // chmod +x node
       '', // npm install
       '', // chmod prebuilds
-      'OK', // node-pty probe (post-install verify)
+      'ORCA-NPTY-PROBE-OK\n', // node-pty probe (post-install verify)
       '', // touch .install-complete (finalizeInstall)
       '', // rm -rf .install-lock
       'DEAD', // launch socket probe

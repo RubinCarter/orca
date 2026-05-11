@@ -85,7 +85,13 @@ describe('validateGitExecArgs', () => {
       [['log', '-o', '/tmp/leak']],
       [['rev-parse', '--exec-path=/evil']],
       [['log', '--work-tree=/other']],
-      [['log', '--git-dir=/other/.git']]
+      [['log', '--git-dir=/other/.git']],
+      // Pin global-deny coverage on for-each-ref so a future allowlist
+      // refactor that bypassed GLOBAL_DENIED_FLAGS for this subcommand fails
+      // loudly. The first round of for-each-ref enablement omitted these.
+      [['for-each-ref', '--git-dir=/other/.git', '--format=%(refname)']],
+      [['for-each-ref', '--output=/tmp/leak', '--format=%(refname)']],
+      [['for-each-ref', '--work-tree=/other']]
     ])('rejects %j', (args) => {
       expectBlocked(args, 'Dangerous git flags are not allowed')
     })

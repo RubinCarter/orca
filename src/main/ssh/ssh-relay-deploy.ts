@@ -235,14 +235,10 @@ async function installNativeDeps(conn: SshConnection, remoteDir: string): Promis
   const escapedBinDir = shellEscape(nodeBinDir)
   const escapedNode = shellEscape(nodePath)
 
-  // Why: we previously ran `npm init -y` to bootstrap package.json, but npm's
-  // name validation rejects content-hashed dir names like
-  // `relay-0.1.0+07994a7870e1` (the `+` is invalid in an npm package name)
-  // and exits 1 — silently, since both `npm init`'s stderr and the failure
-  // landed inside the `2>/dev/null && ...` chain. Sidestep npm init entirely
-  // by writing a minimal hardcoded-name package.json over SFTP. `type:commonjs`
-  // pins the module system so a future Node default flip (or remote ~/.npmrc
-  // with type=module) cannot silently break `require('node-pty')`.
+  // npm init -y rejects '+' in derived package names (content-hashed dir
+  // names like relay-0.1.0+abc123). Bypass it with a fixed minimal
+  // package.json. type:commonjs pins module resolution against Node default
+  // flips or a remote ~/.npmrc setting type=module.
   const pkgJson = `${JSON.stringify({
     name: 'orca-relay',
     version: '1.0.0',
@@ -253,12 +249,11 @@ async function installNativeDeps(conn: SshConnection, remoteDir: string): Promis
   try {
     await new Promise<void>((resolve, reject) => {
       const ws = sftpPkg.createWriteStream(`${remoteDir}/package.json`)
-      // Why: also wire the SFTP session's own error event — a session-level
-      // tear-down between createWriteStream and the stream's close/error
-      // would otherwise leave this promise hanging until enclosing timeouts.
-      sftpPkg.on('error', reject)
-      ws.on('close', resolve)
-      ws.on('error', reject)
+      // .once: a session 'error' arriving after we've already resolved/rejected
+      // would otherwise become an unhandled error and crash main.
+      sftpPkg.once('error', reject)
+      ws.once('close', resolve)
+      ws.once('error', reject)
       ws.end(pkgJson)
     })
   } finally {
@@ -271,12 +266,9 @@ async function installNativeDeps(conn: SshConnection, remoteDir: string): Promis
       `export PATH=${escapedBinDir}:$PATH && cd ${escapedDir} && npm install node-pty 2>&1`
     )
   } catch (err) {
-    // Why: a hard `npm install` failure (no compiler, no network, registry
-    // unreachable, disk full) means node-pty truly is not available on this
-    // host. Surface a loud, greppable warning AND propagate so the caller's
-    // catch leaves the dir without `.install-complete`. Future reconnects
-    // will detect the partial install and retry — the previous behavior
-    // wrote `.install-complete` anyway, stranding users on broken installs.
+    // Don't write .install-complete on hard fail; reconnect retries on a
+    // partial install. Greppable token so user bug reports paste something
+    // searchable.
     const msg = (err as Error).message
     console.warn(
       `[ssh-relay][NPTY-INSTALL-FAIL] npm install node-pty failed at ${remoteDir}: ${msg}`
@@ -284,31 +276,28 @@ async function installNativeDeps(conn: SshConnection, remoteDir: string): Promis
     throw err
   }
 
-  // Why: SFTP uploads preserve file content but not Unix execute bits.
-  // node-pty ships a prebuilt `spawn-helper` binary that must be executable
-  // for posix_spawnp to fork the PTY process.
+  // SFTP doesn't preserve execute bits; node-pty's spawn-helper prebuild
+  // must be +x for posix_spawnp.
   await execCommand(
     conn,
     `find ${shellEscape(`${remoteDir}/node_modules/node-pty/prebuilds`)} -name spawn-helper -exec chmod +x {} + 2>/dev/null; true`
   )
 
-  // Why: defense-in-depth load-test so a silent install regression (npm exits
-  // 0 but node-pty is unloadable: missing prebuild, wrong arch, broken
-  // native binding) surfaces in deploy logs immediately instead of hiding
-  // behind a generic "node-pty not available" at first pty.spawn. We use
-  // `node -e require()` rather than `test -d` so a built-but-unloadable
-  // state is also caught. SSH-channel failures of the probe itself are
-  // intentionally NOT swallowed — they bubble to the caller's catch so we
-  // never confuse "probe could not run" with "node-pty is missing".
-  const probeOutput = (
-    await execCommand(
-      conn,
-      `cd ${escapedDir} && ${escapedNode} -e 'require("node-pty"); console.log("OK")' 2>&1 || echo MISSING`
-    )
-  ).trim()
-  if (!probeOutput.endsWith('OK')) {
+  // node -e require() catches built-but-unloadable installs (wrong arch,
+  // missing prebuild, broken binding) that `test -d` would miss.
+  // Match a unique sentinel rather than endsWith('OK') because Node can
+  // emit deprecation/experimental warnings to stderr after our stdout write,
+  // and 2>&1 would push them past 'OK'. SSH-channel rejections of the probe
+  // itself are intentionally NOT swallowed — they propagate as the deploy's
+  // failure mode rather than being conflated with "node-pty is missing".
+  const PROBE_OK = 'ORCA-NPTY-PROBE-OK'
+  const probeOutput = await execCommand(
+    conn,
+    `cd ${escapedDir} && ${escapedNode} -e 'require("node-pty"); console.log("${PROBE_OK}")' 2>&1 || echo MISSING`
+  )
+  if (!probeOutput.includes(PROBE_OK)) {
     console.warn(
-      `[ssh-relay][NPTY-MISSING] node-pty installed but require() failed at ${remoteDir}: ${probeOutput.slice(-500)}`
+      `[ssh-relay][NPTY-MISSING] node-pty installed but require() failed at ${remoteDir}: ${probeOutput.trim().slice(-500)}`
     )
   }
 }

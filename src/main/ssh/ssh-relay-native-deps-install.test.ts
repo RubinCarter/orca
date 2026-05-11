@@ -58,23 +58,31 @@ vi.mock('./ssh-connection-utils', () => ({
 import { deployAndLaunchRelay } from './ssh-relay-deploy'
 import { execCommand } from './ssh-relay-deploy-helpers'
 import { parseUnameToRelayPlatform } from './relay-protocol'
-import { finalizeInstall, isRelayAlreadyInstalled } from './ssh-relay-versioned-install'
+import {
+  abandonInstall,
+  finalizeInstall,
+  isRelayAlreadyInstalled
+} from './ssh-relay-versioned-install'
 import type { SshConnection } from './ssh-connection'
 
 type SftpWriteCapture = {
   paths: string[]
   contents: Record<string, string>
+  // Number of execCommand calls observed at the moment ws.end() ran for each
+  // captured path. Used to pin "package.json was written before npm install".
+  execCallCountAtWrite: Record<string, number>
 }
 
 function makeMockConnection(capture: SftpWriteCapture): SshConnection {
   const sftpCreate = (): unknown => ({
     mkdir: vi.fn((_p: string, cb: (err: Error | null) => void) => cb(null)),
     on: vi.fn(),
+    once: vi.fn(),
     createWriteStream: vi.fn().mockImplementation((path: string) => {
       capture.paths.push(path)
       let buf = ''
       let closeCb: (() => void) | undefined
-      return {
+      const stub = {
         on: vi.fn((event: string, cb: () => void) => {
           if (event === 'close') {
             closeCb = cb
@@ -85,11 +93,15 @@ function makeMockConnection(capture: SftpWriteCapture): SshConnection {
             buf += data
           }
           capture.contents[path] = buf
+          capture.execCallCountAtWrite[path] = vi.mocked(execCommand).mock.calls.length
           if (closeCb) {
             setTimeout(closeCb, 0)
           }
         })
       }
+      // Why: production code uses ws.once('close', ...). The 'once' wrapper
+      // delegates to the same handler-table as 'on' for the test mock.
+      return Object.assign(stub, { once: stub.on })
     }),
     end: vi.fn()
   })
@@ -123,9 +135,9 @@ function makeExecResponses(opts: {
     opts.npmInstall === 'ok' ? '' : opts.npmInstall,
     '', // chmod prebuilds
     opts.probe === 'ok'
-      ? 'OK'
+      ? 'ORCA-NPTY-PROBE-OK\n'
       : opts.probe === 'missing'
-        ? 'require error: Cannot find module\nMISSING'
+        ? 'require error: Cannot find module\nMISSING\n'
         : opts.probe,
     'DEAD',
     'READY'
@@ -134,21 +146,29 @@ function makeExecResponses(opts: {
 
 describe('installNativeDeps (via deployAndLaunchRelay)', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
-  const sftpCapture: SftpWriteCapture = { paths: [], contents: {} }
+  const sftpCapture: SftpWriteCapture = {
+    paths: [],
+    contents: {},
+    execCallCountAtWrite: {}
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()
-    // Why: tests that throw mid-deploy leave unconsumed `mockResolvedValueOnce`
-    // entries in the execCommand queue, which then leak into the next test
-    // and cause it to consume `Linux x86_64` from the wrong slot. Reset to
-    // wipe the queue between tests.
+    // Tests that throw mid-deploy leave unconsumed `mockResolvedValueOnce`
+    // entries queued. Without resetting, the next test's first await consumes
+    // a leaked response. clearAllMocks doesn't drop the queue (it only clears
+    // .mock.calls), so we explicitly mockReset.
     vi.mocked(execCommand).mockReset()
     sftpCapture.paths.length = 0
     for (const k of Object.keys(sftpCapture.contents)) {
       delete sftpCapture.contents[k]
     }
-    // Why: vi.clearAllMocks wipes the mockReturnValue set in the factory,
-    // so re-prime the mocks each test.
+    for (const k of Object.keys(sftpCapture.execCallCountAtWrite)) {
+      delete sftpCapture.execCallCountAtWrite[k]
+    }
+    // Re-prime: factory mockReturnValue / mockResolvedValue survive
+    // clearAllMocks, so this is just defense-in-depth in case a test does its
+    // own resetAllMocks.
     vi.mocked(parseUnameToRelayPlatform).mockReturnValue('linux-x64')
     vi.mocked(isRelayAlreadyInstalled).mockResolvedValue(false)
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -191,10 +211,12 @@ describe('installNativeDeps (via deployAndLaunchRelay)', () => {
     const execCalls = vi.mocked(execCommand).mock.calls.map(([, c]) => c)
     const npmInstallIdx = execCalls.findIndex((c) => c.includes('npm install node-pty'))
     expect(npmInstallIdx).toBeGreaterThanOrEqual(0)
-    // The SFTP write resolves before deploy continues into npm install,
-    // so by the time `npm install` was queued, package.json must already be
-    // present in our capture.
-    expect(sftpCapture.contents[pkgPath as string]).toBeTruthy()
+    // Pin actual ordering: number of execCommand calls observed at the moment
+    // ws.end() ran for package.json must be < the index of `npm install`.
+    // Catches a future refactor that fires SFTP-write and npm install via
+    // Promise.all (where the final-state assertions above would still pass).
+    const writeObservedAt = sftpCapture.execCallCountAtWrite[pkgPath as string]
+    expect(writeObservedAt).toBeLessThanOrEqual(npmInstallIdx)
   })
 
   it('propagates a hard `npm install` failure so the deploy aborts before finalizeInstall', async () => {
@@ -243,13 +265,22 @@ describe('installNativeDeps (via deployAndLaunchRelay)', () => {
 
     await expect(deployAndLaunchRelay(conn)).rejects.toThrow(/SSH channel/)
 
-    // We must NOT have logged NPTY-MISSING — that would conflate "probe
-    // could not run" with "node-pty is missing", which is exactly the
-    // class of bug the original outage came from.
+    // Pin that the rejection actually came from the PROBE call (not some
+    // earlier/later exec). Drift in slot ordering would otherwise let this
+    // test pass while exercising a different failure path.
+    const execCalls = vi.mocked(execCommand).mock.calls.map(([, c]) => c)
+    const probeCallIdx = execCalls.findIndex((c) => c.includes('require("node-pty")'))
+    expect(probeCallIdx, 'probe must have been invoked').toBeGreaterThanOrEqual(0)
+
     const warnMessages = warnSpy.mock.calls.map((args) => String(args[0] ?? ''))
+    // Channel failure must NOT be conflated with "node-pty missing" or with
+    // "npm install failed".
     expect(warnMessages.some((m) => m.includes('[ssh-relay][NPTY-MISSING]'))).toBe(false)
+    expect(warnMessages.some((m) => m.includes('[ssh-relay][NPTY-INSTALL-FAIL]'))).toBe(false)
 
     expect(vi.mocked(finalizeInstall)).not.toHaveBeenCalled()
+    // Lock must be released so a future reconnect can retry.
+    expect(vi.mocked(abandonInstall)).toHaveBeenCalledTimes(1)
   })
 
   it('uses `node -e require()` rather than `test -d` so unloadable installs are caught', async () => {
@@ -282,6 +313,9 @@ describe('installNativeDeps (via deployAndLaunchRelay)', () => {
     sftpCapture.paths.length = 0
     for (const k of Object.keys(sftpCapture.contents)) {
       delete sftpCapture.contents[k]
+    }
+    for (const k of Object.keys(sftpCapture.execCallCountAtWrite)) {
+      delete sftpCapture.execCallCountAtWrite[k]
     }
     vi.mocked(execCommand).mockReset()
 
