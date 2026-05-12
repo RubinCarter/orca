@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils'
 import { ACTIVITY_TERMINAL_PORTAL_TARGET_ID } from './activity-terminal-portal'
 import type { Repo, TerminalTab, Worktree } from '../../../../shared/types'
 import type {
+  AgentStateHistoryEntry,
   AgentStatusEntry,
   AgentStatusState,
   AgentType
@@ -44,10 +45,11 @@ import type {
 
 type ThreadReadFilter = 'all' | 'unread'
 type ActivityDensity = 'compact' | 'comfortable'
+type ActivityEventState = Extract<AgentStatusState, 'done' | 'blocked' | 'waiting'>
 
 type ActivityEvent = {
   id: string
-  state: Extract<AgentStatusState, 'done' | 'blocked' | 'waiting'>
+  state: ActivityEventState
   timestamp: number
   worktree: Worktree
   repo: Repo | null
@@ -155,7 +157,97 @@ function paneTitleForEvent(event: ActivityEvent): string {
   return defaultTitle || liveTitle || 'Terminal'
 }
 
-function buildActivityEvents(args: {
+function isActivityEventState(state: AgentStatusState): state is ActivityEventState {
+  return state === 'done' || state === 'blocked' || state === 'waiting'
+}
+
+function historyEntrySnapshot(
+  entry: AgentStatusEntry,
+  history: AgentStateHistoryEntry
+): AgentStatusEntry {
+  return {
+    ...entry,
+    state: history.state,
+    prompt: history.prompt,
+    updatedAt: history.startedAt,
+    stateStartedAt: history.startedAt,
+    stateHistory: [],
+    toolName: undefined,
+    toolInput: undefined,
+    lastAssistantMessage: undefined,
+    interrupted: history.interrupted
+  }
+}
+
+function appendActivityEvent(args: {
+  events: ActivityEvent[]
+  seenEventIds: Set<string>
+  state: ActivityEventState
+  timestamp: number
+  worktree: Worktree
+  repo: Repo | null
+  entry: AgentStatusEntry
+  tab: TerminalTab
+  agentType: AgentType
+  agentAlive: boolean
+  acknowledgedAt: number
+}): void {
+  const id = `agent:${args.entry.paneKey}:${args.state}:${args.timestamp}`
+  if (args.seenEventIds.has(id)) {
+    return
+  }
+  args.seenEventIds.add(id)
+  args.events.push({
+    id,
+    state: args.state,
+    timestamp: args.timestamp,
+    worktree: args.worktree,
+    repo: args.repo,
+    entry: args.entry,
+    tab: args.tab,
+    agentType: args.agentType,
+    agentAlive: args.agentAlive,
+    unread: args.acknowledgedAt < args.timestamp
+  })
+}
+
+function appendActivityEventsForEntry(args: {
+  events: ActivityEvent[]
+  seenEventIds: Set<string>
+  entry: AgentStatusEntry
+  worktree: Worktree
+  repo: Repo | null
+  tab: TerminalTab
+  agentType: AgentType
+  agentAlive: boolean
+  acknowledgedAt: number
+}): void {
+  // Why: Activity is an append-only history surface. When a user continues in
+  // the same terminal pane, the live entry moves done→working; stateHistory is
+  // the only place the previous done/blocking event still exists.
+  for (const history of args.entry.stateHistory) {
+    if (!isActivityEventState(history.state)) {
+      continue
+    }
+    appendActivityEvent({
+      ...args,
+      state: history.state,
+      timestamp: history.startedAt,
+      entry: historyEntrySnapshot(args.entry, history)
+    })
+  }
+
+  if (!isActivityEventState(args.entry.state)) {
+    return
+  }
+  appendActivityEvent({
+    ...args,
+    state: args.entry.state,
+    timestamp: args.entry.stateStartedAt
+  })
+}
+
+export function buildActivityEvents(args: {
   agentStatusByPaneKey: Record<string, AgentStatusEntry>
   retainedAgentsByPaneKey: Record<string, RetainedAgentEntry>
   tabsByWorktree: Record<string, TerminalTab[]>
@@ -164,6 +256,7 @@ function buildActivityEvents(args: {
   acknowledgedAgentsByPaneKey: Record<string, number>
 }): ActivityEvent[] {
   const events: ActivityEvent[] = []
+  const seenEventIds = new Set<string>()
   const tabContext = new Map<string, { worktree: Worktree; tab: TerminalTab }>()
 
   for (const worktree of args.worktreeMap.values()) {
@@ -174,9 +267,6 @@ function buildActivityEvents(args: {
   }
 
   for (const [paneKey, entry] of Object.entries(args.agentStatusByPaneKey)) {
-    if (entry.state !== 'done' && entry.state !== 'blocked' && entry.state !== 'waiting') {
-      continue
-    }
     const separatorIndex = paneKey.indexOf(':')
     if (separatorIndex <= 0) {
       continue
@@ -187,37 +277,35 @@ function buildActivityEvents(args: {
       continue
     }
     const ackAt = args.acknowledgedAgentsByPaneKey[paneKey] ?? 0
-    events.push({
-      id: `agent-live:${paneKey}:${entry.stateStartedAt}`,
-      state: entry.state,
-      timestamp: entry.stateStartedAt,
+    appendActivityEventsForEntry({
+      events,
+      seenEventIds,
       worktree: context.worktree,
       repo: args.repoMap.get(context.worktree.repoId) ?? null,
       entry,
       tab: context.tab,
       agentType: entry.agentType ?? 'unknown',
       agentAlive: true,
-      unread: ackAt < entry.stateStartedAt
+      acknowledgedAt: ackAt
     })
   }
 
   for (const [paneKey, retained] of Object.entries(args.retainedAgentsByPaneKey)) {
     const worktree = args.worktreeMap.get(retained.worktreeId)
-    if (!worktree || retained.entry.state !== 'done') {
+    if (!worktree) {
       continue
     }
     const ackAt = args.acknowledgedAgentsByPaneKey[paneKey] ?? 0
-    events.push({
-      id: `agent-retained:${paneKey}:${retained.entry.stateStartedAt}`,
-      state: 'done',
-      timestamp: retained.entry.stateStartedAt,
+    appendActivityEventsForEntry({
+      events,
+      seenEventIds,
       worktree,
       repo: args.repoMap.get(worktree.repoId) ?? null,
       entry: retained.entry,
       tab: retained.tab,
       agentType: retained.agentType,
       agentAlive: false,
-      unread: ackAt < retained.entry.stateStartedAt
+      acknowledgedAt: ackAt
     })
   }
 
