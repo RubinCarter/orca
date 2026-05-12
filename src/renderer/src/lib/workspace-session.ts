@@ -31,6 +31,7 @@ export type WorkspaceSessionSnapshot = Pick<
   | 'repos'
   | 'worktreesByRepo'
   | 'lastKnownRelayPtyIdByTabId'
+  | 'lastVisitedAtByWorktreeId'
 >
 
 // Why: the App-level Zustand subscriber that debounces session writes uses
@@ -60,7 +61,8 @@ export const SESSION_RELEVANT_FIELDS = [
   'sshConnectionStates',
   'repos',
   'worktreesByRepo',
-  'lastKnownRelayPtyIdByTabId'
+  'lastKnownRelayPtyIdByTabId',
+  'lastVisitedAtByWorktreeId'
 ] as const satisfies readonly (keyof WorkspaceSessionSnapshot)[]
 
 type _MissingSessionField = Exclude<
@@ -253,6 +255,15 @@ export function buildWorkspaceSessionPayload(
     activeGroupIdByWorktree: snapshot.activeGroupIdByWorktree,
     activeConnectionIdsAtShutdown: connectedTargetIds.length > 0 ? connectedTargetIds : undefined,
     remoteSessionIdsByTabId:
-      Object.keys(remoteSessionIdsByTabId).length > 0 ? remoteSessionIdsByTabId : undefined
+      Object.keys(remoteSessionIdsByTabId).length > 0 ? remoteSessionIdsByTabId : undefined,
+    // Why: per-worktree focus-recency for Cmd+J's empty-query ordering.
+    // Omit when empty so sessions written by builds that never stamped
+    // anything don't bloat the payload. See
+    // docs/cmd-j-empty-query-ordering.md.
+    lastVisitedAtByWorktreeId:
+      snapshot.lastVisitedAtByWorktreeId &&
+      Object.keys(snapshot.lastVisitedAtByWorktreeId).length > 0
+        ? snapshot.lastVisitedAtByWorktreeId
+        : undefined
   }
 }

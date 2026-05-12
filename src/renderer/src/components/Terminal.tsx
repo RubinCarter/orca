@@ -39,9 +39,14 @@ import {
   collectBrowserWebviewIds,
   destroyWorkspaceWebviews
 } from '../store/slices/browser-webview-cleanup'
-import { handleSwitchTab, handleSwitchTerminalTab } from '../hooks/ipc-tab-switch'
+import {
+  handleSwitchTab,
+  handleSwitchTabAcrossAllTypes,
+  handleSwitchTerminalTab
+} from '../hooks/ipc-tab-switch'
 import TabGroupSplitLayout from './tab-group/TabGroupSplitLayout'
 import { shouldAutoCreateInitialTerminal } from './terminal/initial-terminal'
+import { shouldRepairActiveTerminalTab } from './terminal/active-terminal-repair'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
 import {
   getEffectiveLayoutForWorktree as getEffectiveLayout,
@@ -462,23 +467,19 @@ function Terminal(): React.JSX.Element | null {
   }, [queueEditorCloseRequests])
 
   useEffect(() => {
-    if (tabs.length === 0) {
-      return
-    }
-    if (activeTabId && tabs.some((tab) => tab.id === activeTabId)) {
+    if (!shouldRepairActiveTerminalTab({ activeTabType, activeTabId, tabs })) {
       return
     }
     // Why: mutating Zustand during render trips React's "Cannot update a
-    // component while rendering a different component" warning. Keep the
-    // legacy active-tab repair, but run it as an effect after the render that
-    // observed the stale activeTabId.
+    // component while rendering a different component" warning. Keep the repair
+    // terminal-only so inactive CLI-created tabs cannot steal editor/browser focus.
     setActiveTab(tabs[0].id)
     // Why: `tabs` is intentionally the dependency here because the repair must
     // react to tab-order/content changes, not just scalar IDs. The list comes
     // from Zustand selectors and is small in practice, so this explicit repair
     // effect is preferred over duplicating reconciliation state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTabId, setActiveTab, tabs])
+  }, [activeTabId, activeTabType, setActiveTab, tabs])
 
   // Track which worktrees have been activated during this app session.
   // Only mount TerminalPanes for visited worktrees to prevent mass PTY
@@ -877,18 +878,13 @@ function Terminal(): React.JSX.Element | null {
     const isMac = navigator.userAgent.includes('Mac')
     const onKeyDown = (e: KeyboardEvent): void => {
       const mod = isMac ? e.metaKey : e.ctrlKey
-      // Why: when the browser workspace is the active surface, standard
-      // browser tab creation should stay inside that workspace. Reusing the
-      // same shortcut keeps Orca's embedded browser aligned with user
-      // expectations instead of unexpectedly mutating the outer tab strip.
+      // Why: Cmd/Ctrl+T always opens a new terminal, regardless of which
+      // surface is active. Browser-tab creation has its own shortcut
+      // (Cmd/Ctrl+Shift+B) so users have a predictable way to spawn a
+      // terminal from anywhere in the central pane.
       if (mod && e.key === 't' && !e.shiftKey && !e.repeat) {
         e.preventDefault()
-        const state = useAppStore.getState()
-        if (state.activeTabType === 'browser') {
-          handleNewBrowserTab()
-        } else {
-          handleNewTab()
-        }
+        handleNewTab()
         return
       }
 
@@ -957,16 +953,21 @@ function Terminal(): React.JSX.Element | null {
         return
       }
 
-      // Cmd/Ctrl+Shift+] and Cmd/Ctrl+Shift+[ - switch tabs
+      // Cmd/Ctrl+Shift+] and Cmd/Ctrl+Shift+[ - switch tabs (scoped to the
+      // active tab type). Cmd/Ctrl+Alt+] and Cmd/Ctrl+Alt+[ cycles across
+      // every tab type as an escape hatch from the type-scoped default, and
+      // mirrors Safari/Chrome's tab-switch chord on macOS.
       // Why: use e.code instead of e.key because on macOS, Shift+[ reports '{'
-      // as the key value (the shifted character), not '['.
+      // as the key value (the shifted character), not '['. Option+[ also
+      // composes to dead-key / punctuation on many layouts, so matching on
+      // event.key would miss the chord entirely on non-US layouts.
       if (
         mod &&
-        e.shiftKey &&
         (e.code === 'BracketRight' || e.code === 'BracketLeft') &&
-        !e.repeat
+        !e.repeat &&
+        (e.shiftKey || e.altKey)
       ) {
-        // Why: delegate to the shared handleSwitchTab used by the IPC shortcut
+        // Why: delegate to the shared handler used by the IPC shortcut path
         // so both code paths share one implementation. Always consume the
         // chord — even when the switch is a no-op (e.g. single tab), we own
         // this key combo and shouldn't let it reach xterm or the browser
@@ -974,7 +975,11 @@ function Terminal(): React.JSX.Element | null {
         e.preventDefault()
         e.stopPropagation()
         e.stopImmediatePropagation()
-        handleSwitchTab(e.code === 'BracketRight' ? 1 : -1)
+        if (e.altKey) {
+          handleSwitchTabAcrossAllTypes(e.code === 'BracketRight' ? 1 : -1)
+        } else {
+          handleSwitchTab(e.code === 'BracketRight' ? 1 : -1)
+        }
       }
 
       // Ctrl+PageDown/PageUp - switch terminal tabs only

@@ -4,7 +4,16 @@ import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { Bell, GitMerge, LoaderCircle, CircleCheck, CircleX, Server, ServerOff } from 'lucide-react'
+import {
+  AlertTriangle,
+  Bell,
+  GitMerge,
+  LoaderCircle,
+  CircleCheck,
+  CircleX,
+  Server,
+  ServerOff
+} from 'lucide-react'
 import StatusIndicator from './StatusIndicator'
 import CacheTimer from './CacheTimer'
 import WorktreeContextMenu from './WorktreeContextMenu'
@@ -13,8 +22,8 @@ import WorktreeCardAgents from './WorktreeCardAgents'
 import { cn } from '@/lib/utils'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import {
-  getWorktreeStatus,
   getWorktreeStatusLabel,
+  resolveWorktreeStatus,
   type WorktreeStatus
 } from '@/lib/worktree-status'
 import { isExplicitAgentStatusFresh } from '@/lib/agent-status'
@@ -30,14 +39,16 @@ import {
   FilledBellIcon
 } from './WorktreeCardHelpers'
 import { IssueSection, PrSection, CommentSection } from './WorktreeCardMeta'
+import {
+  selectLivePtyIdsForWorktree,
+  selectRuntimePaneTitlesForWorktree
+} from './worktree-card-status-inputs'
 
 type WorktreeCardProps = {
   worktree: Worktree
   repo: Repo | undefined
   isActive: boolean
   hideRepoBadge?: boolean
-  /** 1-9 hint badge shown when the user holds the platform modifier key. */
-  hintNumber?: number
 }
 
 function formatSparseDirectoryPreview(directories: string[]): string {
@@ -49,17 +60,13 @@ const WorktreeCard = React.memo(function WorktreeCard({
   worktree,
   repo,
   isActive,
-  hideRepoBadge,
-  hintNumber
+  hideRepoBadge
 }: WorktreeCardProps) {
   const openModal = useAppStore((s) => s.openModal)
   const updateWorktreeMeta = useAppStore((s) => s.updateWorktreeMeta)
   const fetchPRForBranch = useAppStore((s) => s.fetchPRForBranch)
   const fetchIssue = useAppStore((s) => s.fetchIssue)
   const cardProps = useAppStore((s) => s.worktreeCardProperties)
-  const dashboardExperimentEnabled = useAppStore(
-    (s) => s.settings?.experimentalAgentDashboard === true
-  )
   const handleEditIssue = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -90,6 +97,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
 
   const deleteState = useAppStore((s) => s.deleteStateByWorktreeId[worktree.id])
   const conflictOperation = useAppStore((s) => s.gitConflictOperationByWorktree[worktree.id])
+  const remoteBranchConflict = useAppStore((s) => s.remoteBranchConflictByWorktreeId[worktree.id])
 
   // SSH disconnected state
   const sshStatus = useAppStore((s) => {
@@ -119,23 +127,21 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // ── GRANULAR selectors: only subscribe to THIS worktree's data ──
   const tabs = useAppStore((s) => s.tabsByWorktree[worktree.id] ?? EMPTY_TABS)
   const browserTabs = useAppStore((s) => s.browserTabsByWorktree[worktree.id] ?? EMPTY_BROWSER_TABS)
-  // Why: split-pane tabs expose per-pane titles that the aggregate
-  // `tab.title` does not preserve (onActivePaneChange overwrites it with the
-  // focused pane's title). getWorktreeStatus needs those pane titles to keep
-  // the sidebar spinner reflecting *any* working pane, not just the focused
-  // one. Narrow the subscription to this worktree's tabs via useShallow so
-  // unrelated pane-title updates do not re-render every sidebar card.
+  // Why: keep these as separate shallow selectors. Combining them into one
+  // returned object nests freshly-created maps under fresh keys, so Zustand's
+  // shallow memoization sees every unrelated store write as a change and
+  // re-renders every mounted card.
+  // tab.ptyId is the wake-hint sessionId preserved across sleep, not a
+  // liveness signal; sleep-then-card-render would lie the dot green if we
+  // read tab.ptyId; ptyIdsByTabId is the source of truth.
+  // tab.title is the focused-pane title (onActivePaneChange overwrites it),
+  // so the per-pane title map is needed to keep the sidebar spinner
+  // reflecting *any* working pane, not just the focused one.
   const runtimePaneTitlesForWorktree = useAppStore(
-    useShallow((s) => {
-      const out: Record<string, Record<number, string>> = {}
-      for (const tab of s.tabsByWorktree[worktree.id] ?? []) {
-        const paneTitles = s.runtimePaneTitlesByTabId[tab.id]
-        if (paneTitles) {
-          out[tab.id] = paneTitles
-        }
-      }
-      return out
-    })
+    useShallow((s) => selectRuntimePaneTitlesForWorktree(s, worktree.id))
+  )
+  const ptyIdsForWorktree = useAppStore(
+    useShallow((s) => selectLivePtyIdsForWorktree(s, worktree.id))
   )
 
   const branch = branchDisplayName(worktree.branch)
@@ -153,6 +159,17 @@ const WorktreeCard = React.memo(function WorktreeCard({
       ? issueEntry.data
       : undefined
     : null
+  const issueDisplay =
+    issue ??
+    (worktree.linkedIssue
+      ? {
+          number: worktree.linkedIssue,
+          // Why: linked metadata is persisted immediately, but GitHub details
+          // arrive asynchronously. Show the durable link number instead of
+          // making the worktree look unlinked while the cache warms.
+          title: issue === null ? 'Issue details unavailable' : 'Loading issue...'
+        }
+      : null)
 
   const isDeleting = deleteState?.isDeleting ?? false
 
@@ -230,21 +247,33 @@ const WorktreeCard = React.memo(function WorktreeCard({
     })
   )
 
-  const status: WorktreeStatus = useMemo(() => {
-    if (hasPermission) {
-      return 'permission'
-    }
-    // Compute the heuristic once so we can let 'working' beat done without
-    // letting quieter heuristic states ('active'/'inactive') erase a done.
-    const heuristic = getWorktreeStatus(tabs, browserTabs, runtimePaneTitlesForWorktree)
-    if (heuristic === 'working') {
-      return 'working'
-    }
-    if (hasLiveDone || hasRetainedDone) {
-      return 'done'
-    }
-    return heuristic
-  }, [tabs, browserTabs, runtimePaneTitlesForWorktree, hasPermission, hasLiveDone, hasRetainedDone])
+  // Why: resolveWorktreeStatus enforces the runtime-liveness precondition —
+  // when no tab in this worktree has a live PTY (and no browser tab exists)
+  // it short-circuits to 'inactive' before consulting hook-reported state or
+  // retained-done snapshots. That keeps the dot honest across sleep, crash,
+  // and slept-with-retained-done while preserving the row data used by the
+  // inline agents list (retained 'done' rows still render inside the card).
+  const status: WorktreeStatus = useMemo(
+    () =>
+      resolveWorktreeStatus({
+        tabs,
+        browserTabs,
+        ptyIdsByTabId: ptyIdsForWorktree,
+        runtimePaneTitlesByTabId: runtimePaneTitlesForWorktree,
+        hasPermission,
+        hasLiveDone,
+        hasRetainedDone
+      }),
+    [
+      tabs,
+      browserTabs,
+      ptyIdsForWorktree,
+      runtimePaneTitlesForWorktree,
+      hasPermission,
+      hasLiveDone,
+      hasRetainedDone
+    ]
+  )
 
   const showPR = cardProps.includes('pr')
   const showCI = cardProps.includes('ci')
@@ -255,9 +284,22 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // spend rate limit budget on data the user cannot see.
   useEffect(() => {
     if (repo && !isFolder && !worktree.isBare && prCacheKey && (showPR || showCI)) {
-      fetchPRForBranch(repo.path, branch)
+      // Why: pass linkedPR so worktrees created from a PR (whose new local
+      // branch differs from the PR's head ref) still resolve their PR via
+      // a number-based fallback in the main process.
+      fetchPRForBranch(repo.path, branch, { linkedPRNumber: worktree.linkedPR ?? null })
     }
-  }, [repo, isFolder, worktree.isBare, fetchPRForBranch, branch, prCacheKey, showPR, showCI])
+  }, [
+    repo,
+    isFolder,
+    worktree.isBare,
+    worktree.linkedPR,
+    fetchPRForBranch,
+    branch,
+    prCacheKey,
+    showPR,
+    showCI
+  ])
 
   // Same rationale for issues: once that section is hidden, polling only burns
   // GitHub calls and keeps stale-but-invisible data warm for no user benefit.
@@ -336,7 +378,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const cardBody = (
     <div
       className={cn(
-        'group relative flex items-start gap-2.5 px-2 py-2 rounded-lg cursor-pointer transition-all duration-200 outline-none select-none ml-1',
+        'group relative flex items-start gap-1.5 px-2 py-2 rounded-lg cursor-pointer transition-all duration-200 outline-none select-none ml-1',
         isActive
           ? 'bg-black/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.04)] border border-black/[0.015] dark:bg-white/[0.10] dark:border-border/40 dark:shadow-[0_1px_2px_rgba(0,0,0,0.03)]'
           : 'border border-transparent hover:bg-accent/40',
@@ -353,22 +395,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
             <LoaderCircle className="size-3.5 animate-spin text-muted-foreground" />
             Deleting…
           </div>
-        </div>
-      )}
-
-      {/* Cmd+N hint badge — decorative only, shown when the user holds the
-            platform modifier key for discoverability of Cmd+1–9 shortcuts.
-            Why centered on the left edge: placing it at the top clipped the
-            glyph against the card bounds on some sizes, while mid-card keeps
-            the badge fully visible without competing with the title row. */}
-      {hintNumber != null && (
-        <div
-          aria-hidden="true"
-          className="absolute -left-1 top-1/2 z-20 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded bg-zinc-500/85 text-white shadow-sm animate-in fade-in zoom-in-75 duration-150"
-        >
-          <span className="relative block pt-px text-[9px] leading-none font-medium [font-variant-numeric:tabular-nums]">
-            {hintNumber}
-          </span>
         </div>
       )}
 
@@ -563,12 +589,12 @@ const WorktreeCard = React.memo(function WorktreeCard({
         {/* Meta section: Issue / PR Links / Comment
              Layout coupling: spacing here is used to derive size estimates in
              WorktreeList's estimateSize. Update that function if changing spacing. */}
-        {((cardProps.includes('issue') && issue) ||
+        {((cardProps.includes('issue') && issueDisplay) ||
           (cardProps.includes('pr') && pr) ||
           (cardProps.includes('comment') && worktree.comment)) && (
           <div className="flex flex-col gap-[3px] mt-0.5">
-            {cardProps.includes('issue') && issue && (
-              <IssueSection issue={issue} onClick={handleEditIssue} />
+            {cardProps.includes('issue') && issueDisplay && (
+              <IssueSection issue={issueDisplay} onClick={handleEditIssue} />
             )}
             {cardProps.includes('pr') && pr && <PrSection pr={pr} onClick={handleEditIssue} />}
             {cardProps.includes('comment') && worktree.comment && (
@@ -577,15 +603,21 @@ const WorktreeCard = React.memo(function WorktreeCard({
           </div>
         )}
 
-        {/* Why: inline agent list. Gated on the experimental setting so
-             managed hook data is only surfaced where the cockpit is enabled,
-             and on the 'inline-agents' card property so users can hide it.
-             Layout coupling: this block grows the card height dynamically —
-             WorktreeList uses measureElement on each row, so the virtualizer
-             re-measures naturally when agents appear/disappear. */}
-        {dashboardExperimentEnabled && cardProps.includes('inline-agents') && (
-          <WorktreeCardAgents worktreeId={worktree.id} />
+        {remoteBranchConflict && (
+          <div className="mt-0.5 flex items-start gap-1.5 rounded border border-amber-500/25 bg-amber-500/5 px-1.5 py-1 text-[10.5px] leading-snug text-amber-700 dark:text-amber-300">
+            <AlertTriangle className="mt-[1px] size-3 shrink-0" />
+            <span className="min-w-0 flex-1">
+              {remoteBranchConflict.remote}/{remoteBranchConflict.branchName} already exists.
+            </span>
+          </div>
         )}
+
+        {/* Why: inline agent list. Gated on the 'inline-agents' card
+             property so users can hide it. Layout coupling: this block
+             grows the card height dynamically — WorktreeList uses
+             measureElement on each row, so the virtualizer re-measures
+             naturally when agents appear/disappear. */}
+        {cardProps.includes('inline-agents') && <WorktreeCardAgents worktreeId={worktree.id} />}
       </div>
     </div>
   )

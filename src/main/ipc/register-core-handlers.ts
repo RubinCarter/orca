@@ -17,7 +17,9 @@ import { registerMemoryHandlers } from './memory'
 import { registerRateLimitHandlers } from './rate-limits'
 import { registerRuntimeHandlers } from './runtime'
 import { registerNotificationHandlers } from './notifications'
+import { registerOnboardingHandlers } from './onboarding'
 import { registerDeveloperPermissionHandlers } from './developer-permissions'
+import { registerComputerUsePermissionHandlers } from './computer-use-permissions'
 import { setTrustedBrowserRendererWebContentsId, setAgentBrowserBridgeRef } from './browser'
 import { registerSessionHandlers } from './session'
 import { registerSettingsHandlers } from './settings'
@@ -25,10 +27,11 @@ import { registerTelemetryHandlers } from './telemetry'
 import { registerBrowserHandlers } from './browser'
 import { browserSessionRegistry } from '../browser/browser-session-registry'
 import { registerShellHandlers } from './shell'
-import { registerSidekickHandlers } from './sidekick'
+import { registerPetHandlers } from './pet'
 import { registerUIHandlers } from './ui'
 import { registerCodexAccountHandlers } from './codex-accounts'
 import { registerAgentHookHandlers } from './agent-hooks'
+import { registerAgentTrustHandlers } from './agent-trust'
 import { registerClaudeAccountHandlers } from './claude-accounts'
 import { warmSystemFontFamilies } from '../system-fonts'
 import {
@@ -72,6 +75,7 @@ export function registerCoreHandlers(
   registerCodexUsageHandlers(codexUsage)
   registerCodexAccountHandlers(codexAccounts)
   registerAgentHookHandlers()
+  registerAgentTrustHandlers()
   registerClaudeAccountHandlers(claudeAccounts)
   registerRateLimitHandlers(rateLimits)
   registerGitHubHandlers(store, stats)
@@ -80,10 +84,12 @@ export function registerCoreHandlers(
   registerExportHandlers()
   registerStatsHandlers(stats)
   registerMemoryHandlers(store)
-  registerNotificationHandlers(store)
+  registerNotificationHandlers(store, runtime)
+  registerOnboardingHandlers(store)
   registerDeveloperPermissionHandlers()
+  registerComputerUsePermissionHandlers()
   registerSettingsHandlers(store)
-  registerTelemetryHandlers()
+  registerTelemetryHandlers(store)
   registerBrowserHandlers()
   // Why: applyPendingCookieImport MUST run before restorePersistedUserAgent
   // because the latter calls session.fromPartition() which initializes
@@ -92,7 +98,7 @@ export function registerCoreHandlers(
   browserSessionRegistry.applyPendingCookieImport()
   browserSessionRegistry.restorePersistedUserAgent()
   registerShellHandlers()
-  registerSidekickHandlers()
+  registerPetHandlers()
   registerSessionHandlers(store)
   registerUIHandlers(store)
   registerFilesystemHandlers(store)

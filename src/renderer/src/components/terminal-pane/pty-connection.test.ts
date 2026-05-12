@@ -4,6 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { POST_REPLAY_FOCUS_REPORTING_RESET, POST_REPLAY_MODE_RESET } from './layout-serialization'
 import type * as UseNotificationDispatchModule from './use-notification-dispatch'
 
+// Why: the fresh-spawn and reattach paths now chain pre-signal → spawn →
+// register/settle through multiple microtasks. Tests that previously flushed
+// once with `await Promise.resolve()` must drain a few extra ticks before
+// asserting against IPC mocks. See docs/mobile-prefer-renderer-scrollback.md.
+async function flushAsyncTicks(count = 6): Promise<void> {
+  for (let i = 0; i < count; i++) {
+    await Promise.resolve()
+  }
+}
+
 const toastInfo = vi.fn()
 
 type StoreState = {
@@ -139,8 +149,10 @@ function createPane(paneId: number) {
       rows: 40,
       write: vi.fn(),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
-      onResize: vi.fn(() => ({ dispose: vi.fn() }))
+      onResize: vi.fn(() => ({ dispose: vi.fn() })),
+      onTitleChange: vi.fn(() => ({ dispose: vi.fn() }))
     },
+    container: { dataset: {} },
     fitAddon: {
       fit: vi.fn()
     }
@@ -150,6 +162,7 @@ function createPane(paneId: number) {
 function createManager(paneCount = 1) {
   return {
     setPaneGpuRendering: vi.fn(),
+    markPaneHasComplexScriptOutput: vi.fn(),
     getPanes: vi.fn(() => Array.from({ length: paneCount }, (_, index) => ({ id: index + 1 }))),
     closePane: vi.fn(),
     getActivePane: vi.fn<() => { id: number } | null>(() => null)
@@ -165,7 +178,6 @@ function createDeps(overrides: Record<string, unknown> = {}) {
     restoredLeafId: null,
     restoredPtyIdByLeafId: {},
     paneTransportsRef: { current: new Map() },
-    pendingWritesRef: { current: new Map() },
     replayingPanesRef: { current: new Map() },
     isActiveRef: { current: true },
     isVisibleRef: { current: true },
@@ -236,10 +248,15 @@ describe('connectPanePty', () => {
         },
         pty: {
           signal: vi.fn(),
-          ackColdRestore: vi.fn()
+          ackColdRestore: vi.fn(),
+          onSerializeBufferRequest: vi.fn(() => vi.fn()),
+          declarePendingPaneSerializer: vi.fn().mockResolvedValue(1),
+          settlePaneSerializer: vi.fn().mockResolvedValue(undefined),
+          clearPendingPaneSerializer: vi.fn().mockResolvedValue(undefined)
         },
         notifications: {
-          dispatch: vi.fn()
+          dispatch: vi.fn().mockResolvedValue({ delivered: true }),
+          playSound: vi.fn().mockResolvedValue({ played: true })
         }
       }
     }
@@ -625,7 +642,7 @@ describe('connectPanePty', () => {
     })
 
     connectPanePty(pane as never, manager as never, deps as never)
-    await Promise.resolve()
+    await flushAsyncTicks(20)
 
     expect(pane.terminal.write).toHaveBeenCalledWith('\x1b[2J\x1b[3J\x1b[H', expect.any(Function))
     expect(pane.terminal.write).toHaveBeenCalledWith(
@@ -640,6 +657,181 @@ describe('connectPanePty', () => {
       POST_REPLAY_MODE_RESET,
       expect.any(Function)
     )
+  })
+
+  // Why: when a reattach result carries both snapshot and replay (the daemon
+  // host serves the snapshot, the relay replay buffer covers the same tail),
+  // painting both into xterm doubles the same lines. This is the duplicated-
+  // TUI-output symptom users saw on worktree switch. Snapshot is the freshest
+  // authoritative source and wins by precedence.
+  it('paints only the daemon snapshot when reattach result includes both snapshot and replay', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    transport.connect.mockImplementation(async ({ sessionId }: { sessionId?: string }) => {
+      if (sessionId) {
+        return {
+          id: sessionId,
+          snapshot: 'snapshot-payload',
+          replay: 'replay-payload'
+        }
+      }
+      return null
+    })
+    transportFactoryQueue.push(transport)
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: {
+        'wt-1': [{ id: 'tab-1', ptyId: 'tab-pty' }]
+      }
+    } as StoreState
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps({
+      restoredLeafId: 'pane:1',
+      restoredPtyIdByLeafId: { 'pane:1': 'tab-pty' }
+    })
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(20)
+
+    expect(pane.terminal.write).toHaveBeenCalledWith('snapshot-payload', expect.any(Function))
+    expect(pane.terminal.write).not.toHaveBeenCalledWith('replay-payload', expect.any(Function))
+  })
+
+  it('paints only relay replay when reattach result has replay and coldRestore but no snapshot', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    transport.connect.mockImplementation(async ({ sessionId }: { sessionId?: string }) => {
+      if (sessionId) {
+        return {
+          id: sessionId,
+          replay: 'replay-payload',
+          coldRestore: { scrollback: 'cold-payload' }
+        }
+      }
+      return null
+    })
+    transportFactoryQueue.push(transport)
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: {
+        'wt-1': [{ id: 'tab-1', ptyId: 'tab-pty' }]
+      }
+    } as StoreState
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps({
+      restoredLeafId: 'pane:1',
+      restoredPtyIdByLeafId: { 'pane:1': 'tab-pty' }
+    })
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(20)
+
+    expect(pane.terminal.write).toHaveBeenCalledWith('replay-payload', expect.any(Function))
+    expect(pane.terminal.write).not.toHaveBeenCalledWith('cold-payload', expect.any(Function))
+    // Why: the replay branch supersedes cold-restore but must still ack so
+    // the daemon does not redeliver the cold-restore payload on the next
+    // reattach.
+    expect(window.api.pty.ackColdRestore).toHaveBeenCalledWith('tab-pty')
+  })
+
+  // Regression for foreground input lag with many background terminals:
+  // hidden panes still feed xterm, but their writes are scheduled through
+  // the shared output drain so 100 panes cannot all start xterm WriteBuffer
+  // setTimeout handlers in the same event-loop burst.
+  it('queues non-visible PTY bytes before writing them into xterm', async () => {
+    const pendingTimeouts: (() => void)[] = []
+    const originalSetTimeout = globalThis.setTimeout
+    globalThis.setTimeout = vi.fn((fn: () => void) => {
+      pendingTimeouts.push(fn)
+      return 999 as unknown as ReturnType<typeof setTimeout>
+    }) as unknown as typeof setTimeout
+
+    try {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport()
+      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-id'
+        }
+      )
+      transportFactoryQueue.push(transport)
+
+      const pane = createPane(1)
+      const manager = createManager(1)
+      const deps = createDeps({
+        isVisibleRef: { current: false }
+      })
+
+      connectPanePty(pane as never, manager as never, deps as never)
+      await flushAsyncTicks(6)
+
+      expect(capturedDataCallback.current).not.toBeNull()
+      capturedDataCallback.current?.('hello\r\n')
+      expect(pane.terminal.write).not.toHaveBeenCalledWith('hello\r\n')
+
+      for (const fn of pendingTimeouts) {
+        fn()
+      }
+
+      expect(pane.terminal.write).toHaveBeenCalledWith('hello\r\n')
+    } finally {
+      globalThis.setTimeout = originalSetTimeout
+    }
+  })
+
+  it('writes visible split-pane PTY bytes immediately even when the tab is not active', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+    transport.connect.mockImplementation(async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+      capturedDataCallback.current = callbacks.onData ?? null
+      return 'pty-id'
+    })
+    transportFactoryQueue.push(transport)
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps({
+      isActiveRef: { current: false },
+      isVisibleRef: { current: true }
+    })
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(6)
+
+    expect(capturedDataCallback.current).not.toBeNull()
+    capturedDataCallback.current?.('visible split output\r\n')
+
+    expect(pane.terminal.write).toHaveBeenCalledWith('visible split output\r\n')
+  })
+
+  it('marks panes that receive Arabic output for DOM rendering', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+    transport.connect.mockImplementation(async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+      capturedDataCallback.current = callbacks.onData ?? null
+      return 'pty-id'
+    })
+    transportFactoryQueue.push(transport)
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(6)
+
+    capturedDataCallback.current?.('Arabic: السلام عليكم\r\n')
+
+    expect(manager.markPaneHasComplexScriptOutput).toHaveBeenCalledWith(1)
+    expect(pane.terminal.write).toHaveBeenCalledWith('Arabic: السلام عليكم\r\n')
   })
 
   it('reattaches via daemon sessionId when an in-session PTY is live', async () => {
@@ -667,7 +859,7 @@ describe('connectPanePty', () => {
       expect.objectContaining({ sessionId: 'pty-local-detached' })
     )
     expect(transport.attach).not.toHaveBeenCalled()
-    await Promise.resolve()
+    await flushAsyncTicks()
     expect(deps.syncPanePtyLayoutBinding).toHaveBeenCalledWith(2, 'pty-local-detached')
   })
 
@@ -691,7 +883,7 @@ describe('connectPanePty', () => {
     })
 
     connectPanePty(restartPane as never, restartManager as never, restartDeps as never)
-    await Promise.resolve()
+    await flushAsyncTicks()
 
     expect(spawnedPtyId).toBe('pty-restarted')
     expect(restartDeps.syncPanePtyLayoutBinding).toHaveBeenCalledWith(1, 'pty-restarted')
@@ -886,9 +1078,7 @@ describe('connectPanePty', () => {
     })
 
     connectPanePty(pane as never, manager as never, deps as never)
-    for (let i = 0; i < 5; i++) {
-      await Promise.resolve()
-    }
+    await flushAsyncTicks(20)
 
     const api = (
       globalThis as unknown as {
@@ -943,9 +1133,7 @@ describe('connectPanePty', () => {
     })
 
     connectPanePty(pane as never, manager as never, deps as never)
-    for (let i = 0; i < 5; i++) {
-      await Promise.resolve()
-    }
+    await flushAsyncTicks(20)
 
     expect(deps.onPtyErrorRef.current).not.toHaveBeenCalledWith(
       expect.any(Number),

@@ -174,7 +174,8 @@ describe('SESSION_RELEVANT_FIELDS', () => {
     sshConnectionStates: true,
     repos: true,
     worktreesByRepo: true,
-    lastKnownRelayPtyIdByTabId: true
+    lastKnownRelayPtyIdByTabId: true,
+    lastVisitedAtByWorktreeId: true
   }
 
   it('contains every key of WorkspaceSessionSnapshot', () => {
