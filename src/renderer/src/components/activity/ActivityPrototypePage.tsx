@@ -685,18 +685,18 @@ function ThreadRow({
           full-width for the repo badge + branch name, which used to get
           truncated when the right cluster ate horizontal space. */}
       <div className="flex min-w-0 items-start gap-2">
-        <span className="inline-flex shrink-0 pt-[3px]">
+        <span className="inline-flex shrink-0 pt-px">
           <AgentIcon agent={agentTypeToIconAgent(thread.agentType)} size={14} />
         </span>
         <span
           className={cn(
-            'line-clamp-3 min-w-0 flex-1 break-words text-[11px] leading-snug',
+            'line-clamp-3 min-w-0 flex-1 break-words text-xs leading-snug',
             thread.unread ? 'font-semibold text-foreground' : 'font-medium text-foreground'
           )}
         >
           {thread.paneTitle}
         </span>
-        <span className="inline-flex shrink-0 items-center gap-1.5 pt-[3px]">
+        <span className="inline-flex shrink-0 items-center gap-1.5 pt-px">
           {/* Why (bell matches WorktreeCard pattern): unread → amber filled
               bell as a static, non-interactive cue (selecting the thread
               auto-marks it read, so a Mark-read button would be redundant);
