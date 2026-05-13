@@ -198,6 +198,7 @@ function App(): React.JSX.Element {
   const floatingTerminalTriggerLocation = useAppStore(
     (s) => s.settings?.floatingTerminalTriggerLocation ?? 'floating-button'
   )
+  const statusBarVisible = useAppStore((s) => s.statusBarVisible)
 
   useEffect(() => {
     const toggleFloatingTerminal = (): void => {
@@ -1131,7 +1132,8 @@ function App(): React.JSX.Element {
               open={floatingTerminalOpen}
               onOpenChange={setFloatingTerminalOpen}
             />
-            {floatingTerminalTriggerLocation === 'floating-button' ? (
+            {floatingTerminalTriggerLocation === 'floating-button' ||
+            !statusBarVisible ? (
               <FloatingTerminalToggleButton
                 open={floatingTerminalOpen}
                 onToggle={() => setFloatingTerminalOpen((open) => !open)}
