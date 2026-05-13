@@ -7,7 +7,6 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import {
   AlertTriangle,
   Bell,
-  Clock3,
   GitMerge,
   LoaderCircle,
   CircleCheck,
@@ -286,7 +285,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
   )
 
   const showIssue = cardProps.includes('issue')
-  const showPRMeta = cardProps.includes('pr') && Boolean(pr)
 
   // Same rationale for issues: once that section is hidden, polling only burns
   // GitHub calls and keeps stale-but-invisible data warm for no user benefit.
@@ -523,39 +521,19 @@ const WorktreeCard = React.memo(function WorktreeCard({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="inline-flex items-center opacity-80 hover:opacity-100 transition-opacity">
-                    {!showPRMeta && prRefreshState?.status === 'queued' && (
-                      <Clock3 className="size-3.5 text-muted-foreground" />
+                    {pr.checksStatus === 'success' && (
+                      <CircleCheck className="size-3.5 text-emerald-500" />
                     )}
-                    {!showPRMeta && prRefreshState?.status === 'in-flight' && (
-                      <LoaderCircle className="size-3.5 text-muted-foreground animate-spin" />
+                    {pr.checksStatus === 'failure' && (
+                      <CircleX className="size-3.5 text-rose-500" />
                     )}
-                    {(showPRMeta ||
-                      !['queued', 'in-flight'].includes(prRefreshState?.status ?? '')) &&
-                      pr.checksStatus === 'success' && (
-                        <CircleCheck className="size-3.5 text-emerald-500" />
-                      )}
-                    {(showPRMeta ||
-                      !['queued', 'in-flight'].includes(prRefreshState?.status ?? '')) &&
-                      pr.checksStatus === 'failure' && (
-                        <CircleX className="size-3.5 text-rose-500" />
-                      )}
-                    {(showPRMeta ||
-                      !['queued', 'in-flight'].includes(prRefreshState?.status ?? '')) &&
-                      pr.checksStatus === 'pending' && (
-                        <LoaderCircle className="size-3.5 text-amber-500 animate-spin" />
-                      )}
+                    {pr.checksStatus === 'pending' && (
+                      <LoaderCircle className="size-3.5 text-amber-500 animate-spin" />
+                    )}
                   </span>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8}>
-                  <span>
-                    {!showPRMeta && prRefreshState?.status === 'queued'
-                      ? 'CI refresh queued'
-                      : !showPRMeta && prRefreshState?.status === 'in-flight'
-                        ? 'Refreshing CI checks'
-                        : prRefreshState?.status === 'paused'
-                          ? `CI checks ${checksLabel(pr.checksStatus).toLowerCase()} (refresh paused)`
-                          : `CI checks ${checksLabel(pr.checksStatus).toLowerCase()}`}
-                  </span>
+                  <span>{`CI checks ${checksLabel(pr.checksStatus).toLowerCase()}`}</span>
                 </TooltipContent>
               </Tooltip>
             </div>
