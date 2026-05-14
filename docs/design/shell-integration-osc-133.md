@@ -10,7 +10,7 @@
 
 The renderer maintains an `agentStatusByPaneKey` map of live agent turns (Codex, Claude, Gemini, OpenCode, cursor-agent, etc.) that powers the agent dashboard. Agent CLIs fire hooks for state transitions, but **none of them fire a hook when the user Ctrl+Cs out of the agent back to the shell** — the SIGINT kills the agent too fast for it to emit anything. This leaves a stale dashboard row until its 30-minute TTL decays.
 
-We currently have a branch (`brennanb2025/foreground-process-agent-exit`) that solves this by polling node-pty's `proc.process` on a 2s cadence. On POSIX this works — node-pty calls `tcgetpgrp` on the PTY master fd, which returns the process-group leader currently owning the terminal foreground (a kernel-maintained primitive for job control). When the agent dies and the shell reclaims the foreground, the poller fires a `pty:foreground-shell` IPC event and the renderer drops the row.
+A previous iteration of this branch (`brennanb2025/foreground-process-agent-exit`) solved this by polling node-pty's `proc.process` on a 2s cadence. On POSIX this works — node-pty calls `tcgetpgrp` on the PTY master fd, which returns the process-group leader currently owning the terminal foreground (a kernel-maintained primitive for job control). When the agent dies and the shell reclaims the foreground, the poller fired a `pty:foreground-shell` IPC event and the renderer dropped the row. That implementation has now been removed from this branch; do not reintroduce it as the primary solution.
 
 **This does not work on Windows.** ConPTY has no concept of foreground-process-group ownership; there is no `tcgetpgrp` equivalent, no kernel-maintained notion of "which process owns the terminal's input right now," and node-pty's Windows implementation of `proc.process` returns a static string set at spawn time. **Approximately 50% of our users are on Windows.** Shipping a Unix-only fix leaves half the user base on the 30-minute TTL indefinitely.
 
@@ -28,7 +28,7 @@ This is a **cross-platform mechanism by construction**: OSC sequences are just b
 - Adopt OSC 133 as the primary shell-integration protocol (FinalTerm-pioneered, iTerm2-adopted, widely supported).
 - Ship injection scripts for **zsh** and **PowerShell** only. Extend the existing shell-ready wrapper infrastructure (`src/main/providers/local-pty-shell-ready.ts`, `src/main/daemon/shell-ready.ts`) rather than building a parallel injection system.
 - Parse OSC 133 sequences in the renderer (xterm.js v6 via `parser.registerOscHandler`). Parser lives on the renderer only (Option A).
-- **Delete** `agent-foreground-poller.ts` + its IPC plumbing in the same PR. Replace with a renderer-local handler that drops `agentStatusByPaneKey` entries on `OSC 133;D`.
+- Keep `agent-foreground-poller.ts` + its IPC plumbing deleted. Replace it with a renderer-local handler that drops `agentStatusByPaneKey` entries on `OSC 133;D`.
 - Gated behind the existing compile-time `AGENT_DASHBOARD_ENABLED` constant only. The runtime `experimentalAgentTracking` user toggle is a follow-up PR that lands before `AGENT_DASHBOARD_ENABLED` flips to `true` at release.
 - Graceful fallback: users with broken/missing injection fall back to the existing 30-minute TTL + renderer decay-to-idle.
 - **Windows feature parity** — PowerShell on Windows lights up the same way zsh does on macOS.
@@ -56,21 +56,21 @@ This codebase is further along than a greenfield OSC 133 project would be. The k
 | Shell-ready wrapper files (on disk) | `~/Library/Application Support/orca/shell-ready/zsh/{.zshenv,.zshrc,.zlogin,.zprofile}`, `.../bash/rcfile` | Regenerated from template at app launch by `ensureShellReadyWrappers()`. We already own the injection point. |
 | Headless emulator (daemon) | `src/main/daemon/headless-emulator.ts`, `src/main/daemon/session.ts` | `@xterm/headless` instance that parses every byte the daemon receives. Already scans for `\x1b]777;orca-shell-ready\x07` to gate startup-command flush. |
 | xterm.js in renderer | `src/renderer/src/components/terminal-pane/pty-connection.ts` (+ siblings) | Full xterm.js v6 with `parser.registerOscHandler` API. |
-| Agent-status IPC path | `src/main/index.ts:272` (`pty:foreground-shell`), `src/preload/index.ts:343` | Existing wire for "drop this pane's dashboard row." Shell integration can re-use it. |
-| Agent-status teardown | `registerPaneKeyTeardownListener` in `src/main/index.ts:280` | Fires when the PTY itself dies. No change needed. |
+| Agent-status hook ingress | `src/main/index.ts` + `src/renderer/src/hooks/useIpcEvents.ts` | Native agent hooks already populate `agentStatusByPaneKey`; OSC 133 only supplies the missing "command ended" signal. |
+| PTY-exit cleanup | `src/renderer/src/components/terminal-pane/pty-connection.ts` | Removes `agentStatusByPaneKey` only when the whole terminal PTY exits. The title-reversion path now clears cache timers only; do not restore title-based status removal. |
 
 ### What's missing
 
 1. **Shell emission.** The wrappers emit only `OSC 133;A` today, and only when the one-shot ready flag is set. We need `OSC 133;C` (command start) and `OSC 133;D;<exit>` (command end) persistently across the pane's lifetime — not just at first prompt. (OSC 133 emission is a different signal from the existing one-shot shell-ready marker; both live in the same wrapper file for now but could be extracted later.)
 2. **PowerShell wrapper.** Zero Windows coverage today; the shell-ready infrastructure currently `return`s early on `win32`. We need a PowerShell `$PROFILE` injection path.
 3. **Parsing.** Nothing parses OSC 133 sub-sequences A/B/C/D. The daemon emulator scans for the `orca-shell-ready` string marker but not for general OSC 133.
-4. **Renderer consumer.** `agent-foreground-poller.ts` and the `pty:foreground-shell` IPC exist but are driven by polling `tcgetpgrp`, which works on POSIX only — and are being deleted in this PR.
+4. **Renderer consumer.** There is no OSC 133 consumer yet. Add one in the terminal pane lifecycle/connection path and have `OSC 133;D` remove the matching pane's agent-status row. The old `pty:foreground-shell` IPC path has already been deleted.
 
-### Current foreground-poller branch (deleted in this PR)
+### Cleanup already completed
 
-The `brennanb2025/foreground-process-agent-exit` branch adds a 2s-interval poller, a `getForegroundProcess` RPC through `SubprocessHandle` → `Session` → `TerminalHost` → `DaemonServer` → `DaemonPtyAdapter`, and the `pty:foreground-shell` IPC + preload binding + renderer `useIpcEvents` handler.
+Commit `6be091d3` removed the 2s-interval poller, the daemon `getForegroundProcess` RPC additions that existed only for that poller, and the `pty:foreground-shell` IPC + preload + renderer handler path.
 
-All of it is **deleted in the same commit series that lands shell integration**. Net diff is negative before the new code lands. See the [Deletion checklist](#migration-from-the-current-branch) below.
+The branch is now ready for the actual OSC 133 implementation. The next commits should add shell emission, renderer parsing, and targeted tests; they should not bring back main-process polling.
 
 ## Design
 
@@ -295,11 +295,11 @@ If the shell does not emit OSC 133 (user has a broken `.zshrc`, unsupported shel
 
 Detection UI (a "shell integration inactive" banner) is a follow-up PR.
 
-## Migration from the current branch
+## Migration from the old poller commit
 
-The poller is removed in this PR, in the same commit series as the shell integration lands. There is no overlap phase. Net diff must be negative **before** the new code lands.
+This phase is complete as of commit `6be091d3`. Keep the section as an audit checklist when reviewing future commits on this branch; no item here should be reintroduced by the OSC 133 implementation.
 
-### Deletion checklist
+### Completed deletion checklist
 
 `getForegroundProcess` has non-poller callers already on `main` (`agent-ready-wait.ts`, `codex-session-restart.ts`, `new-workspace.ts`, plus the underlying `pty:getForegroundProcess` IPC handler and its tests), so this PR only removes the poller-specific additions and leaves the shared RPC surface intact.
 
@@ -327,7 +327,7 @@ The poller is removed in this PR, in the same commit series as the shell integra
 rg -n "getForegroundProcess|pty:foreground-shell|onForegroundShell|agent-foreground-poller" src tests
 ```
 
-After deletion completes, this command should return hits only in the shared-RPC surface listed in section (B). Any hit for `pty:foreground-shell`, `onForegroundShell`, or `agent-foreground-poller` means deletion is incomplete.
+This command should return hits only in the shared-RPC surface listed in section (B) and this design doc. Any code hit for `pty:foreground-shell`, `onForegroundShell`, or `agent-foreground-poller` means deletion regressed.
 
 ## Remote PTYs (SSH): known gap
 
@@ -347,7 +347,7 @@ Shell integration ships behind the existing compile-time `AGENT_DASHBOARD_ENABLE
 **Why only compile-time here:**
 
 - `AGENT_DASHBOARD_ENABLED` already gates the entire agent-status stack — hooks, store writes, dashboard UI, sidebar sort inputs. Shell integration is just another branch inside that same gate.
-- Currently hardcoded `true` for local development; nothing end-users see changes. Flip to `false` before merging to `main`, then flip to `true` when the feature is ready to be exposed to users (via the follow-up toggle PR).
+- Currently hardcoded `false` on this branch after the poller cleanup. Implementation work can temporarily flip it locally while dogfooding, but commits intended for merge should leave it `false` until the runtime-toggle PR is ready.
 - Avoids coupling this PR's scope to a user-facing settings UI change. Ship the mechanism first, add the toggle second.
 
 ### Follow-up PR: runtime toggle
@@ -362,10 +362,11 @@ That PR is where the toggle's read semantics (main-at-spawn for injection, rende
 
 ### Ordering
 
-1. This PR: shell integration mechanism behind `AGENT_DASHBOARD_ENABLED`, poller deleted, compile-time flag remains `true` locally, flipped `false` at merge.
-2. Follow-up PR: runtime toggle lands, compile-time flag still `false`.
-3. Release-ready: compile-time flag flips to `true`, toggle becomes user-visible (default off).
-4. Graduation: after a clean release cycle, both gates are removed in a cleanup PR and the feature is permanent.
+1. Current committed state: poller deleted, title-reversion status removal disabled, design doc added, compile-time flag remains `false`.
+2. Next commits on this branch: add OSC 133 shell emission + renderer parser behind `AGENT_DASHBOARD_ENABLED`, keeping the flag `false` for merge.
+3. Follow-up PR: runtime toggle lands, compile-time flag still `false`.
+4. Release-ready: compile-time flag flips to `true`, toggle becomes user-visible (default off).
+5. Graduation: after a clean release cycle, both gates are removed in a cleanup PR and the feature is permanent.
 
 ## Testing
 
@@ -417,7 +418,7 @@ Rough estimate for a solo engineer on this codebase:
 
 | Phase | Scope | Days |
 |-------|-------|------|
-| 1 | Delete poller + IPC plumbing (net-negative diff first) | 1 |
+| 1 | Delete poller + IPC plumbing (net-negative diff first) | Done (`6be091d3`) |
 | 2 | Renderer OSC 133 parser, gated inside the existing `AGENT_DASHBOARD_ENABLED` branches | 1-2 |
 | 3 | zsh wrapper extension + golden-file test | 1-2 |
 | 4 | PowerShell wrapper + golden-file test + Windows smoke test | 2-3 |
@@ -445,6 +446,6 @@ Target is 1–2 weeks for both zsh + PowerShell. No zsh-only fallback — PowerS
 
 - `src/main/providers/local-pty-shell-ready.ts` — where zsh wrappers are emitted today; extend here.
 - `src/main/daemon/shell-ready.ts` — daemon-side parallel implementation; extend here (consolidation deferred).
-- `src/renderer/src/components/terminal-pane/pty-connection.ts:246` — where the renderer currently handles `pty:foreground-shell`; replace with renderer-local OSC 133 handler.
-- `src/main/agent-foreground-poller.ts` — to be deleted in this PR.
-- `src/main/index.ts:254-282` — where the poller is instantiated and the drop IPC is sent; remove in this PR.
+- `src/renderer/src/components/terminal-pane/pty-connection.ts` / `use-terminal-pane-lifecycle.ts` — attach the renderer-local OSC 133 handler near existing xterm parser wiring.
+- `src/renderer/src/components/terminal-pane/pty-connection.ts:240` — title reversion now clears cache timers only; keep agent-status removal tied to explicit hooks, PTY exit, and OSC 133 command-finished marks.
+- `src/main/index.ts` — agent hooks still feed `agentStatus:set`; do not add a new poller or `pty:foreground-shell` IPC path here.
