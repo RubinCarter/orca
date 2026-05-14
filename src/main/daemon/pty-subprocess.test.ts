@@ -605,7 +605,7 @@ describe('createPtySubprocess', () => {
     }
   })
 
-  it('translates native Windows cwd before launching WSL on Windows', () => {
+  it('falls back to /mnt/c before launching WSL when cwd is not a native Windows path', () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -628,12 +628,15 @@ describe('createPtySubprocess', () => {
       rmSync(cwd, { recursive: true, force: true })
     }
 
-    const linuxCwd = cwd.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive: string) => {
-      return `/mnt/${drive.toLowerCase()}`
-    })
+    const normalizedCwd = cwd.replace(/\\/g, '/')
+    const driveMatch = normalizedCwd.match(/^([A-Za-z]):\/?(.*)$/)
+    const expectedLinuxCwd = driveMatch
+      ? `/mnt/${driveMatch[1].toLowerCase()}${driveMatch[2] ? `/${driveMatch[2]}` : ''}`
+      : '/mnt/c'
+
     expect(spawnMock).toHaveBeenCalledWith(
       'wsl.exe',
-      ['--', 'bash', '-c', `cd '${linuxCwd}' && exec bash -l`],
+      ['--', 'bash', '-c', `cd '${expectedLinuxCwd}' && exec bash -l`],
       expect.objectContaining({ cwd: expect.any(String) })
     )
   })
