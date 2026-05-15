@@ -127,6 +127,26 @@ function LoudOverlay({
 }: LoudOverlayProps): ReactElement {
   const titleId = useId()
   const bodyId = useId()
+  const actionRef = useRef<HTMLButtonElement>(null)
+  // Why: focus the recovery action on mount only when the user isn't already
+  // typing into another input (composer, command palette, settings field).
+  // Unconditional autoFocus yanks focus on every overlay mount, so a phone
+  // taking the floor while the desktop user is typing elsewhere would route
+  // the next Space/Enter into Take back / Restore. See PR #1899 follow-up.
+  useEffect(() => {
+    const active = document.activeElement
+    const isUserInput =
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      (active.tagName === 'INPUT' ||
+        active.tagName === 'TEXTAREA' ||
+        active.tagName === 'SELECT' ||
+        active.isContentEditable)
+    if (isUserInput) {
+      return
+    }
+    actionRef.current?.focus()
+  }, [])
   return (
     <div
       role="dialog"
@@ -160,14 +180,14 @@ function LoudOverlay({
               Collapse
             </Button>
           )}
-          {/* autoFocus lands keyboard users on the recovery action when the pane-local lock appears. */}
+          {/* Focus is moved to this button only when no user input is active; see effect above. */}
           <Button
+            ref={actionRef}
             type="button"
             variant="default"
             size="sm"
             onClick={onAction}
             disabled={actionPending}
-            autoFocus
           >
             {actionLabel}
           </Button>
