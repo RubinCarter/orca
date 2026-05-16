@@ -1082,6 +1082,9 @@ export default function TaskPage(): React.JSX.Element {
   // Why: team IDs belong to one Linear workspace. Switching workspaces while a
   // saved subset exists must not leave the task list filtered by stale team IDs.
   useEffect(() => {
+    if (availableTeams.length === 0) {
+      return
+    }
     setLinearTeamSelection(reconcileLinearTeamSelection(availableTeams, defaultLinearTeamSelection))
   }, [availableTeams, defaultLinearTeamSelection])
 
