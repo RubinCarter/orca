@@ -136,6 +136,7 @@ import type {
   BrowserPopupEvent
 } from '../shared/browser-guest-events'
 import type { ElectronAPI } from '@electron-toolkit/preload'
+import type { BrowserSetAnnotationViewportBridgeArgs } from '../shared/browser-annotation-viewport-bridge'
 import type { CliInstallStatus } from '../shared/cli-install-types'
 import type { E2EConfig } from '../shared/e2e-config'
 import type { AgentHookInstallStatus } from '../shared/agent-hook-types'
@@ -236,6 +237,7 @@ export type BrowserApi = {
     browserPageId: string
     override: BrowserViewportOverride | null
   }) => Promise<boolean>
+  setAnnotationViewportBridge: (args: BrowserSetAnnotationViewportBridgeArgs) => Promise<boolean>
   onGuestLoadFailed: (
     callback: (args: { browserPageId: string; loadError: BrowserLoadError }) => void
   ) => () => void
