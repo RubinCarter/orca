@@ -910,7 +910,10 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                         // Why: nested lineage children use this compact
                         // renderer instead of WorktreeCard, so their inline
                         // agent rows must be mounted here explicitly.
-                        <WorktreeCardAgents worktreeId={child.worktree.id} className="mt-1" />
+                        <WorktreeCardAgents
+                          worktreeId={child.worktree.id}
+                          className="mt-1 divide-y-0"
+                        />
                       ) : null}
                     </div>
                   </div>
