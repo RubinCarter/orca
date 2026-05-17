@@ -232,21 +232,8 @@ export function createRichMarkdownKeyHandler(
       return false
     }
 
-    if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key.length === 1) {
-      event.preventDefault()
-      ctx.setSlashMenu((menu) => (menu ? { ...menu, query: `${menu.query}${event.key}` } : menu))
-      ctx.setSelectedCommandIndex(0)
-      return true
-    }
-
-    if (event.key === 'Backspace' && currentSlashMenu.query.length > 0) {
-      event.preventDefault()
-      ctx.setSlashMenu((menu) => (menu ? { ...menu, query: menu.query.slice(0, -1) } : menu))
-      ctx.setSelectedCommandIndex(0)
-      return true
-    }
-
     const currentFilteredSlashCommands = ctx.filteredSlashCommandsRef.current
+
     if (currentFilteredSlashCommands.length === 0) {
       return false
     }

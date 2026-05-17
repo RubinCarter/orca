@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: this suite covers the SSH git provider's one-RPC-per-method contract; splitting it would duplicate the shared mux fixture. */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { SshGitProvider } from './ssh-git-provider'
 
@@ -39,6 +40,57 @@ describe('SshGitProvider', () => {
     const result = await provider.getStatus('/home/user/repo')
     expect(mux.request).toHaveBeenCalledWith('git.status', { worktreePath: '/home/user/repo' })
     expect(result).toEqual(statusResult)
+  })
+
+  it('getStatus forwards includeIgnored only when requested', async () => {
+    const statusResult = { entries: [], conflictOperation: 'unknown', ignoredPaths: ['dist/'] }
+    mux.request.mockResolvedValue(statusResult)
+
+    await provider.getStatus('/home/user/repo', { includeIgnored: true })
+    await provider.getStatus('/home/user/repo', { includeIgnored: false })
+
+    expect(mux.request).toHaveBeenNthCalledWith(1, 'git.status', {
+      worktreePath: '/home/user/repo',
+      includeIgnored: true
+    })
+    expect(mux.request).toHaveBeenNthCalledWith(2, 'git.status', {
+      worktreePath: '/home/user/repo'
+    })
+  })
+
+  it('checkIgnoredPaths sends git.checkIgnored request', async () => {
+    mux.request.mockResolvedValue(['dist/bundle.js'])
+
+    const result = await provider.checkIgnoredPaths('/home/user/repo', ['dist/bundle.js'])
+
+    expect(mux.request).toHaveBeenCalledWith('git.checkIgnored', {
+      worktreePath: '/home/user/repo',
+      paths: ['dist/bundle.js']
+    })
+    expect(result).toEqual(['dist/bundle.js'])
+  })
+
+  it('getHistory sends git.history request', async () => {
+    const historyResult = {
+      items: [],
+      hasIncomingChanges: false,
+      hasOutgoingChanges: false,
+      hasMore: false,
+      limit: 50
+    }
+    mux.request.mockResolvedValue(historyResult)
+
+    const result = await provider.getHistory('/home/user/repo', {
+      limit: 25,
+      baseRef: 'origin/main'
+    })
+
+    expect(mux.request).toHaveBeenCalledWith('git.history', {
+      worktreePath: '/home/user/repo',
+      limit: 25,
+      baseRef: 'origin/main'
+    })
+    expect(result).toEqual(historyResult)
   })
 
   it('commit sends git.commit request', async () => {

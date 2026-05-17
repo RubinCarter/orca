@@ -21,7 +21,17 @@ import type { PRInfo, PRCheckDetail, PRComment } from '../../../../shared/types'
 import { getConnectionId } from '@/lib/connection-context'
 import { CreatePullRequestDialog } from './CreatePullRequestDialog'
 import type { HostedReviewCreationEligibility } from '../../../../shared/hosted-review'
+import { refreshHostedReviewCard } from '@/store/slices/hosted-review'
 import { toast } from 'sonner'
+import {
+  classifyHostedReview,
+  type HostedReviewClassificationOptions
+} from '../../../../shared/hosted-review-queue'
+import { hostedReviewSummaryFromGitHubPRInfo } from '../../../../shared/hosted-review-github'
+import {
+  checksPanelAsyncResultKey,
+  shouldCommitChecksPanelAsyncResult
+} from './checks-panel-async-result-key'
 
 export default function ChecksPanel(): React.JSX.Element {
   const activeWorktree = useActiveWorktree()
@@ -71,6 +81,7 @@ export default function ChecksPanel(): React.JSX.Element {
   const pollIntervalRef = useRef(30_000) // start at 30s, backs off to 120s
   const prevChecksRef = useRef<string>('')
   const conflictSummaryRefreshKeyRef = useRef<string | null>(null)
+  const asyncResultKeyRef = useRef<string>('')
 
   // Why: the sidebar no longer uses key={activeWorktreeId} to force a full
   // remount on worktree switch (that caused an IPC storm on Windows).
@@ -126,6 +137,16 @@ export default function ChecksPanel(): React.JSX.Element {
   // Why: pass linkedPR so worktrees created from a PR (whose new local branch
   // differs from the PR's head ref) resolve via the number-based fallback.
   const linkedPR = activeWorktree?.linkedPR ?? null
+  const linkedGitLabMR = activeWorktree?.linkedGitLabMR ?? null
+  const activeWorktreePath = activeWorktree?.path ?? null
+  const stateRequestKey = repo && branch ? checksPanelAsyncResultKey(repo.id, branch, prNumber) : ''
+  asyncResultKeyRef.current = stateRequestKey
+
+  const isCurrentAsyncResult = useCallback(
+    (requestKey: string) =>
+      shouldCommitChecksPanelAsyncResult(asyncResultKeyRef.current, requestKey),
+    []
+  )
   useEffect(() => {
     if (repo && !isFolder && branch) {
       void fetchPRForBranch(repo.path, branch, { repoId: repo.id, linkedPRNumber: linkedPR })
@@ -140,6 +161,7 @@ export default function ChecksPanel(): React.JSX.Element {
     let stale = false
     void getHostedReviewCreationEligibility({
       repoPath: repo.path,
+      ...(activeWorktreePath ? { worktreePath: activeWorktreePath } : {}),
       branch,
       base: repo.worktreeBaseRef ?? null,
       hasUncommittedChanges,
@@ -162,6 +184,7 @@ export default function ChecksPanel(): React.JSX.Element {
       stale = true
     }
   }, [
+    activeWorktreePath,
     branch,
     getHostedReviewCreationEligibility,
     hasUncommittedChanges,
@@ -218,10 +241,14 @@ export default function ChecksPanel(): React.JSX.Element {
       }
       setChecksLoading(true)
       try {
+        const requestKey = checksPanelAsyncResultKey(repo.id, branch, targetPRNumber)
         const result = await fetchPRChecks(repo.path, targetPRNumber, branch, pr?.headSha, {
           force,
           repoId: repo.id
         })
+        if (!isCurrentAsyncResult(requestKey)) {
+          return
+        }
         setChecks(result)
 
         // Exponential backoff: if checks haven't changed, double the interval (cap 120s).
@@ -233,13 +260,18 @@ export default function ChecksPanel(): React.JSX.Element {
             : 30_000
         prevChecksRef.current = signature
       } catch (err) {
+        if (!isCurrentAsyncResult(checksPanelAsyncResultKey(repo.id, branch, targetPRNumber))) {
+          return
+        }
         console.warn('Failed to fetch PR checks:', err)
         setChecks([])
       } finally {
-        setChecksLoading(false)
+        if (isCurrentAsyncResult(checksPanelAsyncResultKey(repo.id, branch, targetPRNumber))) {
+          setChecksLoading(false)
+        }
       }
     },
-    [repo, prNumber, branch, pr?.headSha, fetchPRChecks]
+    [repo, prNumber, branch, pr?.headSha, fetchPRChecks, isCurrentAsyncResult]
   )
 
   // Fetch checks on mount + poll with exponential backoff
@@ -288,16 +320,25 @@ export default function ChecksPanel(): React.JSX.Element {
       }
       setCommentsLoading(true)
       try {
+        const requestKey = checksPanelAsyncResultKey(repo.id, branch, targetPRNumber)
         const result = await fetchPRComments(repo.path, targetPRNumber, { force, repoId: repo.id })
+        if (!isCurrentAsyncResult(requestKey)) {
+          return
+        }
         setComments(result)
       } catch (err) {
+        if (!isCurrentAsyncResult(checksPanelAsyncResultKey(repo.id, branch, targetPRNumber))) {
+          return
+        }
         console.warn('Failed to fetch PR comments:', err)
         setComments([])
       } finally {
-        setCommentsLoading(false)
+        if (isCurrentAsyncResult(checksPanelAsyncResultKey(repo.id, branch, targetPRNumber))) {
+          setCommentsLoading(false)
+        }
       }
     },
-    [repo, prNumber, fetchPRComments]
+    [repo, prNumber, fetchPRComments, branch, isCurrentAsyncResult]
   )
 
   useEffect(() => {
@@ -332,6 +373,8 @@ export default function ChecksPanel(): React.JSX.Element {
     if (!repo || !branch) {
       return
     }
+    const initialRequestKey = checksPanelAsyncResultKey(repo.id, branch, prNumber)
+    let activeRefreshKey = initialRequestKey
     setIsRefreshing(true)
     try {
       const refreshedPR = await fetchPRForBranch(repo.path, branch, {
@@ -339,7 +382,22 @@ export default function ChecksPanel(): React.JSX.Element {
         repoId: repo.id,
         linkedPRNumber: linkedPR
       })
+      await refreshHostedReviewCard(fetchHostedReviewForBranch, {
+        repoPath: repo.path,
+        repoId: repo.id,
+        branch,
+        linkedGitHubPR: refreshedPR?.number ?? linkedPR,
+        linkedGitLabMR
+      })
       if (refreshedPR) {
+        const requestKey = checksPanelAsyncResultKey(repo.id, branch, refreshedPR.number)
+        if (!isCurrentAsyncResult(initialRequestKey) && !isCurrentAsyncResult(requestKey)) {
+          return
+        }
+        // Why: a forced PR refresh can discover the PR number before React has
+        // repainted from prCache; make this refresh's follow-up checks current.
+        asyncResultKeyRef.current = requestKey
+        activeRefreshKey = requestKey
         // Why: call fetchPRChecks directly with the refreshed PR's headSha so
         // we don't pass the stale headSha captured by `fetchChecks`'s closure
         // before the PR refresh completed (covers external force-pushes and
@@ -352,6 +410,9 @@ export default function ChecksPanel(): React.JSX.Element {
           { force: true, repoId: repo.id }
         ).then(
           (result) => {
+            if (!isCurrentAsyncResult(requestKey)) {
+              return
+            }
             setChecks(result)
             const signature = JSON.stringify(
               result.map((c) => `${c.name}:${c.status}:${c.conclusion}`)
@@ -363,6 +424,9 @@ export default function ChecksPanel(): React.JSX.Element {
             prevChecksRef.current = signature
           },
           (err) => {
+            if (!isCurrentAsyncResult(requestKey)) {
+              return
+            }
             console.warn('Failed to fetch PR checks:', err)
             setChecks([])
           }
@@ -373,17 +437,34 @@ export default function ChecksPanel(): React.JSX.Element {
           prNumberOverride: refreshedPR.number
         })
         await Promise.all([
-          refreshedChecks.finally(() => setChecksLoading(false)),
+          refreshedChecks.finally(() => {
+            if (isCurrentAsyncResult(requestKey)) {
+              setChecksLoading(false)
+            }
+          }),
           refreshedComments
         ])
-      } else {
+      } else if (isCurrentAsyncResult(initialRequestKey)) {
         setChecks([])
         setComments([])
       }
     } finally {
-      setIsRefreshing(false)
+      if (isCurrentAsyncResult(activeRefreshKey)) {
+        setIsRefreshing(false)
+      }
     }
-  }, [repo, branch, linkedPR, fetchPRForBranch, fetchPRChecks, fetchComments])
+  }, [
+    repo,
+    branch,
+    prNumber,
+    linkedPR,
+    linkedGitLabMR,
+    fetchPRForBranch,
+    fetchPRChecks,
+    fetchComments,
+    fetchHostedReviewForBranch,
+    isCurrentAsyncResult
+  ])
 
   // Why: force a freshness check on each "entry" into the Checks tab so PRs
   // opened outside Orca, externally force-pushed heads, and stale checks/comments
@@ -504,13 +585,20 @@ export default function ChecksPanel(): React.JSX.Element {
   // Refresh PR (passed to PRActions)
   const handleRefreshPR = useCallback(async () => {
     if (repo && branch) {
-      await fetchPRForBranch(repo.path, branch, {
+      const refreshedPR = await fetchPRForBranch(repo.path, branch, {
         force: true,
         repoId: repo.id,
         linkedPRNumber: linkedPR
       })
+      await refreshHostedReviewCard(fetchHostedReviewForBranch, {
+        repoPath: repo.path,
+        repoId: repo.id,
+        branch,
+        linkedGitHubPR: refreshedPR?.number ?? linkedPR,
+        linkedGitLabMR
+      })
     }
-  }, [repo, branch, linkedPR, fetchPRForBranch])
+  }, [repo, branch, linkedPR, linkedGitLabMR, fetchPRForBranch, fetchHostedReviewForBranch])
 
   // Open PR in browser
   const handleOpenPR = useCallback(() => {
@@ -544,23 +632,45 @@ export default function ChecksPanel(): React.JSX.Element {
       if (!repo || !branch) {
         return
       }
+      const initialRequestKey = checksPanelAsyncResultKey(repo.id, branch, prNumber)
       setRightSidebarOpen(true)
       setRightSidebarTab('checks')
       try {
         const refreshedPR = await fetchPRForBranch(repo.path, branch, {
           force: true,
+          repoId: repo.id,
           linkedPRNumber: result.number
         })
-        await fetchHostedReviewForBranch(repo.path, branch, {
-          force: true,
-          linkedGitHubPR: result.number
+        await refreshHostedReviewCard(fetchHostedReviewForBranch, {
+          repoPath: repo.path,
+          repoId: repo.id,
+          branch,
+          linkedGitHubPR: result.number,
+          linkedGitLabMR
         })
         if (refreshedPR) {
+          const requestKey = checksPanelAsyncResultKey(repo.id, branch, refreshedPR.number)
+          if (!isCurrentAsyncResult(initialRequestKey) && !isCurrentAsyncResult(requestKey)) {
+            return
+          }
+          asyncResultKeyRef.current = requestKey
           await Promise.all([
             fetchPRChecks(repo.path, refreshedPR.number, branch, refreshedPR.headSha, {
-              force: true
-            }).then(setChecks),
-            fetchPRComments(repo.path, refreshedPR.number, { force: true }).then(setComments)
+              force: true,
+              repoId: repo.id
+            }).then((result) => {
+              if (isCurrentAsyncResult(requestKey)) {
+                setChecks(result)
+              }
+            }),
+            fetchPRComments(repo.path, refreshedPR.number, {
+              force: true,
+              repoId: repo.id
+            }).then((result) => {
+              if (isCurrentAsyncResult(requestKey)) {
+                setComments(result)
+              }
+            })
           ])
         }
       } catch {
@@ -573,11 +683,71 @@ export default function ChecksPanel(): React.JSX.Element {
       fetchPRChecks,
       fetchPRComments,
       fetchPRForBranch,
+      isCurrentAsyncResult,
+      linkedGitLabMR,
+      prNumber,
       repo,
       setRightSidebarOpen,
       setRightSidebarTab
     ]
   )
+
+  const activeReviewClassification = React.useMemo(() => {
+    if (!pr || !repo) {
+      return null
+    }
+    let host = 'github.com'
+    let owner = 'unknown'
+    let repoName = 'unknown'
+    try {
+      const parsed = new URL(pr.url)
+      host = parsed.host || host
+      const segments = parsed.pathname.split('/').filter(Boolean)
+      if (segments.length >= 2) {
+        owner = segments[0]
+        repoName = segments[1]
+      }
+    } catch {
+      // Why: malformed URLs should not block queue-state classification.
+    }
+
+    // Why: unresolved thread data is paginated and fetched separately. Until
+    // comments have loaded for this PR, do not let queue badges imply a clean review.
+    const commentsForClassification =
+      commentsFetchedAt !== undefined && !commentsLoading ? comments : undefined
+    const summary = hostedReviewSummaryFromGitHubPRInfo({
+      pr,
+      owner,
+      repo: repoName,
+      host,
+      comments: commentsForClassification,
+      checks
+    })
+    const options: HostedReviewClassificationOptions = {
+      agentAuthorLogins: [],
+      viewer: null
+    }
+    return classifyHostedReview(summary, options)
+  }, [pr, repo, comments, commentsFetchedAt, commentsLoading, checks])
+
+  const queueBadges = React.useMemo(() => {
+    if (!activeReviewClassification) {
+      return [] as string[]
+    }
+    const badges: string[] = []
+    if (activeReviewClassification.needsResponse) {
+      badges.push('Needs response')
+    }
+    if (activeReviewClassification.readyToMerge) {
+      badges.push('Ready to merge')
+    }
+    // Why: viewer/author/requestedReviewer signals are not wired into the
+    // ChecksPanel call site yet, so `state` and `requested` would mis-classify
+    // every PR (collapsing to 'teammate'). Suppress those badges until the
+    // inputs are available; needs-response / ready-to-merge work from PR
+    // metadata alone and remain accurate.
+    return badges
+  }, [activeReviewClassification])
 
   // ── Empty state ──
   if (!activeWorktree) {
@@ -625,6 +795,8 @@ export default function ChecksPanel(): React.JSX.Element {
             open={createPrDialogOpen}
             repoId={repo.id}
             repoPath={repo.path}
+            worktreeId={activeWorktreeId}
+            worktreePath={activeWorktreePath ?? repo.path}
             branch={branch}
             eligibility={hostedReviewCreation}
             pushBeforeCreate={createPrPushFirst}
@@ -698,7 +870,7 @@ export default function ChecksPanel(): React.JSX.Element {
           </span>
           <div className="flex-1" />
           <button
-            className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-50"
             title="Refresh"
             onClick={() => void handleRefresh()}
             disabled={isRefreshing}
@@ -706,7 +878,7 @@ export default function ChecksPanel(): React.JSX.Element {
             <RefreshCw className={cn('size-3.5', isRefreshing && 'animate-spin')} />
           </button>
           <button
-            className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             title="Open on GitHub"
             onClick={handleOpenPR}
           >
@@ -726,7 +898,7 @@ export default function ChecksPanel(): React.JSX.Element {
               disabled={titleSaving}
             />
             <button
-              className="p-1 rounded hover:bg-accent text-emerald-500 hover:text-emerald-400 transition-colors"
+              className="cursor-pointer rounded p-1 text-emerald-500 transition-colors hover:bg-accent hover:text-emerald-400 disabled:cursor-default disabled:opacity-50"
               title="Save"
               onClick={() => void handleSaveTitle()}
               disabled={titleSaving}
@@ -738,7 +910,7 @@ export default function ChecksPanel(): React.JSX.Element {
               )}
             </button>
             <button
-              className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-50"
               title="Cancel"
               onClick={handleCancelEdit}
               disabled={titleSaving}
@@ -760,6 +932,19 @@ export default function ChecksPanel(): React.JSX.Element {
         {pr.updatedAt && (
           <div className="text-[10px] text-muted-foreground/60">
             Updated {new Date(pr.updatedAt).toLocaleString()}
+          </div>
+        )}
+
+        {queueBadges.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {queueBadges.map((badge) => (
+              <span
+                key={badge}
+                className="rounded border border-border bg-accent/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground"
+              >
+                {badge}
+              </span>
+            ))}
           </div>
         )}
 

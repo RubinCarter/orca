@@ -30,7 +30,17 @@ import type { ParsedAgentStatusPayload } from './agent-status-types'
 // Promoted from `src/main/agent-hooks/server.ts` so the relay can import it
 // without dragging Electron in (the shared listener module is the only place
 // that consumes it from the relay side).
-export type AgentHookSource = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor' | 'pi' | 'droid'
+export type AgentHookSource =
+  | 'claude'
+  | 'codex'
+  | 'gemini'
+  | 'opencode'
+  | 'cursor'
+  | 'pi'
+  | 'droid'
+  | 'grok'
+  | 'copilot'
+  | 'hermes'
 
 /** Env marker used by the remote relay. It is a transport/location marker, not
  *  a dev-vs-prod build tag, so main-process env mismatch diagnostics ignore it. */
@@ -69,14 +79,13 @@ export const AGENT_HOOK_REQUEST_REPLAY_METHOD = 'agent_hook.requestReplay' as co
 export const AGENT_HOOK_INSTALL_PLUGINS_METHOD = 'agent_hook.installPlugins' as const
 
 /** Feature-flag env var. Read once at process start by Orca and the relay.
- *  Absent / empty / "0" = off; anything else = on. See §8 of the design doc
- *  for the gate locations. */
+ *  Remote agent hooks ship as the default SSH behavior; set "0" to opt out. */
 export const ORCA_FEATURE_REMOTE_AGENT_HOOKS_ENV = 'ORCA_FEATURE_REMOTE_AGENT_HOOKS' as const
 
 export function isRemoteAgentHooksEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = env[ORCA_FEATURE_REMOTE_AGENT_HOOKS_ENV]
   if (raw === undefined) {
-    return false
+    return true
   }
   const trimmed = raw.trim()
   if (trimmed.length === 0 || trimmed === '0') {

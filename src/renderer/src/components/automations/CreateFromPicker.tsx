@@ -28,12 +28,14 @@ export function CreateFromPicker({
   repoMap,
   worktrees,
   value,
+  triggerClassName,
   onValueChange
 }: {
   repoId: string
   repoMap: Map<string, Repo>
   worktrees: Worktree[]
   value: string
+  triggerClassName?: string
   onValueChange: (baseBranch: string) => void
 }): React.JSX.Element {
   const activeRuntimeEnvironmentId = useAppStore(
@@ -147,9 +149,12 @@ export function CreateFromPicker({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="h-9 w-full justify-between px-3 text-sm font-normal"
+            className={cn('h-9 w-full justify-between px-3 text-sm font-normal', triggerClassName)}
           >
-            <span className="truncate">{selectedLabel}</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="shrink-0 text-muted-foreground">Branch from</span>
+              <span className="truncate">{selectedLabel}</span>
+            </span>
             <ChevronsUpDown className="size-4 opacity-50" />
           </Button>
         </PopoverTrigger>

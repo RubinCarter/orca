@@ -5,8 +5,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import type { Repo, TerminalTab, WorkspaceSessionState } from '../shared/types'
-import { isTerminalLeafId } from '../shared/stable-pane-id'
+import type { Repo, TerminalTab, WorktreeLineage, WorkspaceSessionState } from '../shared/types'
+import { isTerminalLeafId, makePaneKey } from '../shared/stable-pane-id'
 import { MAX_BROWSER_HISTORY_ENTRIES } from '../shared/workspace-session-browser-history'
 
 // Shared mutable state so the electron mock can reference a per-test directory
@@ -15,6 +15,34 @@ const TEST_LEAF_1 = '11111111-1111-4111-8111-111111111111'
 const TEST_LEAF_2 = '22222222-2222-4222-8222-222222222222'
 const TEST_LEAF_LIVE = '33333333-3333-4333-8333-333333333333'
 const TEST_LEAF_EXPIRED = '44444444-4444-4444-8444-444444444444'
+const REORDERED_DEFAULT_WORKSPACE_STATUSES = [
+  { id: 'completed', label: 'Completed', color: 'conductor-done', icon: 'conductor-done' },
+  { id: 'in-review', label: 'In review', color: 'conductor-review', icon: 'conductor-review' },
+  {
+    id: 'in-progress',
+    label: 'In progress',
+    color: 'conductor-progress',
+    icon: 'conductor-progress'
+  },
+  { id: 'todo', label: 'Todo', color: 'neutral', icon: 'circle' }
+]
+const LEGACY_DEFAULT_WORKSPACE_STATUSES = [
+  { id: 'todo', label: 'Todo', color: 'neutral', icon: 'circle' },
+  { id: 'in-progress', label: 'In progress', color: 'blue', icon: 'circle-dot' },
+  { id: 'in-review', label: 'In review', color: 'violet', icon: 'git-pull-request' },
+  { id: 'completed', label: 'Completed', color: 'emerald', icon: 'circle-check' }
+]
+const WORKFLOW_DEFAULT_WORKSPACE_STATUSES = [
+  { id: 'completed', label: 'Done', color: 'conductor-done', icon: 'conductor-done' },
+  { id: 'in-review', label: 'In review', color: 'conductor-review', icon: 'conductor-review' },
+  {
+    id: 'in-progress',
+    label: 'In progress',
+    color: 'conductor-progress',
+    icon: 'conductor-progress'
+  },
+  { id: 'todo', label: 'Todo', color: 'neutral', icon: 'circle' }
+]
 
 vi.mock('electron', () => ({
   app: {
@@ -75,6 +103,17 @@ const makeTerminalTab = (overrides: Partial<TerminalTab> = {}): TerminalTab => (
   customTitle: null,
   color: null,
   sortOrder: 0,
+  createdAt: 1,
+  ...overrides
+})
+
+const makeWorktreeLineage = (overrides: Partial<WorktreeLineage> = {}): WorktreeLineage => ({
+  worktreeId: 'r1::/path/child',
+  worktreeInstanceId: 'child-instance',
+  parentWorktreeId: 'r1::/path/parent',
+  parentWorktreeInstanceId: 'parent-instance',
+  origin: 'manual',
+  capture: { source: 'manual-action', confidence: 'explicit' },
   createdAt: 1,
   ...overrides
 })
@@ -163,8 +202,11 @@ describe('Store', () => {
     expect(settings.editorAutoSaveDelayMs).toBe(1000)
     expect(settings.terminalFontSize).toBe(14)
     expect(settings.terminalFontWeight).toBe(500)
+    expect(settings.terminalUseSeparateLightTheme).toBe(true)
     expect(settings.rightSidebarOpenByDefault).toBe(true)
     expect(settings.showTasksButton).toBe(true)
+    expect(settings.visibleTaskProviders).toEqual(['github', 'gitlab', 'linear'])
+    expect(settings.openInApplications).toEqual([])
     expect(settings.experimentalActivity).toBe(true)
     expect(settings.floatingTerminalEnabled).toBe(true)
     expect(settings.floatingTerminalDefaultedForAllUsers).toBe(true)
@@ -179,6 +221,33 @@ describe('Store', () => {
     expect(ui.lastActiveRepoId).toBeNull()
     expect(ui.dismissedUpdateVersion).toBeNull()
     expect(ui.lastUpdateCheckAt).toBeNull()
+  })
+
+  it('preserves legacy none grouping as ungrouped workspaces', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      ui: { groupBy: 'none' }
+    })
+    const store = await createStore()
+    expect(store.getUI().groupBy).toBe('none')
+  })
+
+  it('normalizes interim flat grouping back to none', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      ui: { groupBy: 'flat' }
+    })
+    const store = await createStore()
+    expect(store.getUI().groupBy).toBe('none')
+  })
+
+  it('preserves explicit workspace status grouping', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      ui: { groupBy: 'workspace-status' }
+    })
+    const store = await createStore()
+    expect(store.getUI().groupBy).toBe('workspace-status')
   })
 
   // ── 2. Load from existing valid file ─────────────────────────────────
@@ -218,6 +287,135 @@ describe('Store', () => {
     const store = await createStore()
 
     expect(store.getRepos()).toHaveLength(1)
+  })
+
+  it('remaps persisted agent acknowledgement pane keys when terminal leaves migrate to UUIDs', async () => {
+    const acknowledgedAt = 1_700_000_000_000
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [makeRepo()],
+      worktreeMeta: {},
+      settings: {},
+      ui: {
+        acknowledgedAgentsByPaneKey: {
+          'tab1:0': acknowledgedAt,
+          'tab1:pane:1': acknowledgedAt - 1_000,
+          'other-tab:0': acknowledgedAt - 2_000
+        }
+      },
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {
+        activeRepoId: 'r1',
+        activeWorktreeId: 'repo1::/worktree',
+        activeTabId: 'tab1',
+        tabsByWorktree: {
+          'repo1::/worktree': [
+            makeTerminalTab({
+              id: 'tab1',
+              ptyId: 'pty1',
+              worktreeId: 'repo1::/worktree'
+            })
+          ]
+        },
+        terminalLayoutsByTabId: {
+          tab1: {
+            root: {
+              type: 'split',
+              direction: 'horizontal',
+              first: { type: 'leaf', leafId: '0' },
+              second: { type: 'leaf', leafId: 'pane:1' }
+            },
+            activeLeafId: '0',
+            expandedLeafId: null,
+            ptyIdsByLeafId: { '0': 'pty1', 'pane:1': 'pty2' }
+          }
+        }
+      }
+    })
+
+    const store = await createStore()
+    const layout = store.getWorkspaceSession().terminalLayoutsByTabId.tab1
+    const migratedLeafIds = Object.keys(layout.ptyIdsByLeafId ?? {})
+
+    expect(migratedLeafIds).toHaveLength(2)
+    expect(migratedLeafIds.every(isTerminalLeafId)).toBe(true)
+
+    const ui = store.getUI()
+    expect(ui.acknowledgedAgentsByPaneKey).toEqual({
+      [makePaneKey('tab1', migratedLeafIds[0])]: acknowledgedAt,
+      [makePaneKey('tab1', migratedLeafIds[1])]: acknowledgedAt - 1_000,
+      'other-tab:0': acknowledgedAt - 2_000
+    })
+  })
+
+  it('keeps the newest acknowledgement when legacy and migrated pane keys collide', async () => {
+    const legacyAcknowledgedAt = 1_700_000_000_000
+    const migratedAcknowledgedAt = legacyAcknowledgedAt + 5_000
+    const migratedPaneKey = makePaneKey('tab1', TEST_LEAF_1)
+
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [makeRepo()],
+      worktreeMeta: {},
+      settings: {},
+      ui: {
+        acknowledgedAgentsByPaneKey: {
+          'tab1:0': legacyAcknowledgedAt,
+          [migratedPaneKey]: migratedAcknowledgedAt
+        }
+      },
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {
+        activeRepoId: 'r1',
+        activeWorktreeId: 'repo1::/worktree',
+        activeTabId: 'tab1',
+        tabsByWorktree: {
+          'repo1::/worktree': [
+            makeTerminalTab({
+              id: 'tab1',
+              ptyId: 'pty1',
+              worktreeId: 'repo1::/worktree'
+            })
+          ]
+        },
+        terminalLayoutsByTabId: {
+          tab1: {
+            root: { type: 'leaf', leafId: TEST_LEAF_1 },
+            activeLeafId: TEST_LEAF_1,
+            expandedLeafId: null,
+            ptyIdsByLeafId: { [TEST_LEAF_1]: 'pty1' }
+          }
+        }
+      }
+    })
+
+    const store = await createStore()
+    store.setWorkspaceSession({
+      activeRepoId: 'r1',
+      activeWorktreeId: 'repo1::/worktree',
+      activeTabId: 'tab1',
+      tabsByWorktree: {
+        'repo1::/worktree': [
+          makeTerminalTab({
+            id: 'tab1',
+            ptyId: 'pty1',
+            worktreeId: 'repo1::/worktree'
+          })
+        ]
+      },
+      terminalLayoutsByTabId: {
+        tab1: {
+          root: { type: 'leaf', leafId: '0' },
+          activeLeafId: '0',
+          expandedLeafId: null,
+          ptyIdsByLeafId: { '0': 'pty1' }
+        }
+      }
+    })
+
+    expect(store.getUI().acknowledgedAgentsByPaneKey).toEqual({
+      [migratedPaneKey]: migratedAcknowledgedAt
+    })
   })
 
   it('can clear an automation back to the project default branch', async () => {
@@ -271,6 +469,98 @@ describe('Store', () => {
     expect(second.title).toBe('Nightly run 2')
   })
 
+  it('snapshots automation run workspace names for deleted-workspace history', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo())
+    store.setWorktreeMeta('wt1', { displayName: 'Nightly workspace' })
+    const automation = store.createAutomation({
+      name: 'Nightly',
+      prompt: 'Run checks',
+      agentId: 'claude',
+      projectId: 'r1',
+      workspaceMode: 'existing',
+      workspaceId: 'wt1',
+      timezone: 'UTC',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      dtstart: new Date('2026-05-13T00:00:00Z').getTime()
+    })
+
+    const run = store.createAutomationRun(automation, new Date('2026-05-13T09:00:00Z').getTime())
+    store.removeWorktreeMeta('wt1')
+
+    expect(run.workspaceDisplayName).toBe('Nightly workspace')
+    expect(store.listAutomationRuns(automation.id)[0].workspaceDisplayName).toBe(
+      'Nightly workspace'
+    )
+  })
+
+  it('backfills automation run workspace names before workspace deletion', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo())
+    const automation = store.createAutomation({
+      name: 'Nightly',
+      prompt: 'Run checks',
+      agentId: 'claude',
+      projectId: 'r1',
+      workspaceMode: 'existing',
+      workspaceId: 'wt1',
+      timezone: 'UTC',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      dtstart: new Date('2026-05-13T00:00:00Z').getTime()
+    })
+    store.createAutomationRun(automation, new Date('2026-05-13T09:00:00Z').getTime())
+
+    const updatedCount = store.snapshotAutomationRunWorkspaceDisplayName('wt1', 'Deleted workspace')
+
+    expect(updatedCount).toBe(1)
+    expect(store.listAutomationRuns(automation.id)[0].workspaceDisplayName).toBe(
+      'Deleted workspace'
+    )
+  })
+
+  it('persists automation run output snapshots across later status updates', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo())
+    const automation = store.createAutomation({
+      name: 'Nightly',
+      prompt: 'Run checks',
+      agentId: 'claude',
+      projectId: 'r1',
+      workspaceMode: 'existing',
+      workspaceId: 'wt1',
+      timezone: 'UTC',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      dtstart: new Date('2026-05-13T00:00:00Z').getTime()
+    })
+    const run = store.createAutomationRun(automation, new Date('2026-05-13T09:00:00Z').getTime())
+
+    store.updateAutomationRun({
+      runId: run.id,
+      status: 'completed',
+      workspaceId: 'wt1',
+      outputSnapshot: {
+        format: 'plain_text',
+        content: 'Run finished',
+        capturedAt: 1,
+        truncated: false
+      },
+      error: null
+    })
+    store.updateAutomationRun({
+      runId: run.id,
+      status: 'completed',
+      workspaceId: 'wt1',
+      terminalSessionId: 'tab-1',
+      usage: null,
+      error: null
+    })
+
+    expect(store.listAutomationRuns(automation.id)[0].outputSnapshot).toMatchObject({
+      content: 'Run finished',
+      truncated: false
+    })
+  })
+
   // ── 3. Corrupt JSON → falls back to defaults ────────────────────────
 
   it('falls back to defaults when data file contains invalid JSON', async () => {
@@ -305,11 +595,54 @@ describe('Store', () => {
     expect(store.getSettings().editorAutoSaveDelayMs).toBe(1000)
     expect(store.getSettings().refreshLocalBaseRefOnWorktreeCreate).toBe(false)
     expect(store.getSettings().rightSidebarOpenByDefault).toBe(true)
+    expect(store.getSettings().showGitIgnoredFiles).toBe(true)
     expect(store.getSettings().showTasksButton).toBe(true)
+    expect(store.getSettings().combinedDiffFileTreeVisibleByDefault).toBe(false)
+    expect(store.getSettings().visibleTaskProviders).toEqual(['github', 'gitlab', 'linear'])
     expect(store.getSettings().experimentalActivity).toBe(true)
     expect(store.getSettings().notifications.customSoundPath).toBeNull()
     // repos should be loaded
     expect(store.getRepos()).toHaveLength(1)
+  })
+
+  it('normalizes malformed visible task providers on load', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: { visibleTaskProviders: ['gitlab', 'unknown', 'gitlab'] },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getSettings().visibleTaskProviders).toEqual(['gitlab'])
+  })
+
+  it('normalizes persisted open-in applications on load', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        openInApplications: [
+          { id: 'cursor', label: ' Cursor ', command: ' cursor ' },
+          { id: 'cursor', label: 'Dup', command: 'dup' },
+          { id: '', label: 'Zed', command: 'zed' },
+          { id: 'bad', label: ' ', command: 'bad' }
+        ]
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getSettings().openInApplications).toEqual([
+      { id: 'cursor', label: 'Cursor', command: 'cursor' },
+      { id: 'open-in-3', label: 'Zed', command: 'zed' }
+    ])
   })
 
   it('migrates the legacy floating terminal disabled default to enabled', async () => {
@@ -417,6 +750,21 @@ describe('Store', () => {
     expect(store.getSettings().rightSidebarOpenByDefault).toBe(true)
   })
 
+  it('preserves terminalUseSeparateLightTheme when persisted as false', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: { terminalUseSeparateLightTheme: false },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getSettings().terminalUseSeparateLightTheme).toBe(false)
+  })
+
   // ── 5. addRepo and getRepo ──────────────────────────────────────────
 
   it('addRepo stores a repo retrievable by getRepo', async () => {
@@ -452,6 +800,40 @@ describe('Store', () => {
     expect(store.getWorktreeMeta('r1::/path/wt2')).toBeUndefined()
     expect(store.getWorktreeMeta('r2::/other')).toBeDefined()
     expect(store.getWorktreeMeta('r2::/other')!.displayName).toBe('other')
+  })
+
+  it('removeRepo deletes child and parent lineage for the repo', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'r1' }))
+    store.addRepo(makeRepo({ id: 'r2', path: '/repo2' }))
+
+    store.setWorktreeLineage(
+      'r1::/path/child',
+      makeWorktreeLineage({
+        worktreeId: 'r1::/path/child',
+        parentWorktreeId: 'r1::/path/parent'
+      })
+    )
+    store.setWorktreeLineage(
+      'r2::/other-child',
+      makeWorktreeLineage({
+        worktreeId: 'r2::/other-child',
+        parentWorktreeId: 'r1::/path/parent'
+      })
+    )
+    store.setWorktreeLineage(
+      'r2::/other',
+      makeWorktreeLineage({
+        worktreeId: 'r2::/other',
+        parentWorktreeId: 'r2::/parent'
+      })
+    )
+
+    store.removeRepo('r1')
+
+    expect(store.getWorktreeLineage('r1::/path/child')).toBeUndefined()
+    expect(store.getWorktreeLineage('r2::/other-child')).toBeUndefined()
+    expect(store.getWorktreeLineage('r2::/other')).toBeDefined()
   })
 
   // ── 7. updateRepo ──────────────────────────────────────────────────
@@ -544,6 +926,20 @@ describe('Store', () => {
     expect(updated.terminalFontWeight).toBe(600)
     // Other fields preserved
     expect(updated.branchPrefix).toBe('git-username')
+  })
+
+  it('updateSettings normalizes open-in applications', async () => {
+    const store = await createStore()
+    const updated = store.updateSettings({
+      openInApplications: [
+        { id: 'cursor', label: ' Cursor ', command: ' cursor ' },
+        { id: 'cursor', label: 'Dup', command: 'dup' },
+        { id: 'bad', label: '', command: 'bad' }
+      ]
+    })
+    expect(updated.openInApplications).toEqual([
+      { id: 'cursor', label: 'Cursor', command: 'cursor' }
+    ])
   })
 
   it('updateSettings toggles editorAutoSave', async () => {
@@ -731,6 +1127,127 @@ describe('Store', () => {
 
     const store = await createStore()
     expect(store.getUI().sortBy).toBe('recent')
+  })
+
+  it('repairs the known-bad reordered default workspace statuses once on load', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: { workspaceStatuses: REORDERED_DEFAULT_WORKSPACE_STATUSES },
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    const ui = store.getUI()
+    expect(ui.workspaceStatuses?.map((status) => status.id)).toEqual([
+      'completed',
+      'in-review',
+      'in-progress',
+      'todo'
+    ])
+    expect(ui.workspaceStatuses?.[0]?.label).toBe('Done')
+    expect(ui._workspaceStatusesDefaultOrderMigrated).toBe(true)
+    expect(ui._workspaceStatusesDefaultWorkflowMigrated).toBe(true)
+
+    store.flush()
+    const persisted = readDataFile() as {
+      ui?: {
+        workspaceStatuses?: typeof REORDERED_DEFAULT_WORKSPACE_STATUSES
+        _workspaceStatusesDefaultOrderMigrated?: boolean
+        _workspaceStatusesDefaultWorkflowMigrated?: boolean
+        _workspaceStatusesDefaultVisualsMigrated?: boolean
+      }
+    }
+    expect(persisted.ui?._workspaceStatusesDefaultOrderMigrated).toBe(true)
+    expect(persisted.ui?._workspaceStatusesDefaultWorkflowMigrated).toBe(true)
+    expect(persisted.ui?._workspaceStatusesDefaultVisualsMigrated).toBe(true)
+    expect(persisted.ui?.workspaceStatuses?.map((status) => status.id)).toEqual([
+      'completed',
+      'in-review',
+      'in-progress',
+      'todo'
+    ])
+    expect(persisted.ui?.workspaceStatuses?.[0]?.label).toBe('Done')
+  })
+
+  it('migrates legacy default workspace status visuals and workflow once on load', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {
+        workspaceStatuses: LEGACY_DEFAULT_WORKSPACE_STATUSES,
+        _workspaceStatusesDefaultOrderMigrated: true
+      },
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getUI().workspaceStatuses).toEqual(WORKFLOW_DEFAULT_WORKSPACE_STATUSES)
+    expect(store.getUI()._workspaceStatusesDefaultWorkflowMigrated).toBe(true)
+    expect(store.getUI()._workspaceStatusesDefaultVisualsMigrated).toBe(true)
+
+    store.flush()
+    const persisted = readDataFile() as {
+      ui?: {
+        _workspaceStatusesDefaultWorkflowMigrated?: boolean
+        _workspaceStatusesDefaultVisualsMigrated?: boolean
+      }
+    }
+    expect(persisted.ui?._workspaceStatusesDefaultWorkflowMigrated).toBe(true)
+    expect(persisted.ui?._workspaceStatusesDefaultVisualsMigrated).toBe(true)
+  })
+
+  it('preserves legacy-looking workspace status visuals after the load migration', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {
+        workspaceStatuses: LEGACY_DEFAULT_WORKSPACE_STATUSES,
+        _workspaceStatusesDefaultOrderMigrated: true,
+        _workspaceStatusesDefaultWorkflowMigrated: true,
+        _workspaceStatusesDefaultVisualsMigrated: true
+      },
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    const inProgress = store
+      .getUI()
+      .workspaceStatuses?.find((status) => status.id === 'in-progress')
+    expect(inProgress).toMatchObject({ color: 'blue', icon: 'circle-dot' })
+  })
+
+  it('preserves intentionally reordered default workspace statuses after the load migration', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {
+        workspaceStatuses: REORDERED_DEFAULT_WORKSPACE_STATUSES,
+        _workspaceStatusesDefaultOrderMigrated: true,
+        _workspaceStatusesDefaultWorkflowMigrated: true
+      },
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getUI().workspaceStatuses?.map((status) => status.id)).toEqual([
+      'completed',
+      'in-review',
+      'in-progress',
+      'todo'
+    ])
   })
 
   // ── terminalMacOptionAsAlt migration (issue #903) ───────────────────
@@ -1222,6 +1739,567 @@ describe('Store', () => {
     expect(isTerminalLeafId(leafId)).toBe(true)
     expect(layout.ptyIdsByLeafId).toEqual({ [leafId]: 'remote-pty' })
     expect(store.getSshRemotePtyLeases('ssh-1')[0].leafId).toBe(leafId)
+  })
+
+  it('hydrates legacy numeric agent status cache through the pane identity migration', async () => {
+    const agentHooksDir = join(testState.dir, 'agent-hooks')
+    mkdirSync(agentHooksDir, { recursive: true })
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {
+        activeRepoId: 'r1',
+        activeWorktreeId: 'wt1',
+        activeTabId: 'tab1',
+        tabsByWorktree: {
+          wt1: [
+            {
+              id: 'tab1',
+              worktreeId: 'wt1',
+              title: 'Terminal',
+              customTitle: null,
+              color: null,
+              sortOrder: 0,
+              createdAt: 1,
+              ptyId: 'local-pty'
+            }
+          ]
+        },
+        terminalLayoutsByTabId: {
+          tab1: {
+            root: { type: 'leaf', leafId: 'pane:1' },
+            activeLeafId: 'pane:1',
+            expandedLeafId: null,
+            ptyIdsByLeafId: { 'pane:1': 'local-pty' }
+          }
+        }
+      }
+    })
+    writeFileSync(
+      join(agentHooksDir, 'last-status.json'),
+      JSON.stringify({
+        version: 2,
+        entries: {
+          'tab1:1': {
+            paneKey: 'tab1:1',
+            tabId: 'tab1',
+            worktreeId: 'wt1',
+            connectionId: null,
+            receivedAt: Date.now(),
+            stateStartedAt: Date.now() - 1000,
+            payload: { state: 'working', prompt: 'legacy numeric prompt', agentType: 'claude' }
+          }
+        }
+      }),
+      'utf-8'
+    )
+
+    const store = await createStore()
+    const { agentHookServer } = await import('./agent-hooks/server')
+    await agentHookServer.start({ env: 'production', userDataPath: testState.dir })
+    try {
+      const layout = store.getWorkspaceSession().terminalLayoutsByTabId.tab1
+      const leafId = layout.root?.type === 'leaf' ? layout.root.leafId : null
+      if (leafId === null) {
+        throw new Error('Expected remapped leaf id')
+      }
+      const stablePaneKey = makePaneKey('tab1', leafId)
+      expect(agentHookServer.getStatusSnapshot()).toEqual([
+        expect.objectContaining({
+          paneKey: stablePaneKey,
+          tabId: 'tab1',
+          worktreeId: 'wt1',
+          state: 'working',
+          prompt: 'legacy numeric prompt',
+          agentType: 'claude'
+        })
+      ])
+    } finally {
+      agentHookServer.stop()
+    }
+  })
+
+  it('hydrates split-pane legacy numeric agent status rows onto the matching remapped leaves', async () => {
+    const agentHooksDir = join(testState.dir, 'agent-hooks')
+    mkdirSync(agentHooksDir, { recursive: true })
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {
+        activeRepoId: 'r1',
+        activeWorktreeId: 'wt1',
+        activeTabId: 'tab1',
+        tabsByWorktree: {
+          wt1: [
+            {
+              id: 'tab1',
+              worktreeId: 'wt1',
+              title: 'Terminal',
+              customTitle: null,
+              color: null,
+              sortOrder: 0,
+              createdAt: 1,
+              ptyId: 'local-pty-1'
+            }
+          ]
+        },
+        terminalLayoutsByTabId: {
+          tab1: {
+            root: {
+              type: 'split',
+              direction: 'horizontal',
+              first: { type: 'leaf', leafId: 'pane:1' },
+              second: { type: 'leaf', leafId: 'pane:2' },
+              sizes: [50, 50]
+            },
+            activeLeafId: 'pane:1',
+            expandedLeafId: null,
+            ptyIdsByLeafId: { 'pane:1': 'local-pty-1', 'pane:2': 'local-pty-2' }
+          }
+        }
+      }
+    })
+    const now = Date.now()
+    writeFileSync(
+      join(agentHooksDir, 'last-status.json'),
+      JSON.stringify({
+        version: 2,
+        entries: {
+          'tab1:1': {
+            paneKey: 'tab1:1',
+            tabId: 'tab1',
+            worktreeId: 'wt1',
+            connectionId: null,
+            receivedAt: now,
+            stateStartedAt: now - 2000,
+            payload: { state: 'working', prompt: 'left legacy prompt', agentType: 'claude' }
+          },
+          'tab1:2': {
+            paneKey: 'tab1:2',
+            tabId: 'tab1',
+            worktreeId: 'wt1',
+            connectionId: null,
+            receivedAt: now,
+            stateStartedAt: now - 1000,
+            payload: { state: 'blocked', prompt: 'right legacy prompt', agentType: 'codex' }
+          }
+        }
+      }),
+      'utf-8'
+    )
+
+    const store = await createStore()
+    const { agentHookServer } = await import('./agent-hooks/server')
+    await agentHookServer.start({ env: 'production', userDataPath: testState.dir })
+    try {
+      const layout = store.getWorkspaceSession().terminalLayoutsByTabId.tab1
+      const firstLeafId =
+        layout.root?.type === 'split' && layout.root.first.type === 'leaf'
+          ? layout.root.first.leafId
+          : null
+      const secondLeafId =
+        layout.root?.type === 'split' && layout.root.second.type === 'leaf'
+          ? layout.root.second.leafId
+          : null
+      if (firstLeafId === null || secondLeafId === null) {
+        throw new Error('Expected remapped split leaves')
+      }
+      const byPaneKey = new Map(
+        agentHookServer.getStatusSnapshot().map((entry) => [entry.paneKey, entry])
+      )
+
+      expect(byPaneKey.get(makePaneKey('tab1', firstLeafId))).toEqual(
+        expect.objectContaining({
+          state: 'working',
+          prompt: 'left legacy prompt',
+          agentType: 'claude'
+        })
+      )
+      expect(byPaneKey.get(makePaneKey('tab1', secondLeafId))).toEqual(
+        expect.objectContaining({
+          state: 'blocked',
+          prompt: 'right legacy prompt',
+          agentType: 'codex'
+        })
+      )
+    } finally {
+      agentHookServer.stop()
+    }
+  })
+
+  it('hydrates split-pane legacy status rows even when PTY leaf bindings are absent', async () => {
+    const agentHooksDir = join(testState.dir, 'agent-hooks')
+    mkdirSync(agentHooksDir, { recursive: true })
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {
+        activeRepoId: 'r1',
+        activeWorktreeId: 'wt1',
+        activeTabId: 'tab1',
+        tabsByWorktree: {
+          wt1: [
+            {
+              id: 'tab1',
+              worktreeId: 'wt1',
+              title: 'Terminal',
+              customTitle: null,
+              color: null,
+              sortOrder: 0,
+              createdAt: 1,
+              ptyId: 'local-pty-1'
+            }
+          ]
+        },
+        terminalLayoutsByTabId: {
+          tab1: {
+            root: {
+              type: 'split',
+              direction: 'vertical',
+              first: { type: 'leaf', leafId: 'pane:1' },
+              second: { type: 'leaf', leafId: 'pane:2' },
+              sizes: [50, 50]
+            },
+            activeLeafId: 'pane:2',
+            expandedLeafId: null
+          }
+        }
+      }
+    })
+    const now = Date.now()
+    writeFileSync(
+      join(agentHooksDir, 'last-status.json'),
+      JSON.stringify({
+        version: 2,
+        entries: {
+          'tab1:1': {
+            paneKey: 'tab1:1',
+            tabId: 'tab1',
+            worktreeId: 'wt1',
+            connectionId: null,
+            receivedAt: now,
+            stateStartedAt: now - 2000,
+            payload: { state: 'working', prompt: 'left no binding', agentType: 'claude' }
+          },
+          'tab1:2': {
+            paneKey: 'tab1:2',
+            tabId: 'tab1',
+            worktreeId: 'wt1',
+            connectionId: null,
+            receivedAt: now,
+            stateStartedAt: now - 1000,
+            payload: { state: 'blocked', prompt: 'right no binding', agentType: 'codex' }
+          }
+        }
+      }),
+      'utf-8'
+    )
+
+    const store = await createStore()
+    const { agentHookServer } = await import('./agent-hooks/server')
+    await agentHookServer.start({ env: 'production', userDataPath: testState.dir })
+    try {
+      const layout = store.getWorkspaceSession().terminalLayoutsByTabId.tab1
+      const firstLeafId =
+        layout.root?.type === 'split' && layout.root.first.type === 'leaf'
+          ? layout.root.first.leafId
+          : null
+      const secondLeafId =
+        layout.root?.type === 'split' && layout.root.second.type === 'leaf'
+          ? layout.root.second.leafId
+          : null
+      if (firstLeafId === null || secondLeafId === null) {
+        throw new Error('Expected remapped split leaves')
+      }
+      const byPaneKey = new Map(
+        agentHookServer.getStatusSnapshot().map((entry) => [entry.paneKey, entry])
+      )
+
+      expect(byPaneKey.get(makePaneKey('tab1', firstLeafId))).toEqual(
+        expect.objectContaining({
+          state: 'working',
+          prompt: 'left no binding',
+          agentType: 'claude'
+        })
+      )
+      expect(byPaneKey.get(makePaneKey('tab1', secondLeafId))).toEqual(
+        expect.objectContaining({
+          state: 'blocked',
+          prompt: 'right no binding',
+          agentType: 'codex'
+        })
+      )
+    } finally {
+      agentHookServer.stop()
+    }
+  })
+
+  it('persists legacy pane-key aliases after the layout has been normalized', async () => {
+    const agentHooksDir = join(testState.dir, 'agent-hooks')
+    mkdirSync(agentHooksDir, { recursive: true })
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {
+        activeRepoId: 'r1',
+        activeWorktreeId: 'wt1',
+        activeTabId: 'tab1',
+        tabsByWorktree: {
+          wt1: [
+            {
+              id: 'tab1',
+              worktreeId: 'wt1',
+              title: 'Terminal',
+              customTitle: null,
+              color: null,
+              sortOrder: 0,
+              createdAt: 1,
+              ptyId: 'local-pty'
+            }
+          ]
+        },
+        terminalLayoutsByTabId: {
+          tab1: {
+            root: { type: 'leaf', leafId: 'pane:1' },
+            activeLeafId: 'pane:1',
+            expandedLeafId: null,
+            ptyIdsByLeafId: { 'pane:1': 'local-pty' }
+          }
+        }
+      }
+    })
+
+    const firstStore = await createStore()
+    const root = firstStore.getWorkspaceSession().terminalLayoutsByTabId.tab1.root
+    const stableLeafId = root?.type === 'leaf' ? root.leafId : null
+    if (stableLeafId === null) {
+      throw new Error('Expected remapped leaf id')
+    }
+    const stablePaneKey = makePaneKey('tab1', stableLeafId)
+    firstStore.flush()
+
+    expect(readDataFile()).toEqual(
+      expect.objectContaining({
+        legacyPaneKeyAliasEntries: [
+          expect.objectContaining({
+            ptyId: 'local-pty',
+            legacyPaneKey: 'tab1:1',
+            stablePaneKey
+          })
+        ]
+      })
+    )
+
+    const now = Date.now()
+    writeFileSync(
+      join(agentHooksDir, 'last-status.json'),
+      JSON.stringify({
+        version: 2,
+        entries: {
+          'tab1:1': {
+            paneKey: 'tab1:1',
+            tabId: 'tab1',
+            worktreeId: 'wt1',
+            connectionId: null,
+            receivedAt: now,
+            stateStartedAt: now - 1000,
+            payload: { state: 'working', prompt: 'post-normalize legacy prompt' }
+          }
+        }
+      }),
+      'utf-8'
+    )
+
+    await createStore()
+    const { agentHookServer } = await import('./agent-hooks/server')
+    await agentHookServer.start({ env: 'production', userDataPath: testState.dir })
+    try {
+      expect(agentHookServer.getStatusSnapshot()).toEqual([
+        expect.objectContaining({
+          paneKey: stablePaneKey,
+          state: 'working',
+          prompt: 'post-normalize legacy prompt'
+        })
+      ])
+    } finally {
+      agentHookServer.stop()
+    }
+  })
+
+  it('persists fallback aliases when a legacy split layout has no PTY leaf bindings', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {
+        activeRepoId: 'r1',
+        activeWorktreeId: 'wt1',
+        activeTabId: 'tab1',
+        tabsByWorktree: {
+          wt1: [
+            {
+              id: 'tab1',
+              worktreeId: 'wt1',
+              title: 'Terminal',
+              customTitle: null,
+              color: null,
+              sortOrder: 0,
+              createdAt: 1,
+              ptyId: 'local-pty'
+            }
+          ]
+        },
+        terminalLayoutsByTabId: {
+          tab1: {
+            root: {
+              type: 'split',
+              direction: 'vertical',
+              first: { type: 'leaf', leafId: 'pane:1' },
+              second: { type: 'leaf', leafId: 'pane:2' },
+              sizes: [50, 50]
+            },
+            activeLeafId: 'pane:2',
+            expandedLeafId: null
+          }
+        }
+      }
+    })
+
+    const store = await createStore()
+    const layout = store.getWorkspaceSession().terminalLayoutsByTabId.tab1
+    const firstLeafId =
+      layout.root?.type === 'split' && layout.root.first.type === 'leaf'
+        ? layout.root.first.leafId
+        : null
+    const secondLeafId =
+      layout.root?.type === 'split' && layout.root.second.type === 'leaf'
+        ? layout.root.second.leafId
+        : null
+    if (
+      !firstLeafId ||
+      !secondLeafId ||
+      !isTerminalLeafId(firstLeafId) ||
+      !isTerminalLeafId(secondLeafId)
+    ) {
+      throw new Error('Expected remapped split leaf ids')
+    }
+    const activePaneKey = makePaneKey('tab1', secondLeafId)
+    const firstPaneKey = makePaneKey('tab1', firstLeafId)
+    const secondPaneKey = makePaneKey('tab1', secondLeafId)
+    store.flush()
+
+    expect(readDataFile()).toEqual(
+      expect.objectContaining({
+        legacyPaneKeyAliasEntries: expect.arrayContaining([
+          expect.objectContaining({
+            ptyId: 'local-pty',
+            legacyPaneKey: 'tab1:0',
+            stablePaneKey: activePaneKey
+          }),
+          expect.objectContaining({
+            ptyId: 'local-pty',
+            legacyPaneKey: 'tab1:1',
+            stablePaneKey: firstPaneKey
+          }),
+          expect.objectContaining({
+            ptyId: 'local-pty',
+            legacyPaneKey: 'tab1:2',
+            stablePaneKey: secondPaneKey
+          })
+        ])
+      })
+    )
+  })
+
+  it('converts unambiguous dev migration rows into persisted aliases', async () => {
+    const stablePaneKey = makePaneKey('tab1', TEST_LEAF_1)
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {
+        activeRepoId: 'r1',
+        activeWorktreeId: 'wt1',
+        activeTabId: 'tab1',
+        tabsByWorktree: {
+          wt1: [
+            {
+              id: 'tab1',
+              worktreeId: 'wt1',
+              title: 'Terminal',
+              customTitle: null,
+              color: null,
+              sortOrder: 0,
+              createdAt: 1,
+              ptyId: 'local-pty'
+            }
+          ]
+        },
+        terminalLayoutsByTabId: {
+          tab1: {
+            root: { type: 'leaf', leafId: TEST_LEAF_1 },
+            activeLeafId: TEST_LEAF_1,
+            expandedLeafId: null,
+            ptyIdsByLeafId: { [TEST_LEAF_1]: 'local-pty' }
+          }
+        }
+      },
+      migrationUnsupportedPtyEntries: [
+        {
+          ptyId: 'local-pty',
+          worktreeId: 'wt1',
+          tabId: 'tab1',
+          leafId: TEST_LEAF_1,
+          paneKey: stablePaneKey,
+          reason: 'legacy-numeric-pane-key',
+          source: 'local',
+          updatedAt: 123
+        }
+      ]
+    })
+
+    const store = await createStore()
+    store.flush()
+
+    expect(readDataFile()).toEqual(
+      expect.objectContaining({
+        migrationUnsupportedPtyEntries: [],
+        legacyPaneKeyAliasEntries: expect.arrayContaining([
+          expect.objectContaining({
+            ptyId: 'local-pty',
+            legacyPaneKey: 'tab1:0',
+            stablePaneKey
+          }),
+          expect.objectContaining({
+            ptyId: 'local-pty',
+            legacyPaneKey: 'tab1:1',
+            stablePaneKey
+          })
+        ])
+      })
+    )
   })
 
   it('remaps legacy SSH lease leaf ids by PTY when the layout is already normalized', async () => {
@@ -2421,6 +3499,35 @@ describe('Store', () => {
     store.removeWorktreeMeta('a')
     expect(store.getWorktreeMeta('a')).toBeUndefined()
     expect(store.getWorktreeMeta('b')).toBeDefined()
+  })
+
+  it('stores and removes worktree lineage independently from metadata', async () => {
+    const store = await createStore()
+    const lineage = makeWorktreeLineage()
+
+    store.setWorktreeMeta(lineage.worktreeId, { displayName: 'child' })
+    store.setWorktreeLineage(lineage.worktreeId, lineage)
+
+    expect(store.getWorktreeLineage(lineage.worktreeId)).toEqual(lineage)
+    expect(store.getAllWorktreeLineage()).toEqual({ [lineage.worktreeId]: lineage })
+
+    store.removeWorktreeLineage(lineage.worktreeId)
+
+    expect(store.getWorktreeLineage(lineage.worktreeId)).toBeUndefined()
+    expect(store.getWorktreeMeta(lineage.worktreeId)).toBeDefined()
+  })
+
+  it('removeWorktreeMeta deletes that worktree lineage entry', async () => {
+    const store = await createStore()
+    const lineage = makeWorktreeLineage()
+
+    store.setWorktreeMeta(lineage.worktreeId, { displayName: 'child' })
+    store.setWorktreeLineage(lineage.worktreeId, lineage)
+
+    store.removeWorktreeMeta(lineage.worktreeId)
+
+    expect(store.getWorktreeMeta(lineage.worktreeId)).toBeUndefined()
+    expect(store.getWorktreeLineage(lineage.worktreeId)).toBeUndefined()
   })
 
   // ── Rolling backups (issue #1158) ──────────────────────────────────

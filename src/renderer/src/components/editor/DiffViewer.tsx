@@ -3,12 +3,16 @@ import { DiffEditor, type DiffOnMount } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useAppStore } from '@/store'
 import { diffViewStateCache, setWithLRU } from '@/lib/scroll-cache'
-import '@/lib/monaco-setup'
+import { monaco } from '@/lib/monaco-setup'
 import { computeEditorFontSize } from '@/lib/editor-font-zoom'
 import { useContextualCopySetup } from './useContextualCopySetup'
 import { findWorktreeById } from '@/store/slices/worktree-helpers'
 import { useDiffCommentDecorator } from '../diff-comments/useDiffCommentDecorator'
 import { DiffCommentPopover } from '../diff-comments/DiffCommentPopover'
+import {
+  getDiffCommentPopoverLeft,
+  getDiffCommentPopoverTop
+} from '../diff-comments/diff-comment-popover-position'
 import { applyDiffEditorLineNumberOptions } from './diff-editor-line-number-options'
 import type { DiffComment } from '../../../../shared/types'
 import { isDiffComment } from '@/lib/diff-comment-compat'
@@ -83,12 +87,14 @@ export default function DiffViewer({
     (settings?.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   const diffEditorRef = useRef<editor.IStandaloneDiffEditor | null>(null)
+  const diffBodyRef = useRef<HTMLDivElement | null>(null)
   const lineNumberOptionsSubRef = useRef<{ dispose: () => void } | null>(null)
   const [modifiedEditor, setModifiedEditor] = useState<editor.ICodeEditor | null>(null)
   const [popover, setPopover] = useState<{
     lineNumber: number
     startLine?: number
     top: number
+    left?: number
   } | null>(null)
 
   const hasLineCommentAction = Boolean(worktreeId || onAddLineComment)
@@ -113,7 +119,14 @@ export default function DiffViewer({
     comments: worktreeId ? diffComments : [],
     addButtonLabel: addLineCommentLabel,
     onAddCommentClick: ({ lineNumber, startLine, top }) =>
-      setPopover({ lineNumber, startLine, top }),
+      setPopover({
+        lineNumber,
+        startLine,
+        top,
+        left: modifiedEditor
+          ? (getDiffCommentPopoverLeft(modifiedEditor, diffBodyRef.current) ?? undefined)
+          : undefined
+      }),
     onDeleteComment: (id) => {
       if (worktreeId) {
         void deleteDiffComment(worktreeId, id)
@@ -129,15 +142,25 @@ export default function DiffViewer({
       return
     }
     const update = (): void => {
-      const top =
-        modifiedEditor.getTopForLineNumber(popover.lineNumber) - modifiedEditor.getScrollTop()
-      setPopover((prev) => (prev ? { ...prev, top } : prev))
+      const top = getDiffCommentPopoverTop(
+        modifiedEditor,
+        popover.lineNumber,
+        modifiedEditor.getOption(monaco.editor.EditorOption.lineHeight)
+      )
+      if (top == null) {
+        setPopover(null)
+        return
+      }
+      const left = getDiffCommentPopoverLeft(modifiedEditor, diffBodyRef.current)
+      setPopover((prev) => (prev ? { ...prev, top, left: left == null ? prev.left : left } : prev))
     }
     const scrollSub = modifiedEditor.onDidScrollChange(update)
     const contentSub = modifiedEditor.onDidContentSizeChange(update)
+    const layoutSub = modifiedEditor.onDidLayoutChange(update)
     return () => {
       scrollSub.dispose()
       contentSub.dispose()
+      layoutSub.dispose()
     }
     // Why: depend on popover.lineNumber (not the whole popover object) so the
     // effect doesn't re-subscribe on every top update it dispatches.
@@ -361,13 +384,14 @@ export default function DiffViewer({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex-1 min-h-0 relative">
+      <div ref={diffBodyRef} className="flex-1 min-h-0 relative">
         {popover && hasLineCommentAction && (
           <DiffCommentPopover
             key={popover.lineNumber}
             lineNumber={popover.lineNumber}
             startLine={popover.startLine}
             top={popover.top}
+            left={popover.left}
             placeholder={addLineCommentPlaceholder}
             submitLabel={addLineCommentLabel}
             submittingLabel="Posting…"

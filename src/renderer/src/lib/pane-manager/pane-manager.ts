@@ -14,7 +14,12 @@ import {
 import { createDragReorderState, hideDropOverlay, handlePaneDrop } from './pane-drag-reorder'
 import { createPaneDOM, openTerminal, setLigaturesEnabled, disposePane } from './pane-lifecycle'
 import { shouldFollowMouseFocus } from './focus-follows-mouse'
-import { equalizePaneSplitSizes, safeFit, fitAllPanesInternal, refitPanesUnder } from './pane-tree-ops'
+import {
+  equalizePaneSplitSizes,
+  safeFit,
+  fitAllPanesInternal,
+  refitPanesUnder
+} from './pane-tree-ops'
 import { toPublicPane } from './pane-public-view'
 import { applyTerminalGpuAcceleration } from './pane-terminal-gpu-acceleration'
 import {

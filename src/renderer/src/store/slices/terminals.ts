@@ -31,6 +31,7 @@ import { normalizeTerminalLayoutSnapshot } from '@/components/terminal-pane/term
 import { shutdownBufferCaptures } from '@/components/terminal-pane/shutdown-buffer-captures'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import { createBrowserUuid } from '@/lib/browser-uuid'
+import { hasWorktreeSleepIntent } from '@/lib/worktree-sleep-intent'
 
 function getNextTerminalOrdinal(tabs: TerminalTab[]): number {
   const usedOrdinals = new Set<number>()
@@ -56,6 +57,44 @@ function getFallbackTabTitle(tab: TerminalTab, index?: number): string {
     tab.title ||
     `Terminal ${(index ?? 0) + 1}`
   )
+}
+
+function isWindowsRendererRuntime(): boolean {
+  return typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows')
+}
+
+function resolveCreatedTabShellOverride(
+  explicitShellOverride: string | undefined,
+  defaultWindowsShell: string | undefined,
+  isRemoteWorktree: boolean
+): string | undefined {
+  if (isRemoteWorktree) {
+    return undefined
+  }
+  if (explicitShellOverride !== undefined) {
+    return explicitShellOverride
+  }
+  if (isWindowsRendererRuntime()) {
+    return defaultWindowsShell
+  }
+  return undefined
+}
+
+function worktreeUsesRemoteConnection(
+  state: Pick<AppState, 'repos' | 'worktreesByRepo'>,
+  worktreeId: string
+): boolean {
+  const directRepoId = getRepoIdFromWorktreeId(worktreeId)
+  const directRepo = state.repos.find((repo) => repo.id === directRepoId)
+  if (directRepo) {
+    return Boolean(directRepo.connectionId)
+  }
+
+  const worktree = Object.values(state.worktreesByRepo)
+    .flat()
+    .find((entry) => entry.id === worktreeId)
+  const repo = worktree ? state.repos.find((entry) => entry.id === worktree.repoId) : null
+  return Boolean(repo?.connectionId)
 }
 
 export type TerminalSlice = {
@@ -383,6 +422,13 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
       const shouldActivate = options?.activate !== false
       const nextOrdinal = getNextTerminalOrdinal(existing)
       const defaultTitle = `Terminal ${nextOrdinal}`
+      const createdShellOverride = resolveCreatedTabShellOverride(
+        shellOverride,
+        s.settings?.terminalWindowsShell,
+        // Why: SSH PTYs ignore local Windows shell selection; persisting a
+        // local shell icon would mislabel a remote terminal.
+        worktreeUsesRemoteConnection(s, worktreeId)
+      )
       tab = {
         id,
         // Why: CLI-created background sessions already own a PTY; revealing
@@ -398,7 +444,7 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
         color: null,
         sortOrder: existing.length,
         createdAt: Date.now(),
-        ...(shellOverride !== undefined ? { shellOverride } : {}),
+        ...(createdShellOverride !== undefined ? { shellOverride: createdShellOverride } : {}),
         // Why: when Terminal.tsx's activation fallback auto-creates a tab for a
         // first-visit worktree, the resulting PTY spawn is caused by the user
         // clicking the worktree, not by work happening in it. Tagging the tab
@@ -1084,7 +1130,12 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
     // Bump meaningful activity when a PTY exits, but skip if this exit
     // was triggered by an intentional shutdown (suppressed exits) OR by a
     // click-driven pane unmount (pendingActivationSpawn).
-    if (worktreeId && !wasActivationSpawn && !(ptyId && get().suppressedPtyExitIds[ptyId])) {
+    if (
+      worktreeId &&
+      !wasActivationSpawn &&
+      !hasWorktreeSleepIntent(worktreeId) &&
+      !(ptyId && get().suppressedPtyExitIds[ptyId])
+    ) {
       get().bumpWorktreeActivity(worktreeId)
     }
   },
@@ -1111,15 +1162,15 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
     // subsequent set must use a functional updater spreading
     // s.terminalLayoutsByTabId, not a captured snapshot). For SSH this is
     // load-bearing — the relay drops the remote PTY on kill so there's no
-    // on-disk history dir to cold-restore from. For local daemon it's
-    // defense-in-depth alongside the on-disk history dir preserved by
-    // keepHistory below.
+    // on-disk history dir to cold-restore from. Local daemon scrollback is
+    // intentionally skipped because the session payload prunes it and daemon
+    // history/checkpoints are authoritative.
     if (keepIdentifiers) {
       for (const tab of tabs) {
         const capture = shutdownBufferCaptures.get(tab.id)
         if (capture) {
           try {
-            capture()
+            capture({ includeLocalBuffers: false })
           } catch {
             // Don't let one tab's capture failure block the rest.
           }

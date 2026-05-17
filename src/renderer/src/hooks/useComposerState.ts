@@ -29,8 +29,10 @@ import type {
   SparsePreset,
   TuiAgent,
   WorktreeMeta,
+  WorkspaceStatus,
   WorkspaceCreateTelemetrySource
 } from '../../../shared/types'
+import { isWorkspaceStatusId } from '../../../shared/workspace-statuses'
 import {
   ADD_ATTACHMENT_SHORTCUT,
   CLIENT_PLATFORM,
@@ -46,19 +48,40 @@ import {
   renderIssueCommandTemplate,
   type LinkedWorkItemSummary
 } from '@/lib/new-workspace'
+import {
+  getFullComposerCreateDisabled,
+  getQuickComposerCreateDisabled
+} from '@/lib/new-workspace-create-gates'
+import {
+  canUseRepoBackedComposerSources,
+  getSelectedRepoSshGate,
+  isSshConnectInProgress
+} from '@/lib/new-workspace-ssh-gate'
 import { getSuggestedCreatureName } from '@/components/sidebar/worktree-name-suggestions'
 import type { SmartWorkspaceNameSelection } from '@/components/new-workspace/SmartWorkspaceNameField'
 import { ensureHooksConfirmed } from '@/lib/ensure-hooks-confirmed'
 import { normalizeSparseDirectoryLines, sparseDirectoriesMatch } from '@/lib/sparse-paths'
 import { joinPath } from '@/lib/path'
 import { importExternalPathsToRuntime } from '@/runtime/runtime-file-client'
-import { checkRuntimeHooks, readRuntimeIssueCommand } from '@/runtime/runtime-hooks-client'
+import {
+  checkRuntimeHooks,
+  readRuntimeIssueCommand,
+  type HookCheckResult
+} from '@/runtime/runtime-hooks-client'
+import {
+  formatWorkspaceCreateError,
+  getWorkspaceCreateErrorToastMessage,
+  type WorkspaceCreateErrorDisplay
+} from '@/lib/workspace-create-error-format'
+import type { SshConnectionStatus } from '../../../shared/ssh-types'
+import { resolveComposerBranchSelection } from './composer-branch-selection'
 
 export type UseComposerStateOptions = {
   initialRepoId?: string
   initialName?: string
   initialPrompt?: string
   initialLinkedWorkItem?: LinkedWorkItemSummary | null
+  initialWorkspaceStatus?: WorkspaceStatus
   /** Seed the Start-from selection when the composer opens. Used by the
    *  Create-from → Quick fallback path so a PR pick that needs a setup
    *  decision still lands with the resolved PR head as the base branch. */
@@ -80,6 +103,11 @@ export type UseComposerStateOptions = {
    *  `sidebar`, keyboard shortcut → `shortcut`). Omitted callers default
    *  to `unknown` at the IPC boundary. */
   telemetrySource?: WorkspaceCreateTelemetrySource
+  /** Quick-create launches a blank/draft agent session and does not run
+   *  issueCommand automation, so it can skip the issue-command probe that the
+   *  full composer needs for linked-item prompt previews. */
+  enableIssueAutomation?: boolean
+  createGateMode?: 'full' | 'quick'
 }
 
 export type ComposerCardProps = {
@@ -90,7 +118,7 @@ export type ComposerCardProps = {
   onNameValueChange: (value: string) => void
   onSmartGitHubItemSelect: (item: GitHubWorkItem) => void
   onSmartGitLabItemSelect: (item: GitLabWorkItem) => void
-  onSmartBranchSelect: (refName: string) => void
+  onSmartBranchSelect: (refName: string, localBranchName: string) => void
   onSmartLinearIssueSelect: (issue: LinearIssue) => void
   /** GitLab parallel of onBaseBranchPrSelect. */
   onBaseBranchMrSelect?: (baseBranch: string, item: GitLabWorkItem) => void
@@ -145,6 +173,11 @@ export type ComposerCardProps = {
   selectedRepoPath: string | null
   /** True when the selected repo is a remote SSH repo. */
   selectedRepoIsRemote: boolean
+  selectedRepoConnectionId: string | null
+  selectedRepoSshStatus: SshConnectionStatus | null
+  selectedRepoRequiresConnection: boolean
+  selectedRepoConnectInProgress: boolean
+  onConnectSelectedRepo: () => Promise<void>
   /** Transient inline hint shown next to the Start-from trigger after a repo
    *  switch resets a prior selection (e.g. "was PR #8778"). Null when none. */
   startFromResetHint: string | null
@@ -154,7 +187,7 @@ export type ComposerCardProps = {
   onSetupDecisionChange: (value: 'run' | 'skip') => void
   shouldWaitForSetupCheck: boolean
   resolvedSetupDecision: 'run' | 'skip' | null
-  createError: string | null
+  createError: WorkspaceCreateErrorDisplay | null
   canUseSparseCheckout: boolean
   /** Saved presets for the currently-selected repo. Empty array when no
    *  presets exist or when the repo is remote. */
@@ -193,12 +226,15 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     initialName = '',
     initialPrompt = '',
     initialLinkedWorkItem = null,
+    initialWorkspaceStatus,
     initialBaseBranch,
     persistDraft,
     onCreated,
     repoIdOverride,
     onRepoIdOverrideChange,
-    telemetrySource
+    telemetrySource,
+    enableIssueAutomation = true,
+    createGateMode = 'full'
   } = options
 
   // Why: each `useAppStore(s => s.someAction)` registers its own equality
@@ -242,8 +278,18 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const newWorkspaceDraft = useAppStore((s) => s.newWorkspaceDraft)
   const worktreesByRepo = useAppStore((s) => s.worktreesByRepo)
   const sparsePresetsByRepo = useAppStore((s) => s.sparsePresetsByRepo)
+  const workspaceStatuses = useAppStore((s) => s.workspaceStatuses)
+  const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
+  const sshConnectedGeneration = useAppStore((s) => s.sshConnectedGeneration)
   const eligibleRepos = useMemo(() => repos.filter((repo) => isGitRepoKind(repo)), [repos])
   const draftRepoId = persistDraft ? (newWorkspaceDraft?.repoId ?? null) : null
+  const resolvedInitialWorkspaceStatus = useMemo(
+    () =>
+      initialWorkspaceStatus && isWorkspaceStatusId(initialWorkspaceStatus, workspaceStatuses)
+        ? initialWorkspaceStatus
+        : undefined,
+    [initialWorkspaceStatus, workspaceStatuses]
+  )
 
   const resolvedInitialRepoId =
     draftRepoId && eligibleRepos.some((repo) => repo.id === draftRepoId)
@@ -256,6 +302,18 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
 
   const [internalRepoId, setInternalRepoId] = useState<string>(resolvedInitialRepoId)
   const repoId = repoIdOverride ?? internalRepoId
+  const selectedRepo = eligibleRepos.find((repo) => repo.id === repoId)
+  const selectedRepoConnectionId = selectedRepo?.connectionId ?? null
+  const selectedRepoSshState = selectedRepoConnectionId
+    ? (sshConnectionStates.get(selectedRepoConnectionId) ?? null)
+    : null
+  const { selectedRepoSshStatus, selectedRepoRequiresConnection, selectedRepoConnectInProgress } =
+    getSelectedRepoSshGate({
+      connectionId: selectedRepoConnectionId,
+      status: selectedRepoSshState?.status ?? null
+    })
+  const repoIdRef = useRef(repoId)
+  repoIdRef.current = repoId
   const setRepoId = useCallback(
     (value: string) => {
       if (onRepoIdOverrideChange) {
@@ -316,6 +374,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const [baseBranch, setBaseBranch] = useState<string | undefined>(
     persistDraft ? newWorkspaceDraft?.baseBranch : initialBaseBranch
   )
+  const [branchNameOverride, setBranchNameOverride] = useState<string | undefined>(undefined)
   const [pushTarget, setPushTarget] = useState<GitPushTarget | undefined>(undefined)
   // Why: when a repo switch wipes a prior Start-from selection, surface the
   // reset inline (e.g. "was PR #8778") so the change is recoverable visually
@@ -335,9 +394,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   // Why: when the selected repo is remote (has a connectionId), read the
   // per-connection agent list instead of the local one. This ensures the
   // Create Workspace dialog shows agents installed on the SSH host, not the
-  // local machine. Derived from eligibleRepos directly because selectedRepo
-  // is declared later in this function.
-  const connectionId = eligibleRepos.find((r) => r.id === repoId)?.connectionId ?? null
+  // local machine.
+  const connectionId = selectedRepoConnectionId
   const isRemote = typeof connectionId === 'string'
   const detectedAgentList = useAppStore((s) => {
     if (isRemote) {
@@ -358,7 +416,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const [hasLoadedIssueCommand, setHasLoadedIssueCommand] = useState(false)
   const [setupDecision, setSetupDecision] = useState<'run' | 'skip' | null>(null)
   const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
+  const [createError, setCreateError] = useState<WorkspaceCreateErrorDisplay | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(
     persistDraft ? Boolean((newWorkspaceDraft?.note ?? '').trim()) : false
   )
@@ -377,6 +435,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const lastAutoNameRef = useRef<string>(
     persistDraft ? (newWorkspaceDraft?.name ?? initialName) : initialName
   )
+  const branchAutoNameRef = useRef<string>('')
   // Why: tracks the note value we auto-prefilled from a Start-from PR pick, so
   // a subsequent PR change can replace it without clobbering user-typed text.
   const lastAutoNoteRef = useRef<string>('')
@@ -398,8 +457,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   agentPromptRef.current = agentPrompt
   const connectionIdRef = useRef(connectionId)
   connectionIdRef.current = connectionId
-
-  const selectedRepo = eligibleRepos.find((repo) => repo.id === repoId)
+  const selectedRepoConnectionIdRef = useRef(selectedRepoConnectionId)
+  selectedRepoConnectionIdRef.current = selectedRepoConnectionId
 
   // Why: resolves the selected repo's owner/repo slug so a PR URL pasted
   // into the workspace name field can be matched against the current repo.
@@ -414,6 +473,31 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   selectedRepoPathRef.current = selectedRepoPath
   const settingsRef = useRef(settings)
   settingsRef.current = settings
+  const hookCheckRef = useRef<{
+    key: string
+    promise: Promise<HookCheckResult>
+  } | null>(null)
+  const loadHookCheckForRepo = useCallback((targetRepoId: string): Promise<HookCheckResult> => {
+    const key = `${settingsRef.current?.activeRuntimeEnvironmentId ?? 'local'}:${targetRepoId}`
+    const existing = hookCheckRef.current
+    if (existing?.key === key) {
+      return existing.promise
+    }
+    const promise = checkRuntimeHooks(settingsRef.current, targetRepoId)
+    hookCheckRef.current = { key, promise }
+    return promise
+  }, [])
+  const commitHookCheckIfCurrent = useCallback(
+    (targetRepoId: string, hooks: OrcaHooks | null): boolean => {
+      if (repoIdRef.current !== targetRepoId) {
+        return false
+      }
+      setYamlHooks(hooks)
+      setCheckedHooksRepoId(targetRepoId)
+      return true
+    },
+    []
+  )
   useEffect(() => {
     if (!selectedRepo || !selectedRepoPath) {
       setSelectedRepoSlug(null)
@@ -515,14 +599,17 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     [selectedRepo, yamlHooks]
   )
   const setupPolicy: SetupRunPolicy = selectedRepo?.hookSettings?.setupRunPolicy ?? 'run-by-default'
-  const hasIssueAutomationConfig = issueCommandTemplate.length > 0
+  const hasIssueAutomationConfig = enableIssueAutomation && issueCommandTemplate.length > 0
   const canOfferIssueAutomation = parsedLinkedIssueNumber !== null && hasIssueAutomationConfig
   // Why: the "no prompt + linked item" path below rehydrates the issueCommand
   // template into the main startup prompt. When that happens we suppress the
   // separate split pane that would otherwise run the same command twice.
-  const willApplyIssueCommandAsPrompt = !agentPrompt.trim() && Boolean(linkedWorkItem)
+  const willApplyIssueCommandAsPrompt =
+    enableIssueAutomation && !agentPrompt.trim() && Boolean(linkedWorkItem)
   const shouldWaitForIssueAutomationCheck =
-    (parsedLinkedIssueNumber !== null || willApplyIssueCommandAsPrompt) && !hasLoadedIssueCommand
+    enableIssueAutomation &&
+    (parsedLinkedIssueNumber !== null || willApplyIssueCommandAsPrompt) &&
+    !hasLoadedIssueCommand
   const shouldRunIssueAutomation = canOfferIssueAutomation && !willApplyIssueCommandAsPrompt
   const requiresExplicitSetupChoice = Boolean(setupConfig) && setupPolicy === 'ask'
   const resolvedSetupDecision =
@@ -561,7 +648,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   // the common "paste a link and hit enter" flow produce a useful agent task
   // instead of a bare URL bullet.
   const shouldApplyLinkedOnlyTemplate =
-    !agentPrompt.trim() && Boolean(linkedWorkItem) && hasLoadedIssueCommand
+    enableIssueAutomation && !agentPrompt.trim() && Boolean(linkedWorkItem) && hasLoadedIssueCommand
   const linkedOnlyTemplatePrompt = useMemo(() => {
     if (!shouldApplyLinkedOnlyTemplate || !linkedWorkItem) {
       return ''
@@ -678,6 +765,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   // on mount (deduped by the store). For remote repos it re-runs when the
   // selected repo changes so the agent list matches the SSH host.
   useEffect(() => {
+    if (isRemote && selectedRepoSshStatus !== 'connected') {
+      return
+    }
     let cancelled = false
     const detect = isRemote ? ensureRemoteDetectedAgents(connectionId) : ensureDetectedAgents()
     void detect.then((ids) => {
@@ -698,7 +788,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     // detection targets the correct host. Draft/settings deps are intentionally
     // excluded — detection is a best-effort PATH snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, isRemote])
+  }, [connectionId, isRemote, selectedRepoSshStatus])
 
   // Per-repo: load yaml hooks + issue command template.
   useEffect(() => {
@@ -712,19 +802,24 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     setYamlHooks(null)
     setCheckedHooksRepoId(null)
 
-    void checkRuntimeHooks(settings, repoId)
+    void loadHookCheckForRepo(repoId)
       .then((result) => {
         if (!cancelled) {
-          setYamlHooks(result.hooks)
-          setCheckedHooksRepoId(repoId)
+          commitHookCheckIfCurrent(repoId, result.hooks)
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setYamlHooks(null)
-          setCheckedHooksRepoId(repoId)
+          commitHookCheckIfCurrent(repoId, null)
         }
       })
+
+    if (!enableIssueAutomation) {
+      setHasLoadedIssueCommand(true)
+      return () => {
+        cancelled = true
+      }
+    }
 
     void readRuntimeIssueCommand(settings, repoId)
       .then((result) => {
@@ -743,17 +838,51 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     return () => {
       cancelled = true
     }
-  }, [repoId, settings])
+  }, [commitHookCheckIfCurrent, enableIssueAutomation, loadHookCheckForRepo, repoId, settings])
+
+  const onConnectSelectedRepo = useCallback(async (): Promise<void> => {
+    const targetId = selectedRepoConnectionIdRef.current
+    if (!targetId) {
+      return
+    }
+    const liveState = useAppStore.getState()
+    const liveRepo = liveState.repos.find((repo) => repo.id === repoIdRef.current)
+    if (liveRepo?.connectionId !== targetId) {
+      return
+    }
+    const liveStatus = liveState.sshConnectionStates.get(targetId)?.status ?? null
+    if (liveStatus === 'connected' || isSshConnectInProgress(liveStatus)) {
+      return
+    }
+
+    try {
+      await window.api.ssh.connect({ targetId })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to connect to repository.')
+    }
+  }, [])
 
   // Why: warm the Start-from picker's PR cache on composer mount and whenever
   // the selected repo changes so opening the picker paints instantly from
   // cache.
+  const canPrefetchSelectedRepoWorkItems = canUseRepoBackedComposerSources({
+    connectionId: selectedRepoConnectionId,
+    status: selectedRepoSshStatus
+  })
+  const prefetchSshConnectedGeneration =
+    selectedRepoConnectionId && selectedRepoSshStatus === 'connected' ? sshConnectedGeneration : 0
   useEffect(() => {
-    if (!selectedRepo?.path) {
+    if (!selectedRepo?.path || !canPrefetchSelectedRepoWorkItems) {
       return
     }
     prefetchWorkItems(selectedRepo.id, selectedRepo.path, PER_REPO_FETCH_LIMIT, 'is:pr is:open')
-  }, [prefetchWorkItems, selectedRepo?.id, selectedRepo?.path])
+  }, [
+    canPrefetchSelectedRepoWorkItems,
+    prefetchSshConnectedGeneration,
+    prefetchWorkItems,
+    selectedRepo?.id,
+    selectedRepo?.path
+  ])
 
   // Reset setup decision when config / policy changes.
   useEffect(() => {
@@ -900,6 +1029,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         setName(suggestedName)
         lastAutoNameRef.current = suggestedName
       }
+      setBranchNameOverride(undefined)
     },
     [name]
   )
@@ -938,6 +1068,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         setName(suggestedName)
         lastAutoNameRef.current = suggestedName
       }
+      setBranchNameOverride(undefined)
     },
     [name]
   )
@@ -982,10 +1113,14 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       } else if (name !== lastAutoNameRef.current) {
         lastAutoNameRef.current = ''
       }
+      if (branchNameOverride && nextName !== branchAutoNameRef.current) {
+        setBranchNameOverride(undefined)
+        branchAutoNameRef.current = ''
+      }
       setName(nextName)
       setCreateError(null)
     },
-    [name]
+    [branchNameOverride, name]
   )
 
   const addComposerAttachments = useCallback((paths: string[]): void => {
@@ -1243,6 +1378,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       // makes the field fall back to the new repo's effective base ref.
       setBaseBranch(undefined)
       setPushTarget(undefined)
+      setBranchNameOverride(undefined)
       setStartFromResetHint(hint)
     },
     [baseBranch, linkedWorkItem, repoId, setRepoId]
@@ -1263,6 +1399,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const handleBaseBranchChange = useCallback((next: string | undefined): void => {
     setBaseBranch(next)
     setPushTarget(undefined)
+    setBranchNameOverride(undefined)
+    branchAutoNameRef.current = ''
     setStartFromResetHint(null)
   }, [])
 
@@ -1270,6 +1408,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     (nextBaseBranch: string, item: GitHubWorkItem, nextPushTarget?: GitPushTarget): void => {
       setBaseBranch(nextBaseBranch)
       setPushTarget(nextPushTarget)
+      setBranchNameOverride(undefined)
+      branchAutoNameRef.current = ''
       setStartFromResetHint(null)
       // Why: per spec, a PR selection in the Start-from picker is also a
       // linkedWorkItem assignment. Reuse applyLinkedWorkItem so auto-name and
@@ -1297,6 +1437,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const handleBaseBranchMrSelect = useCallback(
     (nextBaseBranch: string, item: GitLabWorkItem): void => {
       setBaseBranch(nextBaseBranch)
+      setBranchNameOverride(undefined)
+      branchAutoNameRef.current = ''
       setStartFromResetHint(null)
       applyLinkedGitLabWorkItem(item)
       if (item.type === 'mr') {
@@ -1314,6 +1456,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const handleSmartGitHubItemSelect = useCallback(
     (item: GitHubWorkItem): void => {
       setStartFromResetHint(null)
+      setBranchNameOverride(undefined)
+      branchAutoNameRef.current = ''
       const repoForItem = eligibleRepos.find((repo) => repo.id === item.repoId) ?? selectedRepo
       if (item.type !== 'pr' || !repoForItem) {
         setPushTarget(undefined)
@@ -1373,6 +1517,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     (item: GitLabWorkItem): void => {
       applyLinkedGitLabWorkItem(item)
       setStartFromResetHint(null)
+      setBranchNameOverride(undefined)
+      branchAutoNameRef.current = ''
       const repoForItem = eligibleRepos.find((repo) => repo.id === item.repoId) ?? selectedRepo
       if (item.type !== 'mr' || !repoForItem) {
         return
@@ -1397,13 +1543,24 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   )
 
   const handleSmartBranchSelect = useCallback(
-    (refName: string): void => {
-      setBaseBranch(refName)
+    (refName: string, localBranchName: string): void => {
+      const selection = resolveComposerBranchSelection({
+        refName,
+        localBranchName,
+        currentName: name,
+        lastAutoName: lastAutoNameRef.current
+      })
+      setBaseBranch(selection.baseBranch)
       setPushTarget(undefined)
       setStartFromResetHint(null)
-      if (!name.trim() || name === lastAutoNameRef.current) {
-        setName(refName)
-        lastAutoNameRef.current = refName
+      if (selection.name !== undefined && selection.lastAutoName !== undefined) {
+        setName(selection.name)
+        lastAutoNameRef.current = selection.lastAutoName
+        branchAutoNameRef.current = selection.branchAutoName
+        setBranchNameOverride(selection.branchNameOverride)
+      } else {
+        setBranchNameOverride(selection.branchNameOverride)
+        branchAutoNameRef.current = selection.branchAutoName
       }
     },
     [name]
@@ -1426,6 +1583,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         setName(suggestedName)
         lastAutoNameRef.current = suggestedName
       }
+      setBranchNameOverride(undefined)
+      branchAutoNameRef.current = ''
       // Why: match the GitHub issue/PR flow — paste only the URL as a draft
       // into the agent's input (no auto-submit). The launch path already
       // drafts `linkedWorkItem.url` when the note is empty; auto-filling the
@@ -1441,6 +1600,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     setLinkedWorkItem(null)
     setBaseBranch(undefined)
     setPushTarget(undefined)
+    setBranchNameOverride(undefined)
+    branchAutoNameRef.current = ''
     setStartFromResetHint(null)
     if (name === lastAutoNameRef.current) {
       setName('')
@@ -1501,6 +1662,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       !repoId ||
       !workspaceName ||
       !selectedRepo ||
+      selectedRepoRequiresConnection ||
       shouldWaitForSetupCheck ||
       shouldWaitForIssueAutomationCheck ||
       (requiresExplicitSetupChoice && !setupDecision) ||
@@ -1527,6 +1689,10 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       }
 
       const linkedLinearIssue = linkedWorkItem?.linearIdentifier
+      const effectiveBranchNameOverride =
+        branchNameOverride && workspaceName === branchAutoNameRef.current
+          ? branchNameOverride
+          : undefined
       const result = await createWorktree(
         repoId,
         workspaceName,
@@ -1544,7 +1710,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         effectiveLinkedPR ?? undefined,
         pushTarget,
         tuiAgent,
-        linkedLinearIssue
+        linkedLinearIssue,
+        effectiveBranchNameOverride,
+        resolvedInitialWorkspaceStatus
       )
       const worktree = result.worktree
 
@@ -1614,14 +1782,15 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       }
       onCreated?.()
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to create worktree.'
-      setCreateError(message)
-      toast.error(message)
+      const formattedError = formatWorkspaceCreateError(error)
+      setCreateError(formattedError)
+      toast.error(getWorkspaceCreateErrorToastMessage(formattedError))
     } finally {
       setCreating(false)
     }
   }, [
     baseBranch,
+    branchNameOverride,
     clearNewWorkspaceDraft,
     createWorktree,
     applyWorktreeMeta,
@@ -1641,7 +1810,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     repoId,
     requiresExplicitSetupChoice,
     resolvedSetupDecision,
+    resolvedInitialWorkspaceStatus,
     selectedRepo,
+    selectedRepoRequiresConnection,
     settings?.agentCmdOverrides,
     settings?.rightSidebarOpenByDefault,
     setRightSidebarOpen,
@@ -1673,7 +1844,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         !repoId ||
         !workspaceName ||
         !selectedRepo ||
-        shouldWaitForSetupCheck ||
+        selectedRepoRequiresConnection ||
         (requiresExplicitSetupChoice && !setupDecision) ||
         sparseError !== null
       ) {
@@ -1683,13 +1854,43 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       setCreateError(null)
       setCreating(true)
       try {
+        let submitSetupConfig = setupConfig
+        let submitResolvedSetupDecision = resolvedSetupDecision
+        if (checkedHooksRepoId !== repoId) {
+          let hookCheck: HookCheckResult
+          try {
+            hookCheck = await loadHookCheckForRepo(repoId)
+          } catch {
+            hookCheck = { hasHooks: false, hooks: null, mayNeedUpdate: false }
+          }
+          if (!commitHookCheckIfCurrent(repoId, hookCheck.hooks)) {
+            return
+          }
+          submitSetupConfig = getSetupConfig(selectedRepo, hookCheck.hooks)
+          submitResolvedSetupDecision =
+            setupDecision ??
+            (!submitSetupConfig || setupPolicy === 'ask'
+              ? null
+              : setupPolicy === 'run-by-default'
+                ? 'run'
+                : 'skip')
+        }
+        if (submitSetupConfig && setupPolicy === 'ask' && !setupDecision) {
+          setAdvancedOpen(true)
+          return
+        }
+
         const trustDecision = await ensureHooksConfirmed(useAppStore.getState(), repoId, 'setup')
         const effectiveSetupDecision: SetupDecision =
           trustDecision === 'skip'
             ? 'skip'
-            : ((resolvedSetupDecision ?? 'inherit') as SetupDecision)
+            : ((submitResolvedSetupDecision ?? 'inherit') as SetupDecision)
 
         const linkedLinearIssue = linkedWorkItem?.linearIdentifier
+        const effectiveBranchNameOverride =
+          branchNameOverride && workspaceName === branchAutoNameRef.current
+            ? branchNameOverride
+            : undefined
         const result = await createWorktree(
           repoId,
           workspaceName,
@@ -1707,7 +1908,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
           effectiveLinkedPR ?? undefined,
           pushTarget,
           agent ?? undefined,
-          linkedLinearIssue
+          linkedLinearIssue,
+          effectiveBranchNameOverride,
+          resolvedInitialWorkspaceStatus
         )
         const worktree = result.worktree
 
@@ -1821,9 +2024,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         }
         onCreated?.()
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to create worktree.'
-        setCreateError(message)
-        toast.error(message)
+        const formattedError = formatWorkspaceCreateError(error)
+        setCreateError(formattedError)
+        toast.error(getWorkspaceCreateErrorToastMessage(formattedError))
       } finally {
         setCreating(false)
       }
@@ -1831,6 +2034,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     [
       applyWorktreeMeta,
       baseBranch,
+      branchNameOverride,
       clearNewWorkspaceDraft,
       createWorktree,
       fallbackCreatureName,
@@ -1847,7 +2051,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       repoId,
       requiresExplicitSetupChoice,
       resolvedSetupDecision,
+      resolvedInitialWorkspaceStatus,
       selectedRepo,
+      selectedRepoRequiresConnection,
       settings?.agentCmdOverrides,
       settings?.rightSidebarOpenByDefault,
       setRightSidebarOpen,
@@ -1858,18 +2064,29 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       sparseError,
       effectivePresetId,
       telemetrySource,
-      shouldWaitForSetupCheck
+      checkedHooksRepoId,
+      commitHookCheckIfCurrent,
+      loadHookCheckForRepo,
+      setupConfig,
+      setupPolicy
     ]
   )
 
+  const createGateInput = {
+    repoId,
+    workspaceSeedName,
+    creating,
+    shouldWaitForSetupCheck,
+    shouldWaitForIssueAutomationCheck,
+    requiresExplicitSetupChoice,
+    hasSetupDecision: Boolean(setupDecision),
+    selectedRepoRequiresConnection,
+    sparseError
+  }
   const createDisabled =
-    !repoId ||
-    !workspaceSeedName ||
-    creating ||
-    shouldWaitForSetupCheck ||
-    shouldWaitForIssueAutomationCheck ||
-    (requiresExplicitSetupChoice && !setupDecision) ||
-    sparseError !== null
+    createGateMode === 'quick'
+      ? getQuickComposerCreateDisabled(createGateInput)
+      : getFullComposerCreateDisabled(createGateInput)
 
   const cardProps: ComposerCardProps = {
     eligibleRepos,
@@ -1921,6 +2138,11 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       linkedWorkItem?.type === 'pr' && baseBranch ? linkedWorkItem.number : null,
     selectedRepoPath: selectedRepo?.path ?? null,
     selectedRepoIsRemote: Boolean(selectedRepo?.connectionId),
+    selectedRepoConnectionId,
+    selectedRepoSshStatus,
+    selectedRepoRequiresConnection,
+    selectedRepoConnectInProgress,
+    onConnectSelectedRepo,
     startFromResetHint,
     note,
     onNoteChange: setNote,

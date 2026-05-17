@@ -84,6 +84,22 @@ const mockApi = {
     getDaily: vi.fn().mockResolvedValue([]),
     getBreakdown: vi.fn().mockResolvedValue([]),
     getRecentSessions: vi.fn().mockResolvedValue([])
+  },
+  openCodeUsage: {
+    getScanState: vi.fn().mockResolvedValue({
+      enabled: false,
+      isScanning: false,
+      lastScanStartedAt: null,
+      lastScanCompletedAt: null,
+      lastScanError: null,
+      hasAnyOpenCodeData: false
+    }),
+    setEnabled: vi.fn().mockResolvedValue({}),
+    refresh: vi.fn().mockResolvedValue({}),
+    getSummary: vi.fn().mockResolvedValue(null),
+    getDaily: vi.fn().mockResolvedValue([]),
+    getBreakdown: vi.fn().mockResolvedValue([]),
+    getRecentSessions: vi.fn().mockResolvedValue([])
   }
 }
 
@@ -106,6 +122,7 @@ import { createMemorySlice } from './memory'
 import { createWorkspaceSpaceSlice } from './workspace-space'
 import { createClaudeUsageSlice } from './claude-usage'
 import { createCodexUsageSlice } from './codex-usage'
+import { createOpenCodeUsageSlice } from './opencode-usage'
 import { createBrowserSlice } from './browser'
 import { createRateLimitSlice } from './rate-limits'
 import { createSshSlice } from './ssh'
@@ -114,6 +131,7 @@ import { createDiffCommentsSlice } from './diffComments'
 import { createDetectedAgentsSlice } from './detected-agents'
 import { createWorktreeNavHistorySlice } from './worktree-nav-history'
 import { createDictationSlice } from './dictation'
+import { createWorkspaceCleanupSlice } from './workspace-cleanup'
 
 function createTestStore() {
   return create<AppState>()((...a) => ({
@@ -133,6 +151,7 @@ function createTestStore() {
     ...createWorkspaceSpaceSlice(...a),
     ...createClaudeUsageSlice(...a),
     ...createCodexUsageSlice(...a),
+    ...createOpenCodeUsageSlice(...a),
     ...createBrowserSlice(...a),
     ...createRateLimitSlice(...a),
     ...createSshSlice(...a),
@@ -140,7 +159,8 @@ function createTestStore() {
     ...createDiffCommentsSlice(...a),
     ...createDetectedAgentsSlice(...a),
     ...createWorktreeNavHistorySlice(...a),
-    ...createDictationSlice(...a)
+    ...createDictationSlice(...a),
+    ...createWorkspaceCleanupSlice(...a)
   }))
 }
 

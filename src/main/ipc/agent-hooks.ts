@@ -14,6 +14,9 @@ import { codexHookService } from '../codex/hook-service'
 import { geminiHookService } from '../gemini/hook-service'
 import { cursorHookService } from '../cursor/hook-service'
 import { droidHookService } from '../droid/hook-service'
+import { grokHookService } from '../grok/hook-service'
+import { copilotHookService } from '../copilot/hook-service'
+import { hermesHookService } from '../hermes/hook-service'
 
 // Why: install/remove are intentionally not exposed to the renderer. Orca
 // auto-installs managed hooks at app startup (see src/main/index.ts), so a
@@ -31,6 +34,9 @@ export function registerAgentHookHandlers(): void {
   ipcMain.removeHandler('agentHooks:geminiStatus')
   ipcMain.removeHandler('agentHooks:cursorStatus')
   ipcMain.removeHandler('agentHooks:droidStatus')
+  ipcMain.removeHandler('agentHooks:grokStatus')
+  ipcMain.removeHandler('agentHooks:copilotStatus')
+  ipcMain.removeHandler('agentHooks:hermesStatus')
   ipcMain.removeHandler('agentStatus:getSnapshot')
   ipcMain.removeHandler('agentStatus:getMigrationUnsupportedSnapshot')
   // Why: agentStatus:drop is sent fire-and-forget from the renderer via
@@ -126,6 +132,45 @@ export function registerAgentHookHandlers(): void {
     } catch (err) {
       return {
         agent: 'droid',
+        state: 'error',
+        configPath: '',
+        managedHooksPresent: false,
+        detail: err instanceof Error ? err.message : String(err)
+      }
+    }
+  })
+  ipcMain.handle('agentHooks:grokStatus', (): AgentHookInstallStatus => {
+    try {
+      return grokHookService.getStatus()
+    } catch (err) {
+      return {
+        agent: 'grok',
+        state: 'error',
+        configPath: '',
+        managedHooksPresent: false,
+        detail: err instanceof Error ? err.message : String(err)
+      }
+    }
+  })
+  ipcMain.handle('agentHooks:copilotStatus', (): AgentHookInstallStatus => {
+    try {
+      return copilotHookService.getStatus()
+    } catch (err) {
+      return {
+        agent: 'copilot',
+        state: 'error',
+        configPath: '',
+        managedHooksPresent: false,
+        detail: err instanceof Error ? err.message : String(err)
+      }
+    }
+  })
+  ipcMain.handle('agentHooks:hermesStatus', (): AgentHookInstallStatus => {
+    try {
+      return hermesHookService.getStatus()
+    } catch (err) {
+      return {
+        agent: 'hermes',
         state: 'error',
         configPath: '',
         managedHooksPresent: false,

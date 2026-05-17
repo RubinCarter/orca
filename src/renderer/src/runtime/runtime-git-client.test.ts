@@ -1,8 +1,14 @@
+/* eslint-disable max-lines -- Why: runtime git routing tests share compatibility-cache and IPC stubs; splitting would hide cross-environment contract drift. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  bulkDiscardRuntimeGitPaths,
   bulkStageRuntimeGitPaths,
+  cancelRuntimeGenerateCommitMessage,
   commitRuntimeGit,
+  generateRuntimeCommitMessage,
   getRuntimeGitDiff,
+  getRuntimeGitHistory,
+  getRuntimeGitIgnoredPaths,
   getRuntimeGitStatus,
   pushRuntimeGit
 } from './runtime-git-client'
@@ -13,10 +19,15 @@ import {
 import { clearRuntimeCompatibilityCacheForTests } from './runtime-rpc-client'
 
 const gitStatus = vi.fn()
+const gitCheckIgnored = vi.fn()
 const gitDiff = vi.fn()
+const gitHistory = vi.fn()
 const gitBulkStage = vi.fn()
+const gitBulkDiscard = vi.fn()
 const gitCommit = vi.fn()
 const gitPush = vi.fn()
+const gitGenerateCommitMessage = vi.fn()
+const gitCancelGenerateCommitMessage = vi.fn()
 const runtimeEnvironmentCall = vi.fn()
 const runtimeEnvironmentTransportCall = vi.fn()
 const runtimeCall = vi.fn()
@@ -24,10 +35,15 @@ const runtimeCall = vi.fn()
 beforeEach(() => {
   clearRuntimeCompatibilityCacheForTests()
   gitStatus.mockReset()
+  gitCheckIgnored.mockReset()
   gitDiff.mockReset()
+  gitHistory.mockReset()
   gitBulkStage.mockReset()
+  gitBulkDiscard.mockReset()
   gitCommit.mockReset()
   gitPush.mockReset()
+  gitGenerateCommitMessage.mockReset()
+  gitCancelGenerateCommitMessage.mockReset()
   runtimeEnvironmentCall.mockReset()
   runtimeEnvironmentTransportCall.mockReset()
   runtimeCall.mockReset()
@@ -38,10 +54,15 @@ beforeEach(() => {
     api: {
       git: {
         status: gitStatus,
+        checkIgnored: gitCheckIgnored,
         diff: gitDiff,
+        history: gitHistory,
         bulkStage: gitBulkStage,
+        bulkDiscard: gitBulkDiscard,
         commit: gitCommit,
-        push: gitPush
+        push: gitPush,
+        generateCommitMessage: gitGenerateCommitMessage,
+        cancelGenerateCommitMessage: gitCancelGenerateCommitMessage
       },
       runtime: { call: runtimeCall },
       runtimeEnvironments: { call: runtimeEnvironmentTransportCall }
@@ -61,6 +82,87 @@ describe('runtime git client', () => {
     })
 
     expect(gitStatus).toHaveBeenCalledWith({ worktreePath: '/repo', connectionId: 'ssh-1' })
+    expect(runtimeEnvironmentCall).not.toHaveBeenCalled()
+  })
+
+  it('forwards includeIgnored to local git status only when enabled', async () => {
+    gitStatus.mockResolvedValue({ entries: [], conflictOperation: 'unknown' })
+
+    await getRuntimeGitStatus(
+      {
+        settings: { activeRuntimeEnvironmentId: null },
+        worktreeId: 'wt-1',
+        worktreePath: '/repo'
+      },
+      { includeIgnored: true }
+    )
+    await getRuntimeGitStatus(
+      {
+        settings: { activeRuntimeEnvironmentId: null },
+        worktreeId: 'wt-1',
+        worktreePath: '/repo'
+      },
+      { includeIgnored: false }
+    )
+
+    expect(gitStatus).toHaveBeenNthCalledWith(1, {
+      worktreePath: '/repo',
+      connectionId: undefined,
+      includeIgnored: true
+    })
+    expect(gitStatus).toHaveBeenNthCalledWith(2, {
+      worktreePath: '/repo',
+      connectionId: undefined
+    })
+  })
+
+  it('checks ignored paths through local git IPC', async () => {
+    gitCheckIgnored.mockResolvedValue(['dist/bundle.js'])
+
+    const result = await getRuntimeGitIgnoredPaths(
+      {
+        settings: { activeRuntimeEnvironmentId: null },
+        worktreeId: 'wt-1',
+        worktreePath: '/repo',
+        connectionId: 'ssh-1'
+      },
+      ['dist/bundle.js', 'src/index.ts']
+    )
+
+    expect(gitCheckIgnored).toHaveBeenCalledWith({
+      worktreePath: '/repo',
+      connectionId: 'ssh-1',
+      paths: ['dist/bundle.js', 'src/index.ts']
+    })
+    expect(result).toEqual(['dist/bundle.js'])
+    expect(runtimeEnvironmentCall).not.toHaveBeenCalled()
+  })
+
+  it('uses local git IPC for history when no remote runtime is active', async () => {
+    gitHistory.mockResolvedValue({
+      items: [],
+      hasIncomingChanges: false,
+      hasOutgoingChanges: false,
+      hasMore: false,
+      limit: 50
+    })
+
+    await getRuntimeGitHistory(
+      {
+        settings: { activeRuntimeEnvironmentId: null },
+        worktreeId: 'wt-1',
+        worktreePath: '/repo',
+        connectionId: 'ssh-1'
+      },
+      { limit: 25, baseRef: 'origin/main' }
+    )
+
+    expect(gitHistory).toHaveBeenCalledWith({
+      worktreePath: '/repo',
+      connectionId: 'ssh-1',
+      limit: 25,
+      baseRef: 'origin/main'
+    })
     expect(runtimeEnvironmentCall).not.toHaveBeenCalled()
   })
 
@@ -85,6 +187,14 @@ describe('runtime git client', () => {
       },
       { filePath: 'src/a.ts', staged: false, compareAgainstHead: true }
     )
+    await getRuntimeGitHistory(
+      {
+        settings: { activeRuntimeEnvironmentId: 'env-1' },
+        worktreeId: 'wt-1',
+        worktreePath: '/repo'
+      },
+      { limit: 50, baseRef: 'origin/main' }
+    )
 
     expect(runtimeEnvironmentCall).toHaveBeenNthCalledWith(1, {
       selector: 'env-1',
@@ -103,9 +213,66 @@ describe('runtime git client', () => {
       },
       timeoutMs: 15_000
     })
+    expect(runtimeEnvironmentCall).toHaveBeenNthCalledWith(3, {
+      selector: 'env-1',
+      method: 'git.history',
+      params: { worktree: 'wt-1', limit: 50, baseRef: 'origin/main' },
+      timeoutMs: 15_000
+    })
   })
 
-  it('routes bulk stage and remote operations through the active runtime', async () => {
+  it('forwards includeIgnored through the active runtime environment', async () => {
+    runtimeEnvironmentCall.mockResolvedValue({
+      id: 'rpc-1',
+      ok: true,
+      result: { entries: [], conflictOperation: 'unknown', ignoredPaths: ['dist/'] },
+      _meta: { runtimeId: 'remote-runtime' }
+    })
+
+    await getRuntimeGitStatus(
+      {
+        settings: { activeRuntimeEnvironmentId: 'env-1' },
+        worktreeId: 'wt-1',
+        worktreePath: '/repo'
+      },
+      { includeIgnored: true }
+    )
+
+    expect(runtimeEnvironmentCall).toHaveBeenCalledWith({
+      selector: 'env-1',
+      method: 'git.status',
+      params: { worktree: 'wt-1', includeIgnored: true },
+      timeoutMs: 15_000
+    })
+  })
+
+  it('checks ignored paths through the active runtime environment', async () => {
+    runtimeEnvironmentCall.mockResolvedValue({
+      id: 'rpc-1',
+      ok: true,
+      result: ['dist/bundle.js'],
+      _meta: { runtimeId: 'remote-runtime' }
+    })
+
+    const result = await getRuntimeGitIgnoredPaths(
+      {
+        settings: { activeRuntimeEnvironmentId: 'env-1' },
+        worktreeId: 'wt-1',
+        worktreePath: '/repo'
+      },
+      ['dist/bundle.js']
+    )
+
+    expect(runtimeEnvironmentCall).toHaveBeenCalledWith({
+      selector: 'env-1',
+      method: 'git.checkIgnored',
+      params: { worktree: 'wt-1', paths: ['dist/bundle.js'] },
+      timeoutMs: 15_000
+    })
+    expect(result).toEqual(['dist/bundle.js'])
+  })
+
+  it('routes bulk mutations and remote operations through the active runtime', async () => {
     runtimeEnvironmentCall.mockResolvedValue({
       id: 'rpc-1',
       ok: true,
@@ -119,7 +286,10 @@ describe('runtime git client', () => {
     }
 
     await bulkStageRuntimeGitPaths(context, ['a.ts', 'b.ts'])
+    await bulkDiscardRuntimeGitPaths(context, ['c.ts', 'd.ts'])
     await commitRuntimeGit(context, 'feat: test')
+    await generateRuntimeCommitMessage(context)
+    await cancelRuntimeGenerateCommitMessage(context)
     await pushRuntimeGit(context, { publish: true, pushTarget: { remote: 'origin' } as never })
 
     expect(runtimeEnvironmentCall).toHaveBeenNthCalledWith(1, {
@@ -130,15 +300,74 @@ describe('runtime git client', () => {
     })
     expect(runtimeEnvironmentCall).toHaveBeenNthCalledWith(2, {
       selector: 'env-1',
+      method: 'git.bulkDiscard',
+      params: { worktree: 'wt-1', filePaths: ['c.ts', 'd.ts'] },
+      timeoutMs: 15_000
+    })
+    expect(runtimeEnvironmentCall).toHaveBeenNthCalledWith(3, {
+      selector: 'env-1',
       method: 'git.commit',
       params: { worktree: 'wt-1', message: 'feat: test' },
       timeoutMs: 30_000
     })
-    expect(runtimeEnvironmentCall).toHaveBeenNthCalledWith(3, {
+    expect(runtimeEnvironmentCall).toHaveBeenNthCalledWith(4, {
+      selector: 'env-1',
+      method: 'git.generateCommitMessage',
+      params: { worktree: 'wt-1' },
+      timeoutMs: 75_000
+    })
+    expect(runtimeEnvironmentCall).toHaveBeenNthCalledWith(5, {
+      selector: 'env-1',
+      method: 'git.cancelGenerateCommitMessage',
+      params: { worktree: 'wt-1' },
+      timeoutMs: 5_000
+    })
+    expect(runtimeEnvironmentCall).toHaveBeenNthCalledWith(6, {
       selector: 'env-1',
       method: 'git.push',
       params: { worktree: 'wt-1', publish: true, pushTarget: { remote: 'origin' } },
       timeoutMs: 30_000
+    })
+  })
+
+  it('passes commit-message settings to the active runtime', async () => {
+    const commitMessageAi = {
+      enabled: true,
+      agentId: 'codex' as const,
+      selectedModelByAgent: { codex: 'gpt-5.3-codex-spark' },
+      selectedThinkingByModel: { 'gpt-5.3-codex-spark': 'medium' },
+      customPrompt: 'Prefer concise subjects.',
+      customAgentCommand: ''
+    }
+    const agentCmdOverrides = { codex: 'codex --profile work' }
+    runtimeEnvironmentCall.mockResolvedValue({
+      id: 'rpc-1',
+      ok: true,
+      result: { success: true, message: 'feat: test' },
+      _meta: { runtimeId: 'remote-runtime' }
+    })
+
+    await generateRuntimeCommitMessage({
+      settings: {
+        activeRuntimeEnvironmentId: 'env-1',
+        commitMessageAi,
+        agentCmdOverrides,
+        enableGitHubAttribution: true
+      },
+      worktreeId: 'wt-1',
+      worktreePath: '/repo'
+    })
+
+    expect(runtimeEnvironmentCall).toHaveBeenCalledWith({
+      selector: 'env-1',
+      method: 'git.generateCommitMessage',
+      params: {
+        worktree: 'wt-1',
+        commitMessageAi,
+        agentCmdOverrides,
+        enableGitHubAttribution: true
+      },
+      timeoutMs: 75_000
     })
   })
 })

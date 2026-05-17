@@ -1,13 +1,16 @@
 /* eslint-disable max-lines -- Why: shared type definitions for all runtime RPC methods live in one file for discoverability and import simplicity. */
-import type { TerminalPaneLayoutNode } from './types'
 import type {
+  BaseRefSearchResult,
   BrowserCookieImportResult,
   BrowserSessionProfile,
   BrowserSessionProfileSource,
   GitWorktreeInfo,
   Repo,
-  Worktree
+  Worktree,
+  WorktreeLineage,
+  WorktreeLineageWarning
 } from './types'
+import type { TerminalPaneLayoutNode } from './types'
 import type {
   RuntimeMarkdownReadTabResult,
   RuntimeMarkdownSaveTabResult
@@ -304,6 +307,8 @@ export type RuntimeWorktreePsSummary = {
   repo: string
   path: string
   branch: string
+  parentWorktreeId: string | null
+  childWorktreeIds: string[]
   displayName: string
   linkedIssue: number | null
   linkedPR: { number: number; state: string } | null
@@ -319,7 +324,17 @@ export type RuntimeWorktreePsSummary = {
 export type RuntimeWorktreeStatus = 'active' | 'working' | 'permission' | 'done' | 'inactive'
 
 export type RuntimeWorktreeRecord = Worktree & {
+  parentWorktreeId: string | null
+  childWorktreeIds: string[]
+  lineage: WorktreeLineage | null
   git: GitWorktreeInfo
+}
+
+export type RuntimeWorktreeCreateResult = {
+  worktree: RuntimeWorktreeRecord
+  lineage: WorktreeLineage | null
+  warnings: WorktreeLineageWarning[]
+  warning?: string
 }
 
 export type RuntimeWorktreePsResult = {
@@ -334,6 +349,7 @@ export type RuntimeRepoList = {
 
 export type RuntimeRepoSearchRefs = {
   refs: string[]
+  refDetails?: BaseRefSearchResult[]
   truncated: boolean
 }
 

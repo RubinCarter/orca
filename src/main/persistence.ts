@@ -20,6 +20,7 @@ import type {
   Automation,
   AutomationCreateInput,
   AutomationDispatchResult,
+  AutomationRunOutputSnapshot,
   AutomationRun,
   AutomationRunTrigger,
   AutomationUpdateInput
@@ -33,10 +34,12 @@ import type {
   Repo,
   SparsePreset,
   WorktreeMeta,
+  WorktreeLineage,
   GlobalSettings,
   OnboardingChecklistState,
   OnboardingOutcome,
   OnboardingState,
+  LegacyPaneKeyAliasEntry,
   TerminalPaneLayoutNode,
   TerminalLayoutSnapshot,
   TerminalTab,
@@ -57,19 +60,29 @@ import {
   ONBOARDING_FINAL_STEP
 } from '../shared/constants'
 import { parseWorkspaceSession } from '../shared/workspace-session-schema'
-import { isTerminalLeafId, makePaneKey } from '../shared/stable-pane-id'
+import {
+  isTerminalLeafId,
+  makePaneKey,
+  parseLegacyNumericPaneKey,
+  parsePaneKey
+} from '../shared/stable-pane-id'
 import {
   setMigrationUnsupportedPty,
   setMigrationUnsupportedPtyPersistenceListener
 } from './agent-hooks/migration-unsupported-pty-state'
+import { agentHookServer } from './agent-hooks/server'
 import { pruneLocalTerminalScrollbackBuffers } from '../shared/workspace-session-terminal-buffers'
 import { pruneWorkspaceSessionBrowserHistory } from '../shared/workspace-session-browser-history'
-import { getRepoIdFromWorktreeId } from '../shared/worktree-id'
+import { getRepoIdFromWorktreeId, getWorktreePathBasenameFromId } from '../shared/worktree-id'
 import { normalizeTerminalQuickCommands } from '../shared/terminal-quick-commands'
+import { normalizeVisibleTaskProviders } from '../shared/task-providers'
+import { normalizeOpenInApplications } from '../shared/open-in-applications'
 import {
   DEFAULT_WORKSPACE_STATUS_ID,
+  clampWorkspaceBoardColumnWidth,
   clampWorkspaceBoardOpacity,
   normalizeWorkspaceBoardCompact,
+  normalizePersistedWorkspaceStatuses,
   normalizeWorkspaceStatuses
 } from '../shared/workspace-statuses'
 
@@ -148,10 +161,15 @@ function backupPath(dataFile: string, index: number): string {
 }
 
 function normalizeGroupBy(groupBy: unknown): PersistedState['ui']['groupBy'] {
-  if (groupBy === 'none' || groupBy === 'repo' || groupBy === 'pr-status') {
+  if (
+    groupBy === 'none' ||
+    groupBy === 'workspace-status' ||
+    groupBy === 'repo' ||
+    groupBy === 'pr-status'
+  ) {
     return groupBy
   }
-  if (groupBy === 'workspace-status') {
+  if (groupBy === 'flat') {
     return 'none'
   }
   return getDefaultUIState().groupBy
@@ -162,6 +180,32 @@ function normalizeSortBy(sortBy: unknown): 'name' | 'smart' | 'recent' | 'repo' 
     return sortBy
   }
   return getDefaultUIState().sortBy
+}
+
+function normalizeAutomationRunWorkspaceDisplayName(value: string | null): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
+function normalizeAutomationRunOutputSnapshot(
+  value: AutomationRunOutputSnapshot | null | undefined
+): AutomationRunOutputSnapshot | null {
+  if (!value || value.format !== 'plain_text') {
+    return null
+  }
+  const content = typeof value.content === 'string' ? value.content : ''
+  if (!content.trim()) {
+    return null
+  }
+  return {
+    format: 'plain_text',
+    content,
+    capturedAt:
+      typeof value.capturedAt === 'number' && Number.isFinite(value.capturedAt)
+        ? value.capturedAt
+        : Date.now(),
+    truncated: value.truncated === true
+  }
 }
 
 // Why: old persisted targets predate configHost. Default to label-based lookup
@@ -412,64 +456,135 @@ function findWorktreeIdForTab(session: WorkspaceSessionState, tabId: string): st
   return undefined
 }
 
+type PaneIdentityMigrationEntries = {
+  migrationUnsupportedEntries: MigrationUnsupportedPtyEntry[]
+  legacyPaneKeyAliasEntries: LegacyPaneKeyAliasEntry[]
+}
+
 function collectMigrationUnsupportedPtyEntries(args: {
   session: WorkspaceSessionState
   tabId: string
   inputLayout: TerminalLayoutSnapshot
   normalizedLayout: TerminalLayoutSnapshot
   leafIdByInputLeafId: Map<string, string>
-  sourceForPtyId: (ptyId: string) => 'local' | 'ssh'
-}): MigrationUnsupportedPtyEntry[] {
-  const entries: MigrationUnsupportedPtyEntry[] = []
+}): PaneIdentityMigrationEntries {
   const worktreeId = findWorktreeIdForTab(args.session, args.tabId)
   const tab = worktreeId
     ? args.session.tabsByWorktree?.[worktreeId]?.find((entry) => entry.id === args.tabId)
     : undefined
-  const pushEntry = (ptyId: string, leafId: string): void => {
+  const legacyPaneKeyAliasEntries: LegacyPaneKeyAliasEntry[] = []
+  const registeredLegacyPaneKeys = new Set<string>()
+  const hasLeafPtyBindings = Object.keys(args.inputLayout.ptyIdsByLeafId ?? {}).length > 0
+  const fallbackPtyId =
+    !hasLeafPtyBindings && typeof tab?.ptyId === 'string' ? tab.ptyId : undefined
+  const registerLegacyAlias = (inputLeafId: string, leafId: string, ptyId?: string): boolean => {
     if (!isTerminalLeafId(leafId)) {
-      return
+      return false
     }
     let paneKey: string
     try {
       paneKey = makePaneKey(args.tabId, leafId)
     } catch {
-      return
+      return false
     }
-    entries.push({
-      ptyId,
-      ...(worktreeId ? { worktreeId } : {}),
-      tabId: args.tabId,
-      leafId,
-      paneKey,
-      reason: 'legacy-numeric-pane-key',
-      source: args.sourceForPtyId(ptyId),
-      updatedAt: Date.now()
-    })
+    const numeric = /^(?:pane:)?(\d+)$/.exec(inputLeafId)?.[1]
+    if (!numeric) {
+      return false
+    }
+    // Why: persisted PaneManager ids are 1-based. A zero-based alias in split
+    // layouts would make tab:1 ambiguous and can route the first pane to the second.
+    const legacyPaneKey = `${args.tabId}:${numeric}`
+    agentHookServer.registerPaneKeyAlias(legacyPaneKey, paneKey, ptyId)
+    registeredLegacyPaneKeys.add(legacyPaneKey)
+    if (ptyId) {
+      legacyPaneKeyAliasEntries.push({
+        ptyId,
+        legacyPaneKey,
+        stablePaneKey: paneKey,
+        updatedAt: Date.now()
+      })
+      return true
+    }
+    return false
   }
-  for (const [inputLeafId, ptyId] of Object.entries(args.inputLayout.ptyIdsByLeafId ?? {})) {
+  const inputLeafIds = new Set([
+    ...collectLayoutLeafIdsInOrder(args.inputLayout.root),
+    ...Object.keys(args.inputLayout.ptyIdsByLeafId ?? {})
+  ])
+  for (const inputLeafId of inputLeafIds) {
     if (isTerminalLeafId(inputLeafId)) {
       continue
     }
     const leafId = args.leafIdByInputLeafId.get(inputLeafId)
     if (leafId) {
-      pushEntry(ptyId, leafId)
+      registerLegacyAlias(
+        inputLeafId,
+        leafId,
+        args.inputLayout.ptyIdsByLeafId?.[inputLeafId] ?? fallbackPtyId
+      )
     }
   }
-  if (
-    entries.length === 0 &&
-    tab?.ptyId &&
-    Object.keys(args.inputLayout.ptyIdsByLeafId ?? {}).length === 0
-  ) {
+  if (tab?.ptyId && !hasLeafPtyBindings) {
     const fallbackLeafId =
       args.normalizedLayout.activeLeafId ?? firstLayoutLeafId(args.normalizedLayout.root)
-    if (fallbackLeafId) {
-      // Why: older single-pane sessions can reattach from tab.ptyId only, with
-      // no leaf binding to migrate. Their live shell env can still hold the
-      // legacy pane key, so surface the restart-required row for that PTY.
-      pushEntry(tab.ptyId, fallbackLeafId)
+    if (fallbackLeafId && isTerminalLeafId(fallbackLeafId)) {
+      const paneKey = makePaneKey(args.tabId, fallbackLeafId)
+      for (const legacyPaneKey of [`${args.tabId}:0`, `${args.tabId}:1`]) {
+        if (registeredLegacyPaneKeys.has(legacyPaneKey)) {
+          continue
+        }
+        agentHookServer.registerPaneKeyAlias(legacyPaneKey, paneKey, tab.ptyId)
+        legacyPaneKeyAliasEntries.push({
+          ptyId: tab.ptyId,
+          legacyPaneKey,
+          stablePaneKey: paneKey,
+          updatedAt: Date.now()
+        })
+      }
     }
   }
-  return entries
+  // Why: legacy numeric pane keys are now bridged by aliases instead of
+  // persisted as restart-required rows. Existing saved rows are pruned during
+  // normalizePersistedPaneIdentityState.
+  return { migrationUnsupportedEntries: [], legacyPaneKeyAliasEntries }
+}
+
+function legacyMigrationUnsupportedRowsToAliasEntries(
+  entries: MigrationUnsupportedPtyEntry[]
+): LegacyPaneKeyAliasEntry[] {
+  const normalizedEntries = normalizeMigrationUnsupportedPtyEntries(entries).filter(
+    (entry) => entry.tabId && entry.paneKey && parsePaneKey(entry.paneKey)
+  )
+  const entriesByTabId = new Map<string, MigrationUnsupportedPtyEntry[]>()
+  for (const entry of normalizedEntries) {
+    const tabId = entry.tabId
+    if (!tabId) {
+      continue
+    }
+    entriesByTabId.set(tabId, [...(entriesByTabId.get(tabId) ?? []), entry])
+  }
+  const aliasEntries: LegacyPaneKeyAliasEntry[] = []
+  for (const [tabId, tabEntries] of entriesByTabId) {
+    if (tabEntries.length !== 1) {
+      continue
+    }
+    const [entry] = tabEntries
+    if (!entry.paneKey) {
+      continue
+    }
+    // Why: pre-stable dev/RC migration rows did not store the old numeric
+    // key. Only synthesize the single-pane aliases when the row is unambiguous
+    // for its tab; split rows need layout-derived aliases instead of a guess.
+    for (const legacyPaneKey of [`${tabId}:0`, `${tabId}:1`]) {
+      aliasEntries.push({
+        ptyId: entry.ptyId,
+        legacyPaneKey,
+        stablePaneKey: entry.paneKey,
+        updatedAt: entry.updatedAt
+      })
+    }
+  }
+  return aliasEntries
 }
 
 function normalizeTerminalLayoutSnapshotForPersistence(
@@ -595,19 +710,20 @@ function normalizeTerminalLayoutSnapshotForPersistence(
 
 function normalizeWorkspaceSessionPaneIdentities(
   session: WorkspaceSessionState,
-  priorLayoutsByTabId: Record<string, TerminalLayoutSnapshot> = {},
-  sourceForPtyId: (ptyId: string) => 'local' | 'ssh' = () => 'local'
+  priorLayoutsByTabId: Record<string, TerminalLayoutSnapshot> = {}
 ): {
   session: WorkspaceSessionState
   changed: boolean
   leafIdByInputLeafIdByTabId: Map<string, Map<string, string>>
   leafIdByPtyIdByTabId: Map<string, Map<string, string>>
   migrationUnsupportedEntries: MigrationUnsupportedPtyEntry[]
+  legacyPaneKeyAliasEntries: LegacyPaneKeyAliasEntry[]
 } {
   let changed = false
   const leafIdByInputLeafIdByTabId = new Map<string, Map<string, string>>()
   const leafIdByPtyIdByTabId = new Map<string, Map<string, string>>()
   const migrationUnsupportedEntries: MigrationUnsupportedPtyEntry[] = []
+  const legacyPaneKeyAliasEntries: LegacyPaneKeyAliasEntry[] = []
   const terminalLayoutsByTabId: Record<string, TerminalLayoutSnapshot> = {}
   for (const [tabId, layout] of Object.entries(session.terminalLayoutsByTabId ?? {})) {
     const normalized = normalizeTerminalLayoutSnapshotForPersistence(
@@ -616,16 +732,15 @@ function normalizeWorkspaceSessionPaneIdentities(
     )
     terminalLayoutsByTabId[tabId] = normalized.snapshot
     leafIdByInputLeafIdByTabId.set(tabId, normalized.leafIdByInputLeafId)
-    migrationUnsupportedEntries.push(
-      ...collectMigrationUnsupportedPtyEntries({
-        session,
-        tabId,
-        inputLayout: layout,
-        normalizedLayout: normalized.snapshot,
-        leafIdByInputLeafId: normalized.leafIdByInputLeafId,
-        sourceForPtyId
-      })
-    )
+    const migrationEntries = collectMigrationUnsupportedPtyEntries({
+      session,
+      tabId,
+      inputLayout: layout,
+      normalizedLayout: normalized.snapshot,
+      leafIdByInputLeafId: normalized.leafIdByInputLeafId
+    })
+    migrationUnsupportedEntries.push(...migrationEntries.migrationUnsupportedEntries)
+    legacyPaneKeyAliasEntries.push(...migrationEntries.legacyPaneKeyAliasEntries)
     const leafIdByPtyId = new Map<string, string>()
     const duplicatePtyIds = new Set<string>()
     for (const [leafId, ptyId] of Object.entries(normalized.snapshot.ptyIdsByLeafId ?? {})) {
@@ -647,7 +762,8 @@ function normalizeWorkspaceSessionPaneIdentities(
     changed,
     leafIdByInputLeafIdByTabId,
     leafIdByPtyIdByTabId,
-    migrationUnsupportedEntries
+    migrationUnsupportedEntries,
+    legacyPaneKeyAliasEntries
   }
 }
 
@@ -685,31 +801,44 @@ function normalizePersistedPaneIdentityState(state: PersistedState): {
   state: PersistedState
   changed: boolean
   migrationUnsupportedEntries: MigrationUnsupportedPtyEntry[]
+  legacyPaneKeyAliasEntries: LegacyPaneKeyAliasEntry[]
 } {
-  const sshPtyIds = new Set((state.sshRemotePtyLeases ?? []).map((lease) => lease.ptyId))
-  const normalizedSession = normalizeWorkspaceSessionPaneIdentities(
-    state.workspaceSession,
-    {},
-    (ptyId) => (sshPtyIds.has(ptyId) ? 'ssh' : 'local')
-  )
+  const normalizedSession = normalizeWorkspaceSessionPaneIdentities(state.workspaceSession, {})
   const remappedLeases = remapSshRemotePtyLeaseLeafIds(
     state.sshRemotePtyLeases ?? [],
     normalizedSession.leafIdByInputLeafIdByTabId,
     normalizedSession.leafIdByPtyIdByTabId
   )
-  const mergedMigrationUnsupportedEntries = mergeMigrationUnsupportedPtyEntries([
-    ...(state.migrationUnsupportedPtyEntries ?? []),
-    ...normalizedSession.migrationUnsupportedEntries
+  const mergedMigrationUnsupportedEntries: MigrationUnsupportedPtyEntry[] = []
+  const mergedLegacyPaneKeyAliasEntries = mergeLegacyPaneKeyAliasEntries([
+    ...normalizeLegacyPaneKeyAliasEntries(state.legacyPaneKeyAliasEntries),
+    ...legacyMigrationUnsupportedRowsToAliasEntries(state.migrationUnsupportedPtyEntries ?? []),
+    ...normalizedSession.legacyPaneKeyAliasEntries
   ])
+  const remappedAcknowledgements = remapAcknowledgedAgentPaneKeys(
+    state.ui?.acknowledgedAgentsByPaneKey,
+    normalizedSession.leafIdByInputLeafIdByTabId
+  )
   const migrationUnsupportedChanged = !migrationUnsupportedEntriesEqual(
     state.migrationUnsupportedPtyEntries ?? [],
     mergedMigrationUnsupportedEntries
   )
-  if (!normalizedSession.changed && !remappedLeases.changed && !migrationUnsupportedChanged) {
+  const legacyAliasesChanged = !legacyPaneKeyAliasEntriesEqual(
+    state.legacyPaneKeyAliasEntries ?? [],
+    mergedLegacyPaneKeyAliasEntries
+  )
+  if (
+    !normalizedSession.changed &&
+    !remappedLeases.changed &&
+    !migrationUnsupportedChanged &&
+    !legacyAliasesChanged &&
+    !remappedAcknowledgements.changed
+  ) {
     return {
       state,
       changed: false,
-      migrationUnsupportedEntries: mergedMigrationUnsupportedEntries
+      migrationUnsupportedEntries: mergedMigrationUnsupportedEntries,
+      legacyPaneKeyAliasEntries: mergedLegacyPaneKeyAliasEntries
     }
   }
   return {
@@ -717,24 +846,70 @@ function normalizePersistedPaneIdentityState(state: PersistedState): {
       ...state,
       workspaceSession: normalizedSession.session,
       sshRemotePtyLeases: remappedLeases.leases,
-      migrationUnsupportedPtyEntries: mergedMigrationUnsupportedEntries
+      migrationUnsupportedPtyEntries: mergedMigrationUnsupportedEntries,
+      legacyPaneKeyAliasEntries: mergedLegacyPaneKeyAliasEntries,
+      ...(remappedAcknowledgements.changed
+        ? {
+            ui: {
+              ...state.ui,
+              acknowledgedAgentsByPaneKey: remappedAcknowledgements.acknowledgements
+            }
+          }
+        : {})
     },
     changed: true,
-    migrationUnsupportedEntries: mergedMigrationUnsupportedEntries
+    migrationUnsupportedEntries: mergedMigrationUnsupportedEntries,
+    legacyPaneKeyAliasEntries: mergedLegacyPaneKeyAliasEntries
   }
 }
 
-function mergeMigrationUnsupportedPtyEntries(
-  entries: MigrationUnsupportedPtyEntry[]
-): MigrationUnsupportedPtyEntry[] {
-  const byPtyId = new Map<string, MigrationUnsupportedPtyEntry>()
-  for (const entry of entries) {
-    const existing = byPtyId.get(entry.ptyId)
-    if (!existing || existing.updatedAt <= entry.updatedAt) {
-      byPtyId.set(entry.ptyId, entry)
+function remapAcknowledgedAgentPaneKeys(
+  acknowledgements: PersistedState['ui']['acknowledgedAgentsByPaneKey'],
+  leafIdByInputLeafIdByTabId: Map<string, Map<string, string>>
+): { acknowledgements: PersistedState['ui']['acknowledgedAgentsByPaneKey']; changed: boolean } {
+  if (!acknowledgements || Object.keys(acknowledgements).length === 0) {
+    return { acknowledgements, changed: false }
+  }
+
+  let changed = false
+  const next: NonNullable<PersistedState['ui']['acknowledgedAgentsByPaneKey']> = {}
+  const setAcknowledgement = (paneKey: string, acknowledgedAt: number): void => {
+    const existing = next[paneKey]
+    next[paneKey] = existing === undefined ? acknowledgedAt : Math.max(existing, acknowledgedAt)
+  }
+  for (const [paneKey, acknowledgedAt] of Object.entries(acknowledgements)) {
+    const parsed = parsePaneKey(paneKey)
+    if (parsed) {
+      setAcknowledgement(paneKey, acknowledgedAt)
+      continue
+    }
+
+    const delimiter = paneKey.indexOf(':')
+    if (delimiter <= 0 || delimiter === paneKey.length - 1) {
+      setAcknowledgement(paneKey, acknowledgedAt)
+      continue
+    }
+
+    const tabId = paneKey.slice(0, delimiter)
+    const legacyLeafId = paneKey.slice(delimiter + 1)
+    const remappedLeafId = leafIdByInputLeafIdByTabId.get(tabId)?.get(legacyLeafId)
+    if (!remappedLeafId || !isTerminalLeafId(remappedLeafId)) {
+      setAcknowledgement(paneKey, acknowledgedAt)
+      continue
+    }
+
+    try {
+      // Why: UI acks are keyed by paneKey just like hook rows. When a legacy
+      // numeric/pane:* leaf is promoted to a UUID, carry the read marker over
+      // so already-seen Activity/sidebar rows do not come back unread.
+      setAcknowledgement(makePaneKey(tabId, remappedLeafId), acknowledgedAt)
+      changed = true
+    } catch {
+      setAcknowledgement(paneKey, acknowledgedAt)
     }
   }
-  return [...byPtyId.values()]
+
+  return { acknowledgements: next, changed }
 }
 
 function normalizeMigrationUnsupportedPtyEntries(value: unknown): MigrationUnsupportedPtyEntry[] {
@@ -757,6 +932,57 @@ function normalizeMigrationUnsupportedPtyEntries(value: unknown): MigrationUnsup
       (candidate.source === 'local' || candidate.source === 'ssh') &&
       Number.isFinite(candidate.updatedAt)
     )
+  })
+}
+
+function normalizeLegacyPaneKeyAliasEntries(value: unknown): LegacyPaneKeyAliasEntry[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.filter((entry): entry is LegacyPaneKeyAliasEntry => {
+    if (!entry || typeof entry !== 'object') {
+      return false
+    }
+    const candidate = entry as Partial<LegacyPaneKeyAliasEntry>
+    if (
+      typeof candidate.ptyId !== 'string' ||
+      candidate.ptyId.trim().length === 0 ||
+      typeof candidate.legacyPaneKey !== 'string' ||
+      typeof candidate.stablePaneKey !== 'string' ||
+      !Number.isFinite(candidate.updatedAt)
+    ) {
+      return false
+    }
+    const legacy = parseLegacyNumericPaneKey(candidate.legacyPaneKey)
+    const stable = parsePaneKey(candidate.stablePaneKey)
+    return Boolean(legacy && stable && legacy.tabId === stable.tabId)
+  })
+}
+
+function mergeLegacyPaneKeyAliasEntries(
+  entries: LegacyPaneKeyAliasEntry[]
+): LegacyPaneKeyAliasEntry[] {
+  const byLegacyPaneKey = new Map<string, LegacyPaneKeyAliasEntry>()
+  for (const entry of normalizeLegacyPaneKeyAliasEntries(entries)) {
+    const existing = byLegacyPaneKey.get(entry.legacyPaneKey)
+    if (!existing || existing.updatedAt <= entry.updatedAt) {
+      byLegacyPaneKey.set(entry.legacyPaneKey, entry)
+    }
+  }
+  return [...byLegacyPaneKey.values()]
+}
+
+function legacyPaneKeyAliasEntriesEqual(
+  left: LegacyPaneKeyAliasEntry[],
+  right: LegacyPaneKeyAliasEntry[]
+): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+  const rightByLegacyPaneKey = new Map(right.map((entry) => [entry.legacyPaneKey, entry]))
+  return left.every((entry) => {
+    const other = rightByLegacyPaneKey.get(entry.legacyPaneKey)
+    return other ? JSON.stringify(entry) === JSON.stringify(other) : false
   })
 }
 
@@ -806,6 +1032,7 @@ export class Store {
   private pendingWrite: Promise<void> | null = null
   private writeGeneration = 0
   private gitUsernameCache = new Map<string, string>()
+  private loadNeedsSave = false
 
   constructor() {
     const loaded = this.load()
@@ -814,13 +1041,28 @@ export class Store {
     for (const entry of normalized.migrationUnsupportedEntries) {
       setMigrationUnsupportedPty(entry)
     }
+    for (const entry of normalized.legacyPaneKeyAliasEntries) {
+      agentHookServer.registerPaneKeyAlias(
+        entry.legacyPaneKey,
+        entry.stablePaneKey,
+        entry.ptyId,
+        entry.updatedAt,
+        { overwriteExisting: false }
+      )
+    }
     setMigrationUnsupportedPtyPersistenceListener((entries) => {
       this.state.migrationUnsupportedPtyEntries = entries
       this.scheduleSave()
     })
-    if (normalized.changed) {
+    agentHookServer.setPaneKeyAliasPersistenceListener((entries) => {
+      this.state.legacyPaneKeyAliasEntries = entries
+      this.scheduleSave()
+    })
+    if (normalized.changed || this.loadNeedsSave) {
       // Why: upgraded sessions may contain legacy pane:1 leaves. Rewrite them at
       // the main persistence boundary so older renderer writes cannot revive them.
+      // Other one-shot load migrations also set loadNeedsSave to persist their
+      // guard flags before the next restart.
       this.scheduleSave()
     }
   }
@@ -971,6 +1213,7 @@ export class Store {
         result = {
           ...defaults,
           ...parsed,
+          worktreeLineageById: parsed.worktreeLineageById ?? {},
           settings: {
             ...defaults.settings,
             ...parsed.settings,
@@ -989,6 +1232,10 @@ export class Store {
             terminalQuickCommands: normalizeTerminalQuickCommands(
               parsed.settings?.terminalQuickCommands
             ),
+            visibleTaskProviders: normalizeVisibleTaskProviders(
+              parsed.settings?.visibleTaskProviders
+            ),
+            openInApplications: normalizeOpenInApplications(parsed.settings?.openInApplications),
             notifications: {
               ...getDefaultNotificationSettings(),
               ...parsed.settings?.notifications
@@ -1008,6 +1255,32 @@ export class Store {
             const rawSort = parsed.ui?.sortBy
             const sort = normalizeSortBy(rawSort)
             const migrate = !parsed.ui?._sortBySmartMigrated && rawSort === 'recent'
+            const workspaceStatusesDefaultOrderMigrated =
+              parsed.ui?._workspaceStatusesDefaultOrderMigrated === true
+            // Why: the default workflow changed to Done -> Review -> Progress -> Todo.
+            // Only exact legacy default payloads are migrated; users who
+            // customized status labels, colors, icons, or order keep theirs.
+            const workspaceStatusesDefaultWorkflowMigrated =
+              parsed.ui?._workspaceStatusesDefaultWorkflowMigrated === true
+            // Why: visual migration has its own guard so later user choices
+            // of valid legacy color/icon IDs are preserved by runtime writes.
+            const workspaceStatusesDefaultVisualsMigrated =
+              parsed.ui?._workspaceStatusesDefaultVisualsMigrated === true
+            const workspaceStatuses = normalizePersistedWorkspaceStatuses(
+              parsed.ui?.workspaceStatuses,
+              {
+                migrateDefaultWorkflowStatuses: !workspaceStatusesDefaultWorkflowMigrated,
+                repairReorderedDefaultStatuses: !workspaceStatusesDefaultOrderMigrated,
+                migrateLegacyDefaultStatusVisuals: !workspaceStatusesDefaultVisualsMigrated
+              }
+            )
+            if (
+              !workspaceStatusesDefaultOrderMigrated ||
+              !workspaceStatusesDefaultWorkflowMigrated ||
+              !workspaceStatusesDefaultVisualsMigrated
+            ) {
+              this.loadNeedsSave = true
+            }
             // Why: the 'inline-agents' card property was added after the
             // feature shipped behind an experimental toggle. Now that the
             // feature is default-on for everyone, every existing user needs
@@ -1055,6 +1328,10 @@ export class Store {
               ...defaults.ui,
               ...parsed.ui,
               sortBy: migrate ? ('smart' as const) : sort,
+              workspaceStatuses,
+              _workspaceStatusesDefaultOrderMigrated: true,
+              _workspaceStatusesDefaultWorkflowMigrated: true,
+              _workspaceStatusesDefaultVisualsMigrated: true,
               _sortBySmartMigrated: true,
               ...(migratedCardProps !== undefined
                 ? { worktreeCardProperties: migratedCardProps }
@@ -1093,6 +1370,9 @@ export class Store {
             .filter((lease): lease is SshRemotePtyLease => lease !== null),
           migrationUnsupportedPtyEntries: normalizeMigrationUnsupportedPtyEntries(
             parsed.migrationUnsupportedPtyEntries
+          ),
+          legacyPaneKeyAliasEntries: normalizeLegacyPaneKeyAliasEntries(
+            parsed.legacyPaneKeyAliasEntries
           ),
           automations: Array.isArray(parsed.automations) ? parsed.automations : [],
           automationRuns: Array.isArray(parsed.automationRuns) ? parsed.automationRuns : [],
@@ -1438,6 +1718,11 @@ export class Store {
         delete this.state.worktreeMeta[key]
       }
     }
+    for (const [childId, lineage] of Object.entries(this.state.worktreeLineageById)) {
+      if (childId.startsWith(prefix) || lineage.parentWorktreeId.startsWith(prefix)) {
+        delete this.state.worktreeLineageById[childId]
+      }
+    }
     this.scheduleSave()
   }
 
@@ -1649,9 +1934,12 @@ export class Store {
       status: 'pending',
       trigger,
       workspaceId: automation.workspaceId,
+      workspaceDisplayName: this.getAutomationRunWorkspaceDisplayName(automation.workspaceId),
       sessionKind: 'terminal',
       chatSessionId: null,
       terminalSessionId: null,
+      outputSnapshot: null,
+      usage: null,
       error: null,
       startedAt: null,
       dispatchedAt: null,
@@ -1669,11 +1957,23 @@ export class Store {
     }
     const now = Date.now()
     const current = this.state.automationRuns[index]
+    const workspaceId = result.workspaceId ?? current.workspaceId
+    const workspaceDisplayName = Object.hasOwn(result, 'workspaceDisplayName')
+      ? normalizeAutomationRunWorkspaceDisplayName(result.workspaceDisplayName ?? null)
+      : null
     const updated: AutomationRun = {
       ...current,
       status: result.status,
-      workspaceId: result.workspaceId ?? current.workspaceId,
+      workspaceId,
+      workspaceDisplayName:
+        workspaceDisplayName ??
+        normalizeAutomationRunWorkspaceDisplayName(current.workspaceDisplayName ?? null) ??
+        this.getAutomationRunWorkspaceDisplayName(workspaceId),
       terminalSessionId: result.terminalSessionId ?? current.terminalSessionId,
+      outputSnapshot: Object.hasOwn(result, 'outputSnapshot')
+        ? normalizeAutomationRunOutputSnapshot(result.outputSnapshot)
+        : normalizeAutomationRunOutputSnapshot(current.outputSnapshot),
+      usage: Object.hasOwn(result, 'usage') ? (result.usage ?? null) : (current.usage ?? null),
       error: result.error ?? null,
       startedAt: current.startedAt ?? now,
       dispatchedAt: result.status === 'dispatched' ? now : current.dispatchedAt
@@ -1686,6 +1986,37 @@ export class Store {
     }
     this.flush()
     return updated
+  }
+
+  snapshotAutomationRunWorkspaceDisplayName(workspaceId: string, displayName: string): number {
+    const normalizedDisplayName = normalizeAutomationRunWorkspaceDisplayName(displayName)
+    if (!normalizedDisplayName) {
+      return 0
+    }
+    let updatedCount = 0
+    this.state.automationRuns = (this.state.automationRuns ?? []).map((run) => {
+      if (run.workspaceId !== workspaceId || run.workspaceDisplayName === normalizedDisplayName) {
+        return run
+      }
+      updatedCount += 1
+      return { ...run, workspaceDisplayName: normalizedDisplayName }
+    })
+    if (updatedCount > 0) {
+      this.flush()
+    }
+    return updatedCount
+  }
+
+  private getAutomationRunWorkspaceDisplayName(
+    workspaceId: string | null | undefined
+  ): string | null {
+    if (!workspaceId) {
+      return null
+    }
+    return normalizeAutomationRunWorkspaceDisplayName(
+      this.state.worktreeMeta[workspaceId]?.displayName ??
+        getWorktreePathBasenameFromId(workspaceId)
+    )
   }
 
   advanceAutomationNextRun(id: string, now = Date.now()): Automation {
@@ -1718,6 +2049,9 @@ export class Store {
   setWorktreeMeta(worktreeId: string, meta: Partial<WorktreeMeta>): WorktreeMeta {
     const existing = this.state.worktreeMeta[worktreeId] || getDefaultWorktreeMeta()
     const updated = { ...existing, ...meta }
+    if (!updated.instanceId) {
+      updated.instanceId = randomUUID()
+    }
     this.state.worktreeMeta[worktreeId] = updated
     this.scheduleSave()
     return updated
@@ -1725,6 +2059,26 @@ export class Store {
 
   removeWorktreeMeta(worktreeId: string): void {
     delete this.state.worktreeMeta[worktreeId]
+    delete this.state.worktreeLineageById[worktreeId]
+    this.scheduleSave()
+  }
+
+  getWorktreeLineage(worktreeId: string): WorktreeLineage | undefined {
+    return this.state.worktreeLineageById[worktreeId]
+  }
+
+  getAllWorktreeLineage(): Record<string, WorktreeLineage> {
+    return this.state.worktreeLineageById
+  }
+
+  setWorktreeLineage(worktreeId: string, lineage: WorktreeLineage): WorktreeLineage {
+    this.state.worktreeLineageById[worktreeId] = lineage
+    this.scheduleSave()
+    return lineage
+  }
+
+  removeWorktreeLineage(worktreeId: string): void {
+    delete this.state.worktreeLineageById[worktreeId]
     this.scheduleSave()
   }
 
@@ -1740,6 +2094,14 @@ export class Store {
       sanitizedUpdates.terminalQuickCommands = normalizeTerminalQuickCommands(
         updates.terminalQuickCommands
       )
+    }
+    if ('visibleTaskProviders' in updates) {
+      sanitizedUpdates.visibleTaskProviders = normalizeVisibleTaskProviders(
+        updates.visibleTaskProviders
+      )
+    }
+    if ('openInApplications' in updates) {
+      sanitizedUpdates.openInApplications = normalizeOpenInApplications(updates.openInApplications)
     }
     // Why: `telemetry` is deep-merged for the same reason `notifications` is —
     // partial updates from the Privacy pane / consent flow (e.g., flipping
@@ -1774,7 +2136,10 @@ export class Store {
       sortBy: normalizeSortBy(this.state.ui?.sortBy),
       workspaceStatuses: normalizeWorkspaceStatuses(this.state.ui?.workspaceStatuses),
       workspaceBoardOpacity: clampWorkspaceBoardOpacity(this.state.ui?.workspaceBoardOpacity),
-      workspaceBoardCompact: normalizeWorkspaceBoardCompact(this.state.ui?.workspaceBoardCompact)
+      workspaceBoardCompact: normalizeWorkspaceBoardCompact(this.state.ui?.workspaceBoardCompact),
+      workspaceBoardColumnWidth: clampWorkspaceBoardColumnWidth(
+        this.state.ui?.workspaceBoardColumnWidth
+      )
     }
   }
 
@@ -1788,14 +2153,18 @@ export class Store {
       sortBy: updates.sortBy
         ? normalizeSortBy(updates.sortBy)
         : normalizeSortBy(this.state.ui?.sortBy),
-      workspaceStatuses: normalizeWorkspaceStatuses(
-        updates.workspaceStatuses ?? this.state.ui?.workspaceStatuses
-      ),
+      workspaceStatuses:
+        updates.workspaceStatuses !== undefined
+          ? normalizeWorkspaceStatuses(updates.workspaceStatuses)
+          : normalizeWorkspaceStatuses(this.state.ui?.workspaceStatuses),
       workspaceBoardOpacity: clampWorkspaceBoardOpacity(
         updates.workspaceBoardOpacity ?? this.state.ui?.workspaceBoardOpacity
       ),
       workspaceBoardCompact: normalizeWorkspaceBoardCompact(
         updates.workspaceBoardCompact ?? this.state.ui?.workspaceBoardCompact
+      ),
+      workspaceBoardColumnWidth: clampWorkspaceBoardColumnWidth(
+        updates.workspaceBoardColumnWidth ?? this.state.ui?.workspaceBoardColumnWidth
       )
     }
     this.scheduleSave()
@@ -1863,14 +2232,31 @@ export class Store {
     // the durable binding and re-open the orphan window. Merge in any
     // existing bindings whenever the incoming snapshot's binding is empty.
     const prior = this.state.workspaceSession
-    const sshPtyIds = new Set((this.state.sshRemotePtyLeases ?? []).map((lease) => lease.ptyId))
     const normalized = normalizeWorkspaceSessionPaneIdentities(
       session,
-      prior?.terminalLayoutsByTabId,
-      (ptyId) => (sshPtyIds.has(ptyId) ? 'ssh' : 'local')
+      prior?.terminalLayoutsByTabId
     )
     for (const entry of normalized.migrationUnsupportedEntries) {
       setMigrationUnsupportedPty(entry)
+    }
+    const remappedAcknowledgements = remapAcknowledgedAgentPaneKeys(
+      this.state.ui?.acknowledgedAgentsByPaneKey,
+      normalized.leafIdByInputLeafIdByTabId
+    )
+    if (remappedAcknowledgements.changed) {
+      this.state.ui = {
+        ...this.state.ui,
+        acknowledgedAgentsByPaneKey: remappedAcknowledgements.acknowledgements
+      }
+    }
+    for (const entry of normalized.legacyPaneKeyAliasEntries) {
+      agentHookServer.registerPaneKeyAlias(
+        entry.legacyPaneKey,
+        entry.stablePaneKey,
+        entry.ptyId,
+        entry.updatedAt,
+        { overwriteExisting: false }
+      )
     }
     session = normalized.session
     const remappedLeases = remapSshRemotePtyLeaseLeafIds(
@@ -2398,6 +2784,7 @@ export class Store {
 
 function getDefaultWorktreeMeta(): WorktreeMeta {
   return {
+    instanceId: randomUUID(),
     displayName: '',
     comment: '',
     linkedIssue: null,

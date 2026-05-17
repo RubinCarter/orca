@@ -3,16 +3,19 @@ import React, { useEffect, useCallback, useState } from 'react'
 import { useAppStore } from '@/store'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import {
   AlertTriangle,
   Bell,
+  ChevronDown,
   GitMerge,
   LoaderCircle,
   CircleCheck,
   CircleX,
   Server,
-  ServerOff
+  ServerOff,
+  Workflow
 } from 'lucide-react'
 import StatusIndicator from './StatusIndicator'
 import CacheTimer from './CacheTimer'
@@ -34,6 +37,7 @@ import {
 import { IssueSection, ReviewSection, CommentSection } from './WorktreeCardMeta'
 import { writeWorkspaceDragData } from './workspace-status'
 import { useWorktreeActivityStatus } from './use-worktree-activity-status'
+import { getWorktreeCardPrDisplay } from './worktree-card-pr-display'
 
 type WorktreeCardProps = {
   worktree: Worktree
@@ -42,9 +46,17 @@ type WorktreeCardProps = {
   isMultiSelected?: boolean
   selectedWorktrees?: readonly Worktree[]
   hideRepoBadge?: boolean
+  hideCiCheck?: boolean
+  parentLabel?: string
+  lineageState?: 'valid' | 'missing'
+  lineageChildCount?: number
+  lineageCollapsed?: boolean
+  lineageChildren?: React.ReactNode
+  onLineageToggle?: (event: React.MouseEvent<HTMLButtonElement>) => void
   onActivate?: () => void
-  onSelectionGesture?: (event: React.MouseEvent<HTMLDivElement>, worktreeId: string) => boolean
-  onContextMenuSelect?: (event: React.MouseEvent<HTMLDivElement>) => readonly Worktree[]
+  onSelectionGesture?: (event: React.MouseEvent<HTMLElement>, worktreeId: string) => boolean
+  onContextMenuSelect?: (event: React.MouseEvent<HTMLElement>) => readonly Worktree[]
+  nativeDragEnabled?: boolean
 }
 
 function formatSparseDirectoryPreview(directories: string[]): string {
@@ -61,7 +73,15 @@ const WorktreeCard = React.memo(function WorktreeCard({
   onActivate,
   onSelectionGesture,
   onContextMenuSelect,
-  hideRepoBadge
+  nativeDragEnabled = true,
+  hideRepoBadge,
+  hideCiCheck = false,
+  parentLabel,
+  lineageState,
+  lineageChildCount = 0,
+  lineageCollapsed = false,
+  lineageChildren,
+  onLineageToggle
 }: WorktreeCardProps) {
   const openModal = useAppStore((s) => s.openModal)
   const updateWorktreeMeta = useAppStore((s) => s.updateWorktreeMeta)
@@ -157,6 +177,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
 
   const hostedReview: HostedReviewInfo | null | undefined =
     hostedReviewEntry !== undefined ? hostedReviewEntry.data : undefined
+  const prDisplay = getWorktreeCardPrDisplay(hostedReview, worktree.linkedPR)
   const issue: IssueInfo | null | undefined = worktree.linkedIssue
     ? issueEntry !== undefined
       ? issueEntry.data
@@ -178,7 +199,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const status = useWorktreeActivityStatus(worktree.id)
 
   const showPR = cardProps.includes('pr')
-  const showCI = cardProps.includes('ci')
+  const showCI = !hideCiCheck && cardProps.includes('ci')
   const showIssue = cardProps.includes('issue')
 
   // Skip hosted-review fetches when the corresponding card sections are hidden.
@@ -192,7 +213,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
       fetchHostedReviewForBranch(repo.path, branch, {
         repoId: repo.id,
         linkedGitHubPR: worktree.linkedPR ?? null,
-        linkedGitLabMR: worktree.linkedGitLabMR ?? null
+        linkedGitLabMR: worktree.linkedGitLabMR ?? null,
+        staleWhileRevalidate: true
       })
     }
   }, [
@@ -291,6 +313,13 @@ const WorktreeCard = React.memo(function WorktreeCard({
   )
 
   const unreadTooltip = worktree.isUnread ? 'Mark read' : 'Mark unread'
+  const childWorkspaceLabel = `${lineageChildCount} child ${
+    lineageChildCount === 1 ? 'workspace' : 'workspaces'
+  }`
+  const childWorkspaceShortLabel = `${lineageChildCount} ${
+    lineageChildCount === 1 ? 'child' : 'children'
+  }`
+  const showLineageChildChip = lineageChildCount > 0 && onLineageToggle !== undefined
 
   const handleDragStart = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
@@ -298,9 +327,22 @@ const WorktreeCard = React.memo(function WorktreeCard({
         event.preventDefault()
         return
       }
-      writeWorkspaceDragData(event.dataTransfer, worktree.id)
+      const dragIds =
+        isMultiSelected && selectedWorktrees && selectedWorktrees.length > 1
+          ? selectedWorktrees.map((item) => item.id)
+          : worktree.id
+      writeWorkspaceDragData(event.dataTransfer, dragIds)
     },
-    [isDeleting, worktree.id]
+    [isDeleting, isMultiSelected, selectedWorktrees, worktree.id]
+  )
+
+  const stopQuickActionPointerPropagation = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      // Why: the Kanban board is dismissed by document-level pointer handling.
+      // Quick card actions mutate metadata, but must not count as card activation.
+      event.stopPropagation()
+    },
+    []
   )
 
   // Why: the 'unread' card property is the user's opt-out. When off, we render
@@ -311,7 +353,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const cardBody = (
     <div
       className={cn(
-        'group relative flex items-start gap-1.5 px-2 py-2 cursor-pointer transition-all duration-200 outline-none select-none ml-1',
+        'group relative flex items-start gap-1.5 px-1.5 py-1.5 cursor-pointer transition-all duration-200 outline-none select-none ml-1',
         isMultiSelected ? 'rounded-sm' : 'rounded-lg',
         isActive
           ? 'bg-black/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.04)] border border-black/[0.015] dark:bg-white/[0.10] dark:border-border/40 dark:shadow-[0_1px_2px_rgba(0,0,0,0.03)]'
@@ -319,13 +361,14 @@ const WorktreeCard = React.memo(function WorktreeCard({
             ? 'border border-sidebar-ring/35 bg-sidebar-accent/70 ring-1 ring-sidebar-ring/30'
             : 'border border-transparent hover:bg-sidebar-accent/40',
         isActive && isMultiSelected && 'ring-1 ring-sidebar-ring/35',
+        !nativeDragEnabled && !isDeleting && '!cursor-grab',
         isDeleting && 'opacity-50 grayscale cursor-not-allowed',
         isSshDisconnected && !isDeleting && 'opacity-60'
       )}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
-      draggable={!isDeleting}
-      onDragStart={handleDragStart}
+      draggable={nativeDragEnabled && !isDeleting}
+      onDragStart={nativeDragEnabled ? handleDragStart : undefined}
       aria-busy={isDeleting}
     >
       {isDeleting && (
@@ -352,6 +395,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
               <TooltipTrigger asChild>
                 <button
                   type="button"
+                  data-workspace-board-preserve-open=""
+                  onPointerDown={stopQuickActionPointerPropagation}
                   onClick={handleToggleUnreadQuick}
                   className={cn(
                     'group/unread flex size-4 cursor-pointer items-center justify-center rounded transition-all',
@@ -461,7 +506,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
 
           <div className="flex items-center gap-1 shrink-0">
             {/* CI Checks & PR state on the right */}
-            {cardProps.includes('ci') && hostedReview && hostedReview.status !== 'neutral' && (
+            {showCI && hostedReview && hostedReview.status !== 'neutral' && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="inline-flex items-center opacity-80 hover:opacity-100 transition-opacity">
@@ -523,24 +568,37 @@ const WorktreeCard = React.memo(function WorktreeCard({
           )}
 
           <CacheTimer worktreeId={worktree.id} />
+
+          {parentLabel && (
+            <Badge
+              variant="outline"
+              className={cn(
+                'h-[16px] px-1.5 text-[10px] font-medium rounded shrink-0 gap-1 leading-none',
+                lineageState === 'missing'
+                  ? 'text-muted-foreground border-border bg-muted/40'
+                  : 'text-muted-foreground border-border bg-accent/50'
+              )}
+            >
+              <Workflow className="size-2.5" />
+              <span className="max-w-[7rem] truncate">
+                {lineageState === 'missing' ? 'Missing parent' : `from ${parentLabel}`}
+              </span>
+            </Badge>
+          )}
         </div>
 
         {/* Meta section: Issue / hosted review / Comment
              Layout coupling: spacing here is used to derive size estimates in
              WorktreeList's estimateSize. Update that function if changing spacing. */}
         {((cardProps.includes('issue') && issueDisplay) ||
-          (cardProps.includes('pr') && hostedReview) ||
+          (cardProps.includes('pr') && prDisplay) ||
           (cardProps.includes('comment') && worktree.comment)) && (
           <div className="flex flex-col gap-[3px] mt-0.5">
             {cardProps.includes('issue') && issueDisplay && (
               <IssueSection issue={issueDisplay} onClick={handleEditIssue} />
             )}
-            {cardProps.includes('pr') && hostedReview && (
-              <ReviewSection
-                review={hostedReview}
-                onEdit={handleEditPr}
-                onRemove={handleRemovePr}
-              />
+            {cardProps.includes('pr') && prDisplay && (
+              <ReviewSection review={prDisplay} onEdit={handleEditPr} onRemove={handleRemovePr} />
             )}
             {cardProps.includes('comment') && worktree.comment && (
               <CommentSection comment={worktree.comment} onDoubleClick={handleEditComment} />
@@ -563,6 +621,41 @@ const WorktreeCard = React.memo(function WorktreeCard({
              measureElement on each row, so the virtualizer re-measures
              naturally when agents appear/disappear. */}
         {cardProps.includes('inline-agents') && <WorktreeCardAgents worktreeId={worktree.id} />}
+
+        {showLineageChildChip && (
+          <div
+            className="relative mt-1 flex min-w-0 justify-start"
+            style={{ color: 'color-mix(in srgb, var(--muted-foreground) 42%, var(--sidebar))' }}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="relative z-10 h-[18px] max-w-[8rem] gap-1 rounded-md border border-sidebar-border bg-sidebar px-1.5 text-[10px] font-medium leading-none text-muted-foreground shadow-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring"
+                  aria-label={`${lineageCollapsed ? 'Show' : 'Hide'} ${childWorkspaceLabel}`}
+                  aria-expanded={!lineageCollapsed}
+                  onClick={onLineageToggle}
+                >
+                  <Workflow className="size-2.5" />
+                  <span className="truncate">{childWorkspaceShortLabel}</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-2.5 transition-transform',
+                      lineageCollapsed && '-rotate-90'
+                    )}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                {lineageCollapsed ? 'Show child workspaces' : 'Hide child workspaces'}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
+
+        {lineageChildren && <div className="-ml-3 mt-1.5 space-y-1">{lineageChildren}</div>}
       </div>
     </div>
   )

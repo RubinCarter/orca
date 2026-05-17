@@ -74,6 +74,7 @@ function createSettings(overrides: Partial<GlobalSettings> = {}): GlobalSettings
     floatingTerminalCwd: '~',
     floatingTerminalTriggerLocation: 'floating-button',
     diffDefaultView: 'inline',
+    combinedDiffFileTreeVisibleByDefault: false,
     notifications: {
       enabled: true,
       agentTaskComplete: true,
@@ -93,6 +94,7 @@ function createSettings(overrides: Partial<GlobalSettings> = {}): GlobalSettings
     skipDeleteAutomationConfirm: false,
     defaultTaskViewPreset: 'all',
     defaultTaskSource: 'github',
+    visibleTaskProviders: ['github', 'gitlab', 'linear'],
     defaultRepoSelection: null,
     defaultLinearTeamSelection: null,
     opencodeSessionCookie: '',

@@ -3,13 +3,20 @@ import type { SshRemotePtyLease, SshTarget } from './ssh-types'
 import type { Automation, AutomationRun } from './automations-types'
 import type { WorkspaceSource } from './telemetry-events'
 import type { GitHubProjectSettings } from './github-project-types'
-import type { MigrationUnsupportedPtyEntry } from './agent-status-types'
+import type {
+  AgentStatusState,
+  AgentType,
+  MigrationUnsupportedPtyEntry
+} from './agent-status-types'
 import type { VoiceSettings } from './speech-types'
+import type { WorkspaceCleanupUIState } from './workspace-cleanup'
 import type { GitLabProjectSettings } from './gitlab-types'
+import type { TaskProvider } from './task-providers'
 
 // Re-exported for backward compat with renderer call sites that import
 // `WorkspaceCreateTelemetrySource` from '../../../shared/types'.
 export type { WorkspaceSource as WorkspaceCreateTelemetrySource } from './telemetry-events'
+export type { TaskProvider } from './task-providers'
 
 // ─── Shell PATH hydration ────────────────────────────────────────────
 // Why: shared so the main-side `HydrationResult` discriminator and the
@@ -94,6 +101,11 @@ export type BaseRefDefaultResult = {
   remoteCount: number
 }
 
+export type BaseRefSearchResult = {
+  refName: string
+  localBranchName: string
+}
+
 // ─── Worktree (git-level) ────────────────────────────────────────────
 export type GitWorktreeInfo = {
   path: string
@@ -118,6 +130,7 @@ export type WorkspaceStatusDefinition = {
 
 export type Worktree = {
   id: string // `${repoId}::${path}`
+  instanceId?: string
   repoId: string
   displayName: string
   comment: string
@@ -169,6 +182,8 @@ export type GitPushTarget = {
 
 // ─── Worktree metadata (persisted user-authored fields only) ─────────
 export type WorktreeMeta = {
+  /** Immutable per-workspace-instance ID used to reject stale lineage after path reuse. */
+  instanceId?: string
   displayName: string
   comment: string
   linkedIssue: number | null
@@ -197,6 +212,45 @@ export type WorktreeMeta = {
   /** User-assigned workspace board status for manual sidebar organization. */
   workspaceStatus?: WorkspaceStatus
   diffComments?: DiffComment[]
+}
+
+export type WorktreeLineageOrigin = 'orchestration' | 'cli' | 'manual'
+export type WorktreeLineageCaptureConfidence = 'explicit' | 'inferred'
+export type WorktreeLineageCaptureSource =
+  | 'explicit-cli-flag'
+  | 'cwd-context'
+  | 'terminal-context'
+  | 'orchestration-context'
+  | 'manual-action'
+
+export type WorktreeLineageCapture = {
+  source: WorktreeLineageCaptureSource
+  confidence: WorktreeLineageCaptureConfidence
+}
+
+export type WorktreeLineage = {
+  worktreeId: string
+  worktreeInstanceId: string
+  parentWorktreeId: string
+  parentWorktreeInstanceId: string
+  origin: WorktreeLineageOrigin
+  capture: WorktreeLineageCapture
+  orchestrationRunId?: string
+  taskId?: string
+  coordinatorHandle?: string
+  createdByTerminalHandle?: string
+  createdAt: number
+}
+
+export type WorktreeLineageWarningCode =
+  | 'LINEAGE_PARENT_CONTEXT_MISSING'
+  | 'LINEAGE_PARENT_CONTEXT_CONFLICT'
+  | 'LINEAGE_PARENT_INSTANCE_STALE'
+
+export type WorktreeLineageWarning = {
+  code: WorktreeLineageWarningCode
+  message: string
+  details?: Record<string, unknown>
 }
 
 // ─── Diff line comments ──────────────────────────────────────────────
@@ -239,6 +293,7 @@ export type TabGroupLayoutNode =
 export type TabContentType = 'terminal' | 'editor' | 'diff' | 'conflict-review' | 'browser'
 
 export type WorkspaceVisibleTabType = 'terminal' | 'editor' | 'browser'
+export type CtrlTabOrderMode = 'mru' | 'sequential'
 
 export type Tab = {
   id: string // UUID for terminals, filePath for editors (preserves current convention)
@@ -285,10 +340,9 @@ export type TerminalTab = {
   createdAt: number
   /** Bumped on shutdown so TerminalPane remounts with a fresh PTY. */
   generation?: number
-  /** Why: records the shell this tab was explicitly opened with (e.g. 'wsl.exe'
-   *  from the "+" submenu) so the PTY can re-use the same shell on reconnect
-   *  without needing the user to interact with the tab again. Undefined means
-   *  "use the default shell setting". */
+  /** Why: records the shell this tab was opened with (e.g. 'wsl.exe') so the
+   *  PTY and tab icon stay stable even if the default shell setting changes
+   *  later. Older persisted tabs may omit this field. */
   shellOverride?: string
   /** Why: when `setActiveWorktree` bumps generation on all-dead tabs to drive a
    *  TerminalPane remount, the fresh PTY that results is caused by navigation,
@@ -610,6 +664,8 @@ export type GitHubAssignableUser = {
   avatarUrl: string
 }
 
+export type GitHubPRFileViewedState = 'DISMISSED' | 'VIEWED' | 'UNVIEWED'
+
 export type GitHubWorkItem = {
   id: string
   type: 'issue' | 'pr'
@@ -641,6 +697,8 @@ export type GitHubPRFile = {
   deletions: number
   /** GitHub marks files above its diff size limit as binary-like; we skip content fetches for these. */
   isBinary: boolean
+  /** GitHub's per-viewer review state. DISMISSED means new changes arrived after the file was viewed. */
+  viewerViewedState?: GitHubPRFileViewedState
 }
 
 export type GitHubPRFileContents = {
@@ -669,6 +727,8 @@ export type GitHubWorkItemDetails = {
   /** Only set for PRs. Head/base SHAs used by the Files tab to fetch per-file content. */
   headSha?: string
   baseSha?: string
+  /** GraphQL node ID required by GitHub's file-viewed mutations. Only set for PRs. */
+  pullRequestId?: string
   checks?: PRCheckDetail[]
   files?: GitHubPRFile[]
   participants?: GitHubAssignableUser[]
@@ -965,12 +1025,17 @@ export type CreateWorktreeArgs = {
    *  Linear artifact whose title should remain readable in the sidebar. */
   displayName?: string
   baseBranch?: string
+  /** Optional git branch to create, separate from the filesystem-safe worktree
+   *  name. Used when creating from an existing branch whose local branch name
+   *  legitimately contains `/` while the worktree directory must not. */
+  branchNameOverride?: string
   setupDecision?: SetupDecision
   sparseCheckout?: CreateSparseCheckoutRequest
   linkedIssue?: number
   linkedPR?: number
   linkedLinearIssue?: string
   pushTarget?: GitPushTarget
+  workspaceStatus?: WorkspaceStatus
   /** Agent selected in the create surface. Omitted for blank-shell creates. */
   createdWithAgent?: TuiAgent
   /** Telemetry-only: which UI surface initiated this create. Threaded from
@@ -985,7 +1050,14 @@ export type CreateWorktreeArgs = {
 }
 
 export type CreateWorktreeResult = {
-  worktree: Worktree
+  worktree: Worktree & {
+    parentWorktreeId?: string | null
+    childWorktreeIds?: string[]
+    lineage?: WorktreeLineage | null
+    git?: GitWorktreeInfo
+  }
+  lineage?: WorktreeLineage | null
+  warnings?: WorktreeLineageWarning[]
   setup?: WorktreeSetupLaunch
   warning?: string
   initialBaseStatus?: WorktreeBaseStatusEvent
@@ -1145,6 +1217,7 @@ export type TuiAgent =
   | 'hermes' // Hermes Agent
   | 'openclaw' // OpenClaw
   | 'copilot' // GitHub Copilot CLI
+  | 'grok' // xAI Grok CLI
 
 export type TaskViewPresetId = 'all' | 'issues' | 'review' | 'my-issues' | 'my-prs' | 'prs'
 
@@ -1193,6 +1266,12 @@ export type TerminalQuickCommand = {
   appendEnter: boolean
 }
 
+export type OpenInApplication = {
+  id: string
+  label: string
+  command: string
+}
+
 export type FloatingTerminalCwdRequest = {
   path?: string
 }
@@ -1211,12 +1290,16 @@ export type GlobalSettings = {
   editorMinimapEnabled: boolean
   /** Whether local markdown review note controls and the review panel are shown. */
   markdownReviewToolsEnabled: boolean
+  /** Why: mirrors X11 primary-selection muscle memory without mutating the
+   *  normal system clipboard; Linux enables it by default, other platforms
+   *  leave middle-click semantics unchanged unless the user opts in. */
+  primarySelectionMiddleClickPaste?: boolean
   terminalFontSize: number
   terminalFontFamily: string
   terminalFontWeight: number
   terminalLineHeight: number
   /** Mirrors VS Code's terminal.integrated.gpuAcceleration shape.
-   *  - 'auto': try xterm WebGL and fall back to DOM if the renderer fails.
+   *  - 'auto': use DOM on Linux; otherwise try xterm WebGL and fall back to DOM if the renderer fails.
    *  - 'on': always try xterm WebGL.
    *  - 'off': keep terminal rendering on xterm's DOM renderer. */
   terminalGpuAcceleration: 'auto' | 'on' | 'off'
@@ -1284,13 +1367,19 @@ export type GlobalSettings = {
    *  The setting stays opt-in so existing workflows continue to use the system browser
    *  until the user explicitly wants worktree-scoped in-app browsing. */
   openLinksInApp: boolean
+  /** Extra launcher rows for the worktree "Open in" submenu. VS Code is always shown first. */
+  openInApplications?: OpenInApplication[]
   rightSidebarOpenByDefault: boolean
+  showGitIgnoredFiles?: boolean
   /** Whether to show the Orca app name in the titlebar. */
   showTitlebarAppName: boolean
   /** Why: some users do not use the Tasks feature and prefer to keep the
    *  left sidebar free of its button entirely. Hiding the button here also
    *  removes it from keyboard navigation. */
   showTasksButton: boolean
+  /** Controls how Ctrl+Tab chooses the next visible tab. Optional for
+   *  profiles saved before this setting existed; readers default to MRU. */
+  ctrlTabOrderMode?: CtrlTabOrderMode
   /** Why: Floating Terminal is the default global shell surface so users can
    *  reach a terminal outside repo/worktree context immediately. */
   floatingTerminalEnabled: boolean
@@ -1305,6 +1394,7 @@ export type GlobalSettings = {
    *  button for discoverability. */
   floatingTerminalTriggerLocation: FloatingTerminalTriggerLocation
   diffDefaultView: 'inline' | 'side-by-side'
+  combinedDiffFileTreeVisibleByDefault: boolean
   notifications: NotificationSettings
   /** When true, a countdown timer is shown after a Claude agent becomes idle,
    *  indicating time remaining before the prompt cache expires. Disabled by default. */
@@ -1348,7 +1438,11 @@ export type GlobalSettings = {
   defaultTaskViewPreset: TaskViewPresetId
   /** Why: persists the user's last-used task source so the Tasks page
    *  reopens to the same provider instead of always defaulting to GitHub. */
-  defaultTaskSource: 'github' | 'linear' | 'gitlab'
+  defaultTaskSource: TaskProvider
+  /** Why: users may only work from one hosted task system. Persisting this
+   *  list hides unused providers from Tasks chrome and sidebar shortcuts while
+   *  leaving the chosen default source stable when it is still visible. */
+  visibleTaskProviders: TaskProvider[]
   /** Why: persists the user's repo selection in the cross-repo tasks view.
    *  `null` means sticky-all — every eligible repo is selected, including
    *  repos added in future sessions, so the "All repos" label stays
@@ -1508,8 +1602,16 @@ export type NotificationDispatchRequest = {
   worktreeId?: string
   repoLabel?: string
   worktreeLabel?: string
+  hasMultipleActiveRepos?: boolean
   terminalTitle?: string
   isActiveWorktree?: boolean
+  agentType?: AgentType
+  agentState?: AgentStatusState
+  agentPrompt?: string
+  agentToolName?: string
+  agentToolInput?: string
+  agentLastAssistantMessage?: string
+  agentInterrupted?: boolean
 }
 
 export type NotificationDispatchResult = {
@@ -1612,7 +1714,7 @@ export type PersistedUIState = {
   lastActiveWorktreeId: string | null
   sidebarWidth: number
   rightSidebarWidth: number
-  groupBy: 'none' | 'repo' | 'pr-status'
+  groupBy: 'none' | 'workspace-status' | 'repo' | 'pr-status'
   sortBy: 'name' | 'smart' | 'recent' | 'repo'
   showActiveOnly: boolean
   /** Hide the repo's original checked-out branch from workspace navigation
@@ -1629,6 +1731,18 @@ export type PersistedUIState = {
   workspaceStatuses?: WorkspaceStatusDefinition[]
   workspaceBoardOpacity?: number
   workspaceBoardCompact?: boolean
+  workspaceBoardColumnWidth?: number
+  /** One-shot migration flag for a short-lived build that persisted the
+   *  default workspace statuses in reverse workflow order. Once stamped,
+   *  user-authored status ordering is never inferred from IDs/labels again. */
+  _workspaceStatusesDefaultOrderMigrated?: boolean
+  /** One-shot migration flag for the default status workflow order/label:
+   *  Done -> In review -> In progress -> Todo. Exact legacy default payloads
+   *  migrate; customized statuses are preserved. */
+  _workspaceStatusesDefaultWorkflowMigrated?: boolean
+  /** One-shot migration flag for the old default blue/violet/emerald status
+   *  visuals. Once stamped, valid user-authored colors/icons are preserved. */
+  _workspaceStatusesDefaultVisualsMigrated?: boolean
   statusBarItems: StatusBarItem[]
   statusBarVisible: boolean
   dismissedUpdateVersion: string | null
@@ -1729,6 +1843,7 @@ export type PersistedUIState = {
    *  using their existing settings paths; this only restores transient tabs
    *  and applied searches. */
   taskResumeState?: TaskResumeState
+  workspaceCleanup?: WorkspaceCleanupUIState
 }
 
 export const PET_SIZE_MIN = 60
@@ -1795,6 +1910,13 @@ export type PersistedTrustedOrcaHookRepo = {
 
 export type PersistedTrustedOrcaHooks = Record<string, PersistedTrustedOrcaHookRepo>
 
+export type LegacyPaneKeyAliasEntry = {
+  ptyId: string
+  legacyPaneKey: string
+  stablePaneKey: string
+  updatedAt: number
+}
+
 // ─── Persistence shape ──────────────────────────────────────────────
 export type PersistedState = {
   schemaVersion: number
@@ -1803,6 +1925,7 @@ export type PersistedState = {
    *  presets are managed from the new-workspace composer and repo settings. */
   sparsePresetsByRepo: Record<string, SparsePreset[]>
   worktreeMeta: Record<string, WorktreeMeta>
+  worktreeLineageById: Record<string, WorktreeLineage>
   settings: GlobalSettings
   ui: PersistedUIState
   githubCache: {
@@ -1813,6 +1936,7 @@ export type PersistedState = {
   sshTargets: SshTarget[]
   sshRemotePtyLeases: SshRemotePtyLease[]
   migrationUnsupportedPtyEntries: MigrationUnsupportedPtyEntry[]
+  legacyPaneKeyAliasEntries: LegacyPaneKeyAliasEntry[]
   automations: Automation[]
   automationRuns: AutomationRun[]
   onboarding: OnboardingState
@@ -1892,6 +2016,7 @@ export type GitStatusResult = {
   // Why: porcelain v2 status already includes upstream/ahead/behind metadata.
   // Folding it in lets refresh polling avoid a second pair of git subprocesses.
   upstreamStatus?: GitUpstreamStatus
+  ignoredPaths?: string[]
 }
 
 // Why: when hasUpstream is false, ahead/behind are placeholder zeros, not a
@@ -1911,6 +2036,8 @@ export type GitBranchChangeEntry = {
   path: string
   status: GitBranchChangeStatus
   oldPath?: string
+  added?: number
+  removed?: number
 }
 
 export type GitBranchCompareSummary = {
@@ -1927,6 +2054,21 @@ export type GitBranchCompareSummary = {
 
 export type GitBranchCompareResult = {
   summary: GitBranchCompareSummary
+  entries: GitBranchChangeEntry[]
+}
+
+export type GitCommitCompareSummary = {
+  commitOid: string
+  parentOid: string | null
+  compareRef: string
+  baseRef: string
+  changedFiles: number
+  status: 'ready' | 'invalid-commit' | 'error'
+  errorMessage?: string
+}
+
+export type GitCommitCompareResult = {
+  summary: GitCommitCompareSummary
   entries: GitBranchChangeEntry[]
 }
 

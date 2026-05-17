@@ -15,6 +15,7 @@ import { mkdir, readdir, rm, stat } from 'fs/promises'
 import { OrchestrationDb } from './orchestration/db'
 import { formatMessagesForInjection } from './orchestration/formatter'
 import type {
+  BaseRefSearchResult,
   CreateWorktreeResult,
   GitPushTarget,
   GitWorktreeInfo,
@@ -22,6 +23,8 @@ import type {
   Repo,
   StatsSummary,
   Worktree,
+  WorktreeLineage,
+  WorktreeLineageWarning,
   WorktreeMeta,
   WorktreeBaseStatusEvent,
   WorktreeRemoteBranchConflictEvent,
@@ -95,6 +98,7 @@ import {
   getPRComments,
   getIssue,
   resolveReviewThread,
+  setPRFileViewed,
   getWorkItemByOwnerRepo,
   updatePRTitle,
   mergePR,
@@ -191,17 +195,23 @@ import {
   getBranchConflictKind,
   isGitRepo,
   getRepoName,
-  searchBaseRefs,
+  searchBaseRefDetails,
   getRemoteCount,
   normalizeRefSearchQuery,
-  parseAndFilterSearchRefs,
+  parseAndFilterSearchRefDetails,
   parseRemoteCount,
   resolveDefaultBaseRefViaExec,
   buildSearchBaseRefsArgv,
   getRemoteDrift,
   getRecentDriftSubjects
 } from '../git/repo'
-import { listWorktrees, addWorktree, addSparseWorktree, removeWorktree } from '../git/worktree'
+import {
+  listWorktrees,
+  addWorktree,
+  addSparseWorktree,
+  assertWorktreeCleanForRemoval,
+  removeWorktree
+} from '../git/worktree'
 import { isENOENT } from '../ipc/filesystem-auth'
 import {
   createSetupRunnerScript,
@@ -216,7 +226,7 @@ import {
   shouldRunSetupForCreate,
   writeIssueCommand
 } from '../hooks'
-import { REPO_COLORS, getDefaultVoiceSettings } from '../../shared/constants'
+import { DEFAULT_REPO_BADGE_COLOR, getDefaultVoiceSettings } from '../../shared/constants'
 import { listRepoWorktrees } from '../repo-worktrees'
 import { createWorktreeSymlinks } from '../ipc/worktree-symlinks'
 import {
@@ -232,6 +242,7 @@ import {
   computeWorktreePath,
   ensurePathWithinWorkspace,
   formatWorktreeRemovalError,
+  isOrphanCompatiblePreflightError,
   isOrphanedWorktreeError,
   mergeWorktree,
   sanitizeWorktreeName,
@@ -253,6 +264,7 @@ import type { ClaudeRateLimitAccountsState, CodexRateLimitAccountsState } from '
 import type { RateLimitState } from '../../shared/rate-limit-types'
 import type { VoiceSettings } from '../../shared/speech-types'
 import { getSpeechModelManager, getSpeechSttService } from '../speech/speech-runtime-service'
+import type { CommitMessageAgentEnvironmentResolvers } from '../text-generation/commit-message-agent-environment'
 
 type RuntimeAccountServices = {
   claudeAccounts: ClaudeAccountService
@@ -286,6 +298,10 @@ type RuntimeStore = {
   getWorktreeMeta: Store['getWorktreeMeta']
   setWorktreeMeta: Store['setWorktreeMeta']
   removeWorktreeMeta: Store['removeWorktreeMeta']
+  getWorktreeLineage?: Store['getWorktreeLineage']
+  getAllWorktreeLineage?: Store['getAllWorktreeLineage']
+  setWorktreeLineage?: Store['setWorktreeLineage']
+  removeWorktreeLineage?: Store['removeWorktreeLineage']
   getGitHubCache: Store['getGitHubCache']
   getWorkspaceSession?: Store['getWorkspaceSession']
   getSettings(): {
@@ -455,6 +471,7 @@ type TerminalWaiter = {
   reject: (error: Error) => void
   timeout: NodeJS.Timeout | null
   pollInterval: NodeJS.Timeout | null
+  abortCleanup: (() => void) | null
 }
 
 type MessageWaiter = {
@@ -470,7 +487,86 @@ function omitUndefinedProperties<T extends Record<string, unknown>>(value: T): P
   ) as Partial<T>
 }
 
-type ResolvedWorktree = Worktree & { git: GitWorktreeInfo }
+async function resolveCreateBranchName(
+  repoPath: string,
+  branchNameOverride: string | undefined,
+  sanitizedName: string,
+  settings: { branchPrefix: string; branchPrefixCustom?: string },
+  username: string | null
+): Promise<string> {
+  if (!branchNameOverride) {
+    return computeBranchName(sanitizedName, settings, username)
+  }
+  if (branchNameOverride.startsWith('-')) {
+    throw new Error('Branch name must not start with "-"')
+  }
+  await gitExecFileAsync(['check-ref-format', '--branch', branchNameOverride], { cwd: repoPath })
+  return branchNameOverride
+}
+
+type ResolvedWorktree = Worktree & {
+  parentWorktreeId: string | null
+  childWorktreeIds: string[]
+  lineage: WorktreeLineage | null
+  git: GitWorktreeInfo
+}
+
+type WorktreeLineageInput = {
+  parentWorktree?: string
+  cwdParentWorktree?: string
+  noParent?: boolean
+  callerTerminalHandle?: string
+  comment?: string
+  orchestrationContext?: {
+    parentWorktreeId?: string
+    orchestrationRunId?: string
+    taskId?: string
+    coordinatorHandle?: string
+  }
+}
+
+type WorktreeLineageResolution =
+  | {
+      kind: 'lineage'
+      parent: ResolvedWorktree
+      origin: WorktreeLineage['origin']
+      capture: WorktreeLineage['capture']
+      orchestrationRunId?: string
+      taskId?: string
+      coordinatorHandle?: string
+      createdByTerminalHandle?: string
+    }
+  | {
+      kind: 'none'
+      warnings: WorktreeLineageWarning[]
+    }
+
+type RuntimeWorktreeScanResult =
+  | { ok: true; worktrees: GitWorktreeInfo[] }
+  | { ok: false; worktrees: [] }
+
+type WorktreeLineageCandidate = {
+  source: 'cwd-context' | 'terminal-context' | 'orchestration-context'
+  parent: ResolvedWorktree
+  orchestrationRunId?: string
+  taskId?: string
+  coordinatorHandle?: string
+}
+
+function extractOrchestrationTaskId(text?: string): string | undefined {
+  return text?.match(/\btask_[A-Za-z0-9]+\b/)?.[0]
+}
+
+class RuntimeLineageError extends Error {
+  code: string
+  data?: unknown
+
+  constructor(code: string, message: string, data?: unknown) {
+    super(message)
+    this.code = code
+    this.data = data
+  }
+}
 
 type ResolvedWorktreeCache = {
   expiresAt: number
@@ -778,6 +874,7 @@ export class OrcaRuntimeService {
   private optimisticReconcileTokens = new Map<string, string>()
   private readonly getLocalProviderFn: (() => IPtyProvider) | null
   private accountServices: RuntimeAccountServices | null = null
+  private commitMessageAgentEnv: CommitMessageAgentEnvironmentResolvers | null = null
   private mobileDictation: {
     id: string
     owner: string
@@ -1121,17 +1218,25 @@ export class OrcaRuntimeService {
   )
 
   private readonly gitCommands = new RuntimeGitCommands({
-    resolveRuntimeGitTarget: (selector) => this.resolveRuntimeGitTarget(selector)
+    resolveRuntimeGitTarget: (selector) => this.resolveRuntimeGitTarget(selector),
+    getRuntimeSettings: () => this.requireStore().getSettings() as GlobalSettings,
+    getCommitMessageAgentEnvironment: () => this.commitMessageAgentEnv ?? undefined
   })
 
   getRuntimeGitStatus: RuntimeGitCommands['getRuntimeGitStatus'] =
     this.gitCommands.getRuntimeGitStatus.bind(this.gitCommands)
+  checkRuntimeGitIgnoredPaths: RuntimeGitCommands['checkRuntimeGitIgnoredPaths'] =
+    this.gitCommands.checkRuntimeGitIgnoredPaths.bind(this.gitCommands)
+  getRuntimeGitHistory: RuntimeGitCommands['getRuntimeGitHistory'] =
+    this.gitCommands.getRuntimeGitHistory.bind(this.gitCommands)
   getRuntimeGitConflictOperation: RuntimeGitCommands['getRuntimeGitConflictOperation'] =
     this.gitCommands.getRuntimeGitConflictOperation.bind(this.gitCommands)
   getRuntimeGitDiff: RuntimeGitCommands['getRuntimeGitDiff'] =
     this.gitCommands.getRuntimeGitDiff.bind(this.gitCommands)
   getRuntimeGitBranchCompare: RuntimeGitCommands['getRuntimeGitBranchCompare'] =
     this.gitCommands.getRuntimeGitBranchCompare.bind(this.gitCommands)
+  getRuntimeGitCommitCompare: RuntimeGitCommands['getRuntimeGitCommitCompare'] =
+    this.gitCommands.getRuntimeGitCommitCompare.bind(this.gitCommands)
   getRuntimeGitUpstreamStatus: RuntimeGitCommands['getRuntimeGitUpstreamStatus'] =
     this.gitCommands.getRuntimeGitUpstreamStatus.bind(this.gitCommands)
   fetchRuntimeGit: RuntimeGitCommands['fetchRuntimeGit'] = this.gitCommands.fetchRuntimeGit.bind(
@@ -1145,9 +1250,19 @@ export class OrcaRuntimeService {
   )
   getRuntimeGitBranchDiff: RuntimeGitCommands['getRuntimeGitBranchDiff'] =
     this.gitCommands.getRuntimeGitBranchDiff.bind(this.gitCommands)
+  getRuntimeGitCommitDiff: RuntimeGitCommands['getRuntimeGitCommitDiff'] =
+    this.gitCommands.getRuntimeGitCommitDiff.bind(this.gitCommands)
   commitRuntimeGit: RuntimeGitCommands['commitRuntimeGit'] = this.gitCommands.commitRuntimeGit.bind(
     this.gitCommands
   )
+  generateRuntimeCommitMessage: RuntimeGitCommands['generateRuntimeCommitMessage'] =
+    this.gitCommands.generateRuntimeCommitMessage.bind(this.gitCommands)
+  cancelRuntimeGenerateCommitMessage: RuntimeGitCommands['cancelRuntimeGenerateCommitMessage'] =
+    this.gitCommands.cancelRuntimeGenerateCommitMessage.bind(this.gitCommands)
+  generateRuntimePullRequestFields: RuntimeGitCommands['generateRuntimePullRequestFields'] =
+    this.gitCommands.generateRuntimePullRequestFields.bind(this.gitCommands)
+  cancelRuntimeGeneratePullRequestFields: RuntimeGitCommands['cancelRuntimeGeneratePullRequestFields'] =
+    this.gitCommands.cancelRuntimeGeneratePullRequestFields.bind(this.gitCommands)
   stageRuntimeGitPath: RuntimeGitCommands['stageRuntimeGitPath'] =
     this.gitCommands.stageRuntimeGitPath.bind(this.gitCommands)
   unstageRuntimeGitPath: RuntimeGitCommands['unstageRuntimeGitPath'] =
@@ -1156,6 +1271,8 @@ export class OrcaRuntimeService {
     this.gitCommands.bulkStageRuntimeGitPaths.bind(this.gitCommands)
   bulkUnstageRuntimeGitPaths: RuntimeGitCommands['bulkUnstageRuntimeGitPaths'] =
     this.gitCommands.bulkUnstageRuntimeGitPaths.bind(this.gitCommands)
+  bulkDiscardRuntimeGitPaths: RuntimeGitCommands['bulkDiscardRuntimeGitPaths'] =
+    this.gitCommands.bulkDiscardRuntimeGitPaths.bind(this.gitCommands)
   discardRuntimeGitPath: RuntimeGitCommands['discardRuntimeGitPath'] =
     this.gitCommands.discardRuntimeGitPath.bind(this.gitCommands)
   getRuntimeGitRemoteFileUrl: RuntimeGitCommands['getRuntimeGitRemoteFileUrl'] =
@@ -1745,6 +1862,12 @@ export class OrcaRuntimeService {
 
   setAccountServices(services: RuntimeAccountServices): void {
     this.accountServices = services
+  }
+
+  setCommitMessageAgentEnvironmentResolvers(
+    resolvers: CommitMessageAgentEnvironmentResolvers
+  ): void {
+    this.commitMessageAgentEnv = resolvers
   }
 
   async startMobileDictation(params: {
@@ -3683,6 +3806,7 @@ export class OrcaRuntimeService {
     options?: {
       condition?: RuntimeTerminalWaitCondition
       timeoutMs?: number
+      signal?: AbortSignal
     }
   ): Promise<RuntimeTerminalWait> {
     const condition = options?.condition ?? 'exit'
@@ -3707,7 +3831,12 @@ export class OrcaRuntimeService {
           resolve,
           reject,
           timeout: null,
-          pollInterval: null
+          pollInterval: null,
+          abortCleanup: null
+        }
+        if (!this.bindTerminalWaiterAbort(waiter, options?.signal)) {
+          reject(new Error('request_aborted'))
+          return
         }
         if (effectiveTimeoutMs > 0) {
           waiter.timeout = setTimeout(() => {
@@ -3764,7 +3893,13 @@ export class OrcaRuntimeService {
         resolve,
         reject,
         timeout: null,
-        pollInterval: null
+        pollInterval: null,
+        abortCleanup: null
+      }
+
+      if (!this.bindTerminalWaiterAbort(waiter, options?.signal)) {
+        reject(new Error('request_aborted'))
+        return
       }
 
       if (effectiveTimeoutMs > 0) {
@@ -3852,6 +3987,8 @@ export class OrcaRuntimeService {
         repo: repo?.displayName ?? worktree.repoId,
         path: worktree.path,
         branch: worktree.branch,
+        parentWorktreeId: worktree.parentWorktreeId,
+        childWorktreeIds: worktree.childWorktreeIds,
         displayName: worktree.displayName,
         linkedIssue: worktree.linkedIssue,
         linkedPR,
@@ -3975,7 +4112,7 @@ export class OrcaRuntimeService {
       id: randomUUID(),
       path,
       displayName: getRepoName(path),
-      badgeColor: REPO_COLORS[this.store.getRepos().length % REPO_COLORS.length],
+      badgeColor: DEFAULT_REPO_BADGE_COLOR,
       addedAt: Date.now(),
       kind
     }
@@ -4083,7 +4220,7 @@ export class OrcaRuntimeService {
       id: randomUUID(),
       path: targetPath,
       displayName: trimmedName,
-      badgeColor: REPO_COLORS[this.store.getRepos().length % REPO_COLORS.length],
+      badgeColor: DEFAULT_REPO_BADGE_COLOR,
       addedAt: Date.now(),
       kind: repoKind
     }
@@ -4150,7 +4287,7 @@ export class OrcaRuntimeService {
       id: randomUUID(),
       path: clonePath,
       displayName: getRepoName(clonePath),
-      badgeColor: REPO_COLORS[this.store.getRepos().length % REPO_COLORS.length],
+      badgeColor: DEFAULT_REPO_BADGE_COLOR,
       addedAt: Date.now(),
       kind: 'git'
     }
@@ -4266,12 +4403,13 @@ export class OrcaRuntimeService {
         truncated: false
       }
     }
-    const refs = repo.connectionId
+    const refDetails = repo.connectionId
       ? await this.searchRemoteRepoRefs(repo, query, limit + 1)
-      : await searchBaseRefs(repo.path, query, limit + 1)
+      : await searchBaseRefDetails(repo.path, query, limit + 1)
     return {
-      refs: refs.slice(0, limit),
-      truncated: refs.length > limit
+      refs: refDetails.slice(0, limit).map((entry) => entry.refName),
+      refDetails: refDetails.slice(0, limit),
+      truncated: refDetails.length > limit
     }
   }
 
@@ -4327,7 +4465,11 @@ export class OrcaRuntimeService {
     return { defaultBaseRef, remoteCount }
   }
 
-  private async searchRemoteRepoRefs(repo: Repo, query: string, limit: number): Promise<string[]> {
+  private async searchRemoteRepoRefs(
+    repo: Repo,
+    query: string,
+    limit: number
+  ): Promise<BaseRefSearchResult[]> {
     const provider = repo.connectionId ? getSshGitProvider(repo.connectionId) : null
     if (!provider) {
       return []
@@ -4337,8 +4479,15 @@ export class OrcaRuntimeService {
       return []
     }
     try {
-      const result = await provider.exec(buildSearchBaseRefsArgv(normalizedQuery), repo.path)
-      return parseAndFilterSearchRefs(result.stdout, limit)
+      const [result, remotesResult] = await Promise.all([
+        provider.exec(buildSearchBaseRefsArgv(normalizedQuery), repo.path),
+        provider.exec(['remote'], repo.path).catch(() => ({ stdout: '' }))
+      ])
+      const remotes = remotesResult.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+      return parseAndFilterSearchRefDetails(result.stdout, limit, remotes)
     } catch (err) {
       console.warn('[runtime:repo.searchRefs] SSH for-each-ref failed', {
         path: repo.path,
@@ -4352,6 +4501,22 @@ export class OrcaRuntimeService {
     if (repo.connectionId) {
       throw new Error(`${operation}_unsupported_for_ssh_repo`)
     }
+  }
+
+  private async resolveHostedReviewTarget(args: {
+    repoSelector: string
+    worktreeSelector?: string
+  }): Promise<{ repo: Repo; repoPath: string }> {
+    const repo = await this.resolveRepoSelector(args.repoSelector)
+    if (!args.worktreeSelector) {
+      return { repo, repoPath: repo.path }
+    }
+
+    const worktree = await this.resolveWorktreeSelector(args.worktreeSelector)
+    if (worktree.repoId !== repo.id) {
+      throw new Error('Access denied: worktree does not belong to repository')
+    }
+    return { repo, repoPath: worktree.path }
   }
 
   async getRepoSlug(repoSelector: string): Promise<{ owner: string; repo: string } | null> {
@@ -4444,6 +4609,7 @@ export class OrcaRuntimeService {
     linkedGitHubPR?: number | null
     linkedGitLabMR?: number | null
     linkedBitbucketPR?: number | null
+    linkedAzureDevOpsPR?: number | null
     linkedGiteaPR?: number | null
   }): Promise<HostedReviewInfo | null> {
     const repo = await this.resolveRepoSelector(args.repoSelector)
@@ -4454,6 +4620,7 @@ export class OrcaRuntimeService {
       linkedGitHubPR: args.linkedGitHubPR ?? null,
       linkedGitLabMR: args.linkedGitLabMR ?? null,
       linkedBitbucketPR: args.linkedBitbucketPR ?? null,
+      linkedAzureDevOpsPR: args.linkedAzureDevOpsPR ?? null,
       linkedGiteaPR: args.linkedGiteaPR ?? null
     })
     if (review?.provider === 'github' && this.stats && !this.stats.hasCountedPR(review.url)) {
@@ -4468,12 +4635,15 @@ export class OrcaRuntimeService {
   }
 
   async getHostedReviewCreationEligibility(
-    args: Omit<HostedReviewCreationEligibilityArgs, 'repoPath'> & { repoSelector: string }
+    args: Omit<HostedReviewCreationEligibilityArgs, 'repoPath'> & {
+      repoSelector: string
+      worktreeSelector?: string
+    }
   ): Promise<HostedReviewCreationEligibility> {
-    const repo = await this.resolveRepoSelector(args.repoSelector)
+    const { repo, repoPath } = await this.resolveHostedReviewTarget(args)
     this.assertHostIntegrationRepoIsLocal(repo, 'hosted_review')
     return getHostedReviewCreationEligibilityFromRepo({
-      repoPath: repo.path,
+      repoPath,
       branch: args.branch,
       base: args.base ?? null,
       hasUncommittedChanges: args.hasUncommittedChanges,
@@ -4483,16 +4653,17 @@ export class OrcaRuntimeService {
       linkedGitHubPR: args.linkedGitHubPR ?? null,
       linkedGitLabMR: args.linkedGitLabMR ?? null,
       linkedBitbucketPR: args.linkedBitbucketPR ?? null,
+      linkedAzureDevOpsPR: args.linkedAzureDevOpsPR ?? null,
       linkedGiteaPR: args.linkedGiteaPR ?? null
     })
   }
 
   async createHostedReview(
-    args: CreateHostedReviewInput & { repoSelector: string }
+    args: CreateHostedReviewInput & { repoSelector: string; worktreeSelector?: string }
   ): Promise<CreateHostedReviewResult> {
-    const repo = await this.resolveRepoSelector(args.repoSelector)
+    const { repo, repoPath } = await this.resolveHostedReviewTarget(args)
     this.assertHostIntegrationRepoIsLocal(repo, 'hosted_review')
-    const result = await createHostedReviewFromRepo(repo.path, {
+    const result = await createHostedReviewFromRepo(repoPath, {
       provider: args.provider,
       base: args.base,
       head: args.head,
@@ -4565,6 +4736,19 @@ export class OrcaRuntimeService {
     const repo = await this.resolveRepoSelector(repoSelector)
     this.assertHostIntegrationRepoIsLocal(repo, 'repo_pr_review_thread')
     return resolveReviewThread(repo.path, threadId, resolve)
+  }
+
+  async setRepoPRFileViewed(
+    repoSelector: string,
+    args: {
+      pullRequestId: string
+      path: string
+      viewed: boolean
+    }
+  ): Promise<Awaited<ReturnType<typeof setPRFileViewed>>> {
+    const repo = await this.resolveRepoSelector(repoSelector)
+    this.assertHostIntegrationRepoIsLocal(repo, 'repo_pr_file_viewed')
+    return setPRFileViewed({ repoPath: repo.path, ...args })
   }
 
   async updateRepoPRTitle(
@@ -4995,11 +5179,13 @@ export class OrcaRuntimeService {
     repoSelector: string
     name: string
     baseBranch?: string
+    branchNameOverride?: string
     linkedIssue?: number | null
     linkedPR?: number | null
     linkedLinearIssue?: string
     comment?: string
     displayName?: string
+    workspaceStatus?: string
     sparseCheckout?: { directories: string[]; presetId?: string }
     pushTarget?: GitPushTarget
     runHooks?: boolean
@@ -5007,6 +5193,7 @@ export class OrcaRuntimeService {
     setupDecision?: 'run' | 'skip' | 'inherit'
     createdWithAgent?: TuiAgent
     startup?: WorktreeStartupLaunch
+    lineage?: WorktreeLineageInput
   }): Promise<CreateWorktreeResult> {
     if (!this.store) {
       throw new Error('runtime_unavailable')
@@ -5022,14 +5209,34 @@ export class OrcaRuntimeService {
       // Runtime RPC must not fall through to local git against server paths.
       throw new Error('SSH-backed worktree creation is not supported through runtime RPC yet.')
     }
+    const lineageInput =
+      args.lineage || args.comment ? { ...args.lineage, comment: args.comment } : undefined
+    const lineageResolution = await this.resolveLineageForWorktreeCreate(lineageInput)
     const settings = this.store.getSettings()
     const requestedName = args.name
     const requestedDisplayName = args.displayName?.trim() || undefined
     const sanitizedName = sanitizeWorktreeName(args.name)
     const username = getGitUsername(repo.path)
-    const branchName = computeBranchName(sanitizedName, settings, username)
+    const branchName = await resolveCreateBranchName(
+      repo.path,
+      args.branchNameOverride,
+      sanitizedName,
+      settings,
+      username
+    )
 
-    const branchConflictKind = await getBranchConflictKind(repo.path, branchName)
+    const baseBranch = args.baseBranch || repo.worktreeBaseRef || getDefaultBaseRef(repo.path)
+    if (!baseBranch) {
+      // Why: getDefaultBaseRef returns null when no suitable ref exists.
+      // Don't fabricate 'origin/main' — passing it to addWorktree would
+      // produce an opaque git failure. Surface a clear error so the CLI
+      // caller can pick an explicit --base ref.
+      throw new Error(
+        'Could not resolve a default base ref for this repo. Pass an explicit --base and try again.'
+      )
+    }
+
+    const branchConflictKind = await getBranchConflictKind(repo.path, branchName, baseBranch)
     if (branchConflictKind) {
       throw new Error(
         `Branch "${branchName}" already exists ${branchConflictKind === 'local' ? 'locally' : 'on a remote'}.`
@@ -5056,17 +5263,6 @@ export class OrcaRuntimeService {
     const wslHome = wslInfo ? getWslHome(wslInfo.distro) : null
     const workspaceRoot = wslHome ? join(wslHome, 'orca', 'workspaces') : settings.workspaceDir
     worktreePath = ensurePathWithinWorkspace(worktreePath, workspaceRoot)
-    const baseBranch = args.baseBranch || repo.worktreeBaseRef || getDefaultBaseRef(repo.path)
-    if (!baseBranch) {
-      // Why: getDefaultBaseRef returns null when no suitable ref exists.
-      // Don't fabricate 'origin/main' — passing it to addWorktree would
-      // produce an opaque git failure. Surface a clear error so the CLI
-      // caller can pick an explicit --base ref.
-      throw new Error(
-        'Could not resolve a default base ref for this repo. Pass an explicit --base and try again.'
-      )
-    }
-
     const remote = baseBranch.includes('/') ? baseBranch.split('/')[0] : 'origin'
     // Why (§3.3 Lifecycle): route through the shared fetch cache so back-to-back
     // CLI creates on the same repo don't each pay the round-trip, and so a
@@ -5137,6 +5333,10 @@ export class OrcaRuntimeService {
         ? { displayName: requestedName }
         : {}
     const meta = this.store.setWorktreeMeta(worktreeId, {
+      // Why: worktree IDs are path-derived. If a path is deleted outside Orca
+      // and later recreated, creation must mint a fresh instance identity so
+      // stale lineage records tied to the old occupant fail validation.
+      instanceId: randomUUID(),
       lastActivityAt: now,
       // See createRemoteWorktree: createdAt grants the new worktree a grace
       // window in Recent sort so ambient PTY bumps in OTHER worktrees can't
@@ -5159,9 +5359,48 @@ export class OrcaRuntimeService {
         ? { linkedLinearIssue: args.linkedLinearIssue }
         : {}),
       ...(args.createdWithAgent ? { createdWithAgent: args.createdWithAgent } : {}),
-      ...(args.comment !== undefined ? { comment: args.comment } : {})
+      ...(args.comment !== undefined ? { comment: args.comment } : {}),
+      ...(args.workspaceStatus !== undefined ? { workspaceStatus: args.workspaceStatus } : {})
     })
     const worktree = mergeWorktree(repo.id, created, meta)
+    let lineage: WorktreeLineage | null = null
+    const lineageWarnings = lineageResolution.kind === 'none' ? [...lineageResolution.warnings] : []
+    if (lineageResolution.kind === 'lineage') {
+      const childInstanceId = meta.instanceId
+      const parentInstanceId = lineageResolution.parent.instanceId
+      if (childInstanceId && parentInstanceId && this.store.setWorktreeLineage) {
+        lineage = this.store.setWorktreeLineage(worktreeId, {
+          worktreeId,
+          worktreeInstanceId: childInstanceId,
+          parentWorktreeId: lineageResolution.parent.id,
+          parentWorktreeInstanceId: parentInstanceId,
+          origin: lineageResolution.origin,
+          capture: lineageResolution.capture,
+          ...(lineageResolution.orchestrationRunId
+            ? { orchestrationRunId: lineageResolution.orchestrationRunId }
+            : {}),
+          ...(lineageResolution.taskId ? { taskId: lineageResolution.taskId } : {}),
+          ...(lineageResolution.coordinatorHandle
+            ? { coordinatorHandle: lineageResolution.coordinatorHandle }
+            : {}),
+          ...(lineageResolution.createdByTerminalHandle
+            ? { createdByTerminalHandle: lineageResolution.createdByTerminalHandle }
+            : {}),
+          createdAt: now
+        })
+      } else {
+        lineageWarnings.push({
+          code: 'LINEAGE_PARENT_CONTEXT_MISSING',
+          message:
+            'Worktree created, but Orca could not record lineage because instance identity was unavailable.',
+          details: {
+            childHasInstanceId: Boolean(childInstanceId),
+            parentHasInstanceId: Boolean(parentInstanceId),
+            storeSupportsLineage: Boolean(this.store.setWorktreeLineage)
+          }
+        })
+      }
+    }
 
     if (
       settings.experimentalWorktreeSymlinks &&
@@ -5296,7 +5535,14 @@ export class OrcaRuntimeService {
       }
     }
     return {
-      worktree,
+      worktree: {
+        ...worktree,
+        parentWorktreeId: lineage?.parentWorktreeId ?? null,
+        childWorktreeIds: [],
+        lineage,
+        git: created
+      },
+      ...(lineageInput ? { lineage, warnings: lineageWarnings } : {}),
       ...(setup ? { setup } : {}),
       ...(warning ? { warning } : {})
     }
@@ -5641,17 +5887,53 @@ export class OrcaRuntimeService {
     return { base, behind: drift.behind, recentSubjects }
   }
 
-  async updateManagedWorktreeMeta(worktreeSelector: string, updates: Partial<WorktreeMeta>) {
+  async updateManagedWorktreeMeta(
+    worktreeSelector: string,
+    updates: Partial<WorktreeMeta> & {
+      lineage?: {
+        parentWorktree?: string
+        noParent?: boolean
+      }
+    }
+  ) {
     if (!this.store) {
       throw new Error('runtime_unavailable')
     }
     const worktree = await this.resolveWorktreeSelector(worktreeSelector)
-    const meta = this.store.setWorktreeMeta(worktree.id, omitUndefinedProperties(updates))
+    const { lineage, ...metaUpdates } = updates
+    if (lineage?.noParent === true) {
+      this.store.removeWorktreeLineage?.(worktree.id)
+    } else if (lineage?.parentWorktree) {
+      const parent = await this.resolveWorktreeSelector(lineage.parentWorktree)
+      this.validateLineageParent(worktree, parent)
+      if (!worktree.instanceId || !parent.instanceId) {
+        throw new RuntimeLineageError(
+          'LINEAGE_PARENT_CONTEXT_MISSING',
+          'Workspace instance identity was unavailable.'
+        )
+      }
+      if (!this.store.setWorktreeLineage) {
+        throw new RuntimeLineageError(
+          'LINEAGE_PARENT_CONTEXT_MISSING',
+          'Workspace lineage storage was unavailable.'
+        )
+      }
+      this.store.setWorktreeLineage(worktree.id, {
+        worktreeId: worktree.id,
+        worktreeInstanceId: worktree.instanceId,
+        parentWorktreeId: parent.id,
+        parentWorktreeInstanceId: parent.instanceId,
+        origin: 'manual',
+        capture: { source: 'manual-action', confidence: 'explicit' },
+        createdAt: Date.now()
+      })
+    }
+    this.store.setWorktreeMeta(worktree.id, omitUndefinedProperties(metaUpdates))
     // Why: unlike renderer-initiated optimistic updates, CLI callers need an
     // explicit push so the editor refreshes metadata changed outside the UI.
     this.invalidateResolvedWorktreeCache()
     this.notifier?.worktreesChanged(worktree.repoId)
-    return mergeWorktree(worktree.repoId, worktree.git, meta)
+    return await this.showManagedWorktree(`id:${worktree.id}`)
   }
 
   persistManagedWorktreeSortOrder(orderedIds: string[]): { updated: number } {
@@ -5805,15 +6087,36 @@ export class OrcaRuntimeService {
       return {}
     }
 
-    // Why: kill every PTY belonging to this worktree BEFORE the git-level
-    // removal. Some shells keep the worktree directory busy, and `git worktree
-    // remove` throws a confusing error if PTYs still hold it open. This also
-    // closes the headless-CLI leak (design §2a/§2b): without this call, the
-    // CLI path runs git removal and never touches PTYs, leaving zombies
-    // behind. Best-effort: any failure here must not prevent git removal —
-    // the worst case without the call is the status quo.
+    const hooks = getEffectiveHooks(repo)
+    let warning: string | undefined
+    if (hooks?.scripts.archive && runHooks) {
+      const result = await runHook('archive', worktree.path, repo)
+      if (!result.success) {
+        console.error(`[hooks] archive hook failed for ${worktree.path}:`, result.output)
+      }
+    } else if (hooks?.scripts.archive) {
+      // Runtime RPC calls have no renderer trust prompt, so hooks require explicit CLI opt-in.
+      warning = `orca.yaml archive hook skipped for ${worktree.path}; pass --run-hooks to run it.`
+      console.warn(`[hooks] ${warning}`)
+    }
+
+    let shouldTearDownPtys = true
+    try {
+      await assertWorktreeCleanForRemoval(worktree.path, force)
+    } catch (error) {
+      if (!isOrphanCompatiblePreflightError(error)) {
+        throw new Error(formatWorktreeRemovalError(error, worktree.path, force))
+      }
+      // Why: orphan cleanup does not need live shells to be killed first,
+      // and preflight did not prove the worktree is cleanly removable.
+      shouldTearDownPtys = false
+    }
+
     const localProvider = this.getLocalProvider()
-    if (localProvider) {
+    if (localProvider && shouldTearDownPtys) {
+      // Why: once preflight proves normal deletion is clean, kill PTYs before
+      // git-level removal so shells cannot keep the directory busy. This also
+      // closes the headless-CLI leak for confirmed-removable worktrees.
       await killAllProcessesForWorktree(worktree.id, {
         runtime: this,
         localProvider
@@ -5834,19 +6137,6 @@ export class OrcaRuntimeService {
         .catch((err) => {
           console.warn(`[worktree-teardown] failed for ${worktree.id}:`, err)
         })
-    }
-
-    const hooks = getEffectiveHooks(repo)
-    let warning: string | undefined
-    if (hooks?.scripts.archive && runHooks) {
-      const result = await runHook('archive', worktree.path, repo)
-      if (!result.success) {
-        console.error(`[hooks] archive hook failed for ${worktree.path}:`, result.output)
-      }
-    } else if (hooks?.scripts.archive) {
-      // Runtime RPC calls have no renderer trust prompt, so hooks require explicit CLI opt-in.
-      warning = `orca.yaml archive hook skipped for ${worktree.path}; pass --run-hooks to run it.`
-      console.warn(`[hooks] ${warning}`)
     }
 
     try {
@@ -5912,14 +6202,17 @@ export class OrcaRuntimeService {
       env?: Record<string, string>
       title?: string
       focus?: boolean
+      rendererBacked?: boolean
+      activate?: boolean
       tabId?: string
       leafId?: string
     } = {}
   ): Promise<RuntimeTerminalCreate> {
-    if (opts.focus !== true) {
-      if (!worktreeSelector) {
-        throw new Error('MISSING_WORKTREE')
-      }
+    // Why: pre-diff createTerminal fell back to the renderer's active worktree
+    // when no selector was provided. The new background-spawn branch hard-
+    // requires a resolvable selector, so route the no-selector case through
+    // the renderer IPC path to preserve that behavior.
+    if (opts.focus !== true && opts.rendererBacked !== true && worktreeSelector) {
       if (!this.ptyController?.spawn) {
         throw new Error('runtime_unavailable')
       }
@@ -6027,7 +6320,8 @@ export class OrcaRuntimeService {
         requestId,
         worktreeId,
         command: opts.command,
-        title: opts.title
+        title: opts.title,
+        activate: opts.focus === true || opts.activate === true
       })
     })
 
@@ -6466,6 +6760,23 @@ export class OrcaRuntimeService {
     return { stopped }
   }
 
+  async hasTerminalsForWorktree(worktreeSelector: string): Promise<boolean> {
+    const graphEpoch = this.captureReadyGraphEpoch()
+    const worktree = await this.resolveWorktreeSelector(worktreeSelector)
+    this.assertStableReadyGraph(graphEpoch)
+    for (const leaf of this.leaves.values()) {
+      if (leaf.worktreeId === worktree.id && leaf.ptyId) {
+        return true
+      }
+    }
+    for (const pty of this.ptysById.values()) {
+      if (pty.worktreeId === worktree.id && pty.connected) {
+        return true
+      }
+    }
+    return false
+  }
+
   markRendererReloading(windowId: number): void {
     if (windowId !== this.authoritativeWindowId) {
       return
@@ -6577,6 +6888,305 @@ export class OrcaRuntimeService {
     throw new Error('selector_not_found')
   }
 
+  private validateLineageParent(child: ResolvedWorktree, parent: ResolvedWorktree): void {
+    const childWorktreeId = child.id
+    const parentWorktreeId = parent.id
+    if (childWorktreeId === parentWorktreeId) {
+      throw new RuntimeLineageError('LINEAGE_PARENT_CYCLE', 'A workspace cannot parent itself.')
+    }
+    const instanceByWorktreeId = new Map(
+      this.resolvedWorktreeCache?.worktrees.map((worktree) => [
+        worktree.id,
+        worktree.instanceId
+      ]) ?? [
+        [child.id, child.instanceId],
+        [parent.id, parent.instanceId]
+      ]
+    )
+    let cursor: string | undefined = parentWorktreeId
+    const visited = new Set<string>([childWorktreeId])
+    while (cursor) {
+      if (visited.has(cursor)) {
+        throw new RuntimeLineageError(
+          'LINEAGE_PARENT_CYCLE',
+          'Parent workspace would create a lineage cycle.'
+        )
+      }
+      visited.add(cursor)
+      const lineage = this.store?.getWorktreeLineage?.(cursor)
+      if (!lineage) {
+        break
+      }
+      const cursorInstanceId = instanceByWorktreeId.get(cursor)
+      const parentInstanceId = instanceByWorktreeId.get(lineage.parentWorktreeId)
+      if (
+        cursorInstanceId !== lineage.worktreeInstanceId ||
+        parentInstanceId !== lineage.parentWorktreeInstanceId
+      ) {
+        break
+      }
+      cursor = lineage.parentWorktreeId
+    }
+  }
+
+  private async resolveLineageForWorktreeCreate(
+    input?: WorktreeLineageInput
+  ): Promise<WorktreeLineageResolution> {
+    if (!input) {
+      return { kind: 'none', warnings: [] }
+    }
+
+    if (input.noParent === true && input.parentWorktree) {
+      throw new RuntimeLineageError(
+        'LINEAGE_PARENT_CONTEXT_CONFLICT',
+        'Choose either --parent-worktree or --no-parent, not both.'
+      )
+    }
+
+    if (input.noParent === true) {
+      return { kind: 'none', warnings: [] }
+    }
+
+    if (input.parentWorktree) {
+      try {
+        const parent = await this.resolveWorktreeSelector(input.parentWorktree)
+        return {
+          kind: 'lineage',
+          parent,
+          origin: 'cli',
+          capture: { source: 'explicit-cli-flag', confidence: 'explicit' }
+        }
+      } catch {
+        throw new RuntimeLineageError(
+          'LINEAGE_PARENT_NOT_FOUND',
+          'Parent workspace was not found.',
+          {
+            nextSteps: [
+              'Run `orca worktree list` and pass a valid --parent-worktree selector.',
+              'Retry with --no-parent to create without lineage.'
+            ]
+          }
+        )
+      }
+    }
+
+    const warnings: WorktreeLineageWarning[] = []
+    const candidates: WorktreeLineageCandidate[] = []
+    let cwdCandidate: WorktreeLineageCandidate | null = null
+    let terminalContextResolved = false
+
+    if (input.orchestrationContext?.parentWorktreeId) {
+      try {
+        candidates.push({
+          source: 'orchestration-context',
+          parent: await this.resolveWorktreeSelector(
+            `id:${input.orchestrationContext.parentWorktreeId}`
+          )
+        })
+      } catch {
+        // Keep creation recoverable; the warning below covers missing inferred context.
+      }
+    }
+
+    const commentTaskId = extractOrchestrationTaskId(input.comment)
+    if (commentTaskId) {
+      const candidate = await this.resolveLineageCandidateForTaskId(commentTaskId)
+      if (candidate) {
+        candidates.push(candidate)
+      }
+    }
+
+    if (input.callerTerminalHandle) {
+      try {
+        const terminal = await this.showTerminal(input.callerTerminalHandle)
+        const terminalParent = await this.resolveWorktreeSelector(`id:${terminal.worktreeId}`)
+        const activeDispatch = this._orchestrationDb?.getActiveDispatchForTerminal(
+          input.callerTerminalHandle
+        )
+        const activeRun = this._orchestrationDb?.getActiveCoordinatorRun()
+        if (activeDispatch) {
+          candidates.push({
+            source: 'orchestration-context',
+            parent: terminalParent,
+            taskId: activeDispatch.task_id,
+            ...(activeRun
+              ? {
+                  orchestrationRunId: activeRun.id,
+                  coordinatorHandle: activeRun.coordinator_handle
+                }
+              : {})
+          })
+        } else {
+          candidates.push({
+            source: 'terminal-context',
+            parent: terminalParent
+          })
+        }
+        terminalContextResolved = true
+      } catch {
+        // Why: terminal handles can go stale during reloads or SSH reconnects.
+        // A valid orchestration parent is still authoritative, so keep resolving
+        // other inferred candidates instead of dropping lineage completely.
+        warnings.push({
+          code: 'LINEAGE_PARENT_CONTEXT_MISSING',
+          message:
+            'Worktree created, but Orca could not validate the caller terminal as a parent workspace.',
+          details: { callerTerminalHandle: input.callerTerminalHandle }
+        })
+      }
+    }
+
+    if (input.cwdParentWorktree) {
+      try {
+        cwdCandidate = {
+          source: 'cwd-context',
+          parent: await this.resolveWorktreeSelector(input.cwdParentWorktree)
+        }
+      } catch {
+        warnings.push({
+          code: 'LINEAGE_PARENT_CONTEXT_MISSING',
+          message:
+            'Worktree created, but Orca could not validate the current directory as a parent workspace.',
+          details: { cwdParentWorktree: input.cwdParentWorktree }
+        })
+      }
+    }
+
+    if (candidates.length === 0 && cwdCandidate) {
+      candidates.push(cwdCandidate)
+    }
+
+    if (candidates.length === 0) {
+      return { kind: 'none', warnings }
+    }
+
+    const [first] = candidates
+    const conflict = candidates.find((candidate) => candidate.parent.id !== first.parent.id)
+    if (conflict) {
+      return {
+        kind: 'none',
+        warnings: [
+          {
+            code: 'LINEAGE_PARENT_CONTEXT_CONFLICT',
+            message: 'Worktree created, but Orca could not prove which parent workspace caused it.',
+            details: {
+              terminalParentWorktreeId: candidates.find((c) => c.source === 'terminal-context')
+                ?.parent.id,
+              orchestrationParentWorktreeId: candidates.find(
+                (c) => c.source === 'orchestration-context'
+              )?.parent.id
+            }
+          }
+        ]
+      }
+    }
+
+    const preferred =
+      candidates.find((candidate) => candidate.source === 'orchestration-context') ?? first
+    return {
+      kind: 'lineage',
+      parent: preferred.parent,
+      origin: preferred.source === 'orchestration-context' ? 'orchestration' : 'cli',
+      capture: { source: preferred.source, confidence: 'inferred' },
+      ...((preferred.orchestrationRunId ?? input.orchestrationContext?.orchestrationRunId)
+        ? {
+            orchestrationRunId:
+              preferred.orchestrationRunId ?? input.orchestrationContext?.orchestrationRunId
+          }
+        : {}),
+      ...((preferred.taskId ?? input.orchestrationContext?.taskId)
+        ? { taskId: preferred.taskId ?? input.orchestrationContext?.taskId }
+        : {}),
+      ...((preferred.coordinatorHandle ?? input.orchestrationContext?.coordinatorHandle)
+        ? {
+            coordinatorHandle:
+              preferred.coordinatorHandle ?? input.orchestrationContext?.coordinatorHandle
+          }
+        : {}),
+      ...(terminalContextResolved && input.callerTerminalHandle
+        ? { createdByTerminalHandle: input.callerTerminalHandle }
+        : {})
+    }
+  }
+
+  private async resolveLineageCandidateForTaskId(
+    taskId: string
+  ): Promise<WorktreeLineageCandidate | null> {
+    const db = this.getOrchestrationDbIfAvailable()
+    const dispatch = db?.getDispatchContext(taskId)
+    // Why: agent-created task records may never be dispatched, but the
+    // creating terminal still identifies the parent workspace for descendants.
+    const parentHandle =
+      dispatch?.assignee_handle ?? db?.getTask(taskId)?.created_by_terminal_handle
+    if (!parentHandle) {
+      return null
+    }
+    try {
+      const terminal = await this.showTerminal(parentHandle)
+      return {
+        source: 'orchestration-context',
+        parent: await this.resolveWorktreeSelector(`id:${terminal.worktreeId}`),
+        taskId
+      }
+    } catch {
+      return null
+    }
+  }
+
+  private getOrchestrationDbIfAvailable(): OrchestrationDb | null {
+    try {
+      return this._orchestrationDb ?? this.getOrchestrationDb()
+    } catch {
+      return this._orchestrationDb
+    }
+  }
+
+  async hydrateInferredWorktreeLineage(): Promise<void> {
+    const store = this.store
+    if (
+      !store ||
+      typeof store.getWorktreeLineage !== 'function' ||
+      typeof store.setWorktreeLineage !== 'function'
+    ) {
+      return
+    }
+
+    const worktrees = await this.listResolvedWorktrees()
+    for (const worktree of worktrees) {
+      if (store.getWorktreeLineage(worktree.id) || !worktree.instanceId) {
+        continue
+      }
+      const taskId = extractOrchestrationTaskId(worktree.comment)
+      if (!taskId) {
+        continue
+      }
+      const candidate = await this.resolveLineageCandidateForTaskId(taskId)
+      if (!candidate?.parent.instanceId || candidate.parent.id === worktree.id) {
+        continue
+      }
+      try {
+        this.validateLineageParent(worktree, candidate.parent)
+      } catch {
+        continue
+      }
+      store.setWorktreeLineage(worktree.id, {
+        worktreeId: worktree.id,
+        worktreeInstanceId: worktree.instanceId,
+        parentWorktreeId: candidate.parent.id,
+        parentWorktreeInstanceId: candidate.parent.instanceId,
+        origin: 'orchestration',
+        capture: { source: 'orchestration-context', confidence: 'inferred' },
+        taskId,
+        createdAt: Date.now()
+      })
+    }
+  }
+
+  async listWorktreeLineage(): Promise<Record<string, WorktreeLineage>> {
+    await this.hydrateInferredWorktreeLineage()
+    return this.store?.getAllWorktreeLineage?.() ?? {}
+  }
+
   private async resolveRepoSelector(selector: string): Promise<Repo> {
     if (!this.store) {
       throw new Error('repo_not_found')
@@ -6644,21 +7254,35 @@ export class OrcaRuntimeService {
       return []
     }
     const now = Date.now()
-    const metaById = this.store.getAllWorktreeMeta()
     const perRepoWorktrees = await Promise.all(
       this.store.getRepos().map(async (repo) => {
         // Why: mobile startup RPCs share this path. A slow repo scan should
         // degrade one repo's metadata, not block all terminal/session loading.
-        const gitWorktrees = await withTimeout(
-          listRepoWorktrees(repo),
+        const scan = await withTimeout(
+          this.listRepoWorktreesForResolution(repo),
           RESOLVED_WORKTREE_REPO_TIMEOUT_MS,
-          []
+          { ok: false, worktrees: [] }
         )
+        const gitWorktrees = scan.worktrees
+        if (scan.ok) {
+          this.pruneLineageForMissingRepoWorktrees(repo, gitWorktrees)
+        }
+        const metaById = this.store?.getAllWorktreeMeta() ?? {}
         return gitWorktrees.map((gitWorktree) => {
           const worktreeId = `${repo.id}::${gitWorktree.path}`
-          const merged = mergeWorktree(repo.id, gitWorktree, metaById[worktreeId], repo.displayName)
+          // Why: lineage validation needs a durable instance ID even when the
+          // runtime sees a workspace before the renderer's discovery-stamp path.
+          const existingMeta = metaById[worktreeId]
+          const meta =
+            existingMeta && existingMeta.instanceId
+              ? existingMeta
+              : this.store?.setWorktreeMeta(worktreeId, {})
+          const merged = mergeWorktree(repo.id, gitWorktree, meta, repo.displayName)
           return {
             ...merged,
+            parentWorktreeId: null,
+            childWorktreeIds: [],
+            lineage: null,
             git: {
               path: gitWorktree.path,
               head: gitWorktree.head,
@@ -6672,7 +7296,7 @@ export class OrcaRuntimeService {
         })
       })
     )
-    const worktrees = perRepoWorktrees.flat()
+    const worktrees = this.attachLineageToResolvedWorktrees(perRepoWorktrees.flat())
     // Why: terminal polling can be frequent, but git worktree state is still
     // allowed to change outside Orca. A short TTL avoids shelling out on every
     // read without pretending the cache is authoritative for long.
@@ -6683,6 +7307,86 @@ export class OrcaRuntimeService {
       }
     }
     return worktrees
+  }
+
+  private attachLineageToResolvedWorktrees(worktrees: ResolvedWorktree[]): ResolvedWorktree[] {
+    const lineageById = this.store?.getAllWorktreeLineage?.() ?? {}
+    const worktreeById = new Map(worktrees.map((worktree) => [worktree.id, worktree]))
+    const validLineageByChildId = new Map<string, WorktreeLineage>()
+    const childIdsByParentId = new Map<string, string[]>()
+
+    for (const [childId, lineage] of Object.entries(lineageById)) {
+      const child = worktreeById.get(childId)
+      const parent = worktreeById.get(lineage.parentWorktreeId)
+      if (
+        !child ||
+        !parent ||
+        child.instanceId !== lineage.worktreeInstanceId ||
+        parent.instanceId !== lineage.parentWorktreeInstanceId
+      ) {
+        // Why: worktree IDs are path-derived. Instance checks keep replacement
+        // checkouts from appearing as children of stale same-path lineage.
+        continue
+      }
+      validLineageByChildId.set(childId, lineage)
+      const children = childIdsByParentId.get(lineage.parentWorktreeId) ?? []
+      children.push(childId)
+      childIdsByParentId.set(lineage.parentWorktreeId, children)
+    }
+
+    return worktrees.map((worktree) => {
+      const lineage = validLineageByChildId.get(worktree.id) ?? null
+      return {
+        ...worktree,
+        parentWorktreeId: lineage?.parentWorktreeId ?? null,
+        childWorktreeIds: childIdsByParentId.get(worktree.id) ?? [],
+        lineage
+      }
+    })
+  }
+
+  private pruneLineageForMissingRepoWorktrees(repo: Repo, gitWorktrees: GitWorktreeInfo[]): void {
+    const store = this.store
+    if (
+      !store ||
+      typeof store.getAllWorktreeLineage !== 'function' ||
+      typeof store.removeWorktreeLineage !== 'function'
+    ) {
+      return
+    }
+    const liveIds = new Set(gitWorktrees.map((worktree) => `${repo.id}::${worktree.path}`))
+    const repoPrefix = `${repo.id}::`
+    for (const [childId, lineage] of Object.entries(store.getAllWorktreeLineage())) {
+      if (childId.startsWith(repoPrefix) && !liveIds.has(childId)) {
+        // Why: runtime selector scans can be the only scan before a path is
+        // reused. Once a successful scan proves the child is gone, stale
+        // lineage must not survive into the replacement checkout.
+        store.removeWorktreeLineage(childId)
+      }
+      if (
+        lineage.parentWorktreeId.startsWith(repoPrefix) &&
+        !liveIds.has(lineage.parentWorktreeId)
+      ) {
+        const parentMeta = store.getWorktreeMeta(lineage.parentWorktreeId)
+        if (!parentMeta || parentMeta.instanceId === lineage.parentWorktreeInstanceId) {
+          // Why: preserving child lineage powers the repair UI, but a missing
+          // parent path only needs one fresh identity to keep same-path
+          // replacement checkouts from validating old lineage.
+          store.setWorktreeMeta(lineage.parentWorktreeId, { instanceId: randomUUID() })
+        }
+      }
+    }
+  }
+
+  private async listRepoWorktreesForResolution(repo: Repo): Promise<RuntimeWorktreeScanResult> {
+    if (!repo.connectionId) {
+      return { ok: true, worktrees: await listRepoWorktrees(repo) }
+    }
+    const provider = getSshGitProvider(repo.connectionId)
+    if (!provider) {
+      return { ok: false, worktrees: [] }
+    }
+    return { ok: true, worktrees: await provider.listWorktrees(repo.path) }
   }
 
   private async getResolvedWorktreeMap(): Promise<Map<string, ResolvedWorktree>> {
@@ -7490,7 +8194,7 @@ export class OrcaRuntimeService {
       return
     }
 
-    const unread = this._orchestrationDb.getUnreadMessages(handle)
+    const unread = this._orchestrationDb.getUndeliveredUnreadMessages(handle)
     if (unread.length === 0) {
       return
     }
@@ -7539,6 +8243,25 @@ export class OrcaRuntimeService {
     waiter.resolve(result)
   }
 
+  private bindTerminalWaiterAbort(
+    waiter: TerminalWaiter,
+    signal: AbortSignal | undefined
+  ): boolean {
+    if (!signal) {
+      return true
+    }
+    if (signal.aborted) {
+      return false
+    }
+    const onAbort = (): void => {
+      this.removeWaiter(waiter)
+      waiter.reject(new Error('request_aborted'))
+    }
+    waiter.abortCleanup = () => signal.removeEventListener('abort', onAbort)
+    signal.addEventListener('abort', onAbort, { once: true })
+    return true
+  }
+
   private rejectWaitersForHandle(handle: string, code: string): void {
     const waiters = this.waitersByHandle.get(handle)
     if (!waiters || waiters.size === 0) {
@@ -7562,6 +8285,10 @@ export class OrcaRuntimeService {
     }
     if (waiter.pollInterval) {
       clearInterval(waiter.pollInterval)
+    }
+    if (waiter.abortCleanup) {
+      waiter.abortCleanup()
+      waiter.abortCleanup = null
     }
     const waiters = this.waitersByHandle.get(waiter.handle)
     if (!waiters) {

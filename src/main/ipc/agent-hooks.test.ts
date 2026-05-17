@@ -53,6 +53,15 @@ vi.mock('../gemini/hook-service', () => ({
 vi.mock('../cursor/hook-service', () => ({
   cursorHookService: { getStatus: vi.fn(() => ({ agent: 'cursor', state: 'absent' })) }
 }))
+vi.mock('../droid/hook-service', () => ({
+  droidHookService: { getStatus: vi.fn(() => ({ agent: 'droid', state: 'absent' })) }
+}))
+vi.mock('../grok/hook-service', () => ({
+  grokHookService: { getStatus: vi.fn(() => ({ agent: 'grok', state: 'absent' })) }
+}))
+vi.mock('../hermes/hook-service', () => ({
+  hermesHookService: { getStatus: vi.fn(() => ({ agent: 'hermes', state: 'absent' })) }
+}))
 
 beforeEach(() => {
   dropStatusEntry.mockReset()

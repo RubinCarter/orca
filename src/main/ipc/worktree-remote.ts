@@ -10,6 +10,7 @@
 import type { BrowserWindow } from 'electron'
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { randomUUID } from 'crypto'
 import type { Store } from '../persistence'
 import type {
   CreateWorktreeArgs,
@@ -87,6 +88,41 @@ async function findRemoteForUrl(repoPath: string, remoteUrl: string): Promise<st
     return null
   }
   return null
+}
+
+async function resolveCreateBranchName(
+  repoPath: string,
+  branchNameOverride: string | undefined,
+  sanitizedName: string,
+  settings: { branchPrefix: string; branchPrefixCustom?: string },
+  username: string | null
+): Promise<string> {
+  if (!branchNameOverride) {
+    return computeBranchName(sanitizedName, settings, username)
+  }
+  if (branchNameOverride.startsWith('-')) {
+    throw new Error('Branch name must not start with "-"')
+  }
+  await gitExecFileAsync(['check-ref-format', '--branch', branchNameOverride], { cwd: repoPath })
+  return branchNameOverride
+}
+
+async function resolveCreateBranchNameSsh(
+  provider: SshGitProvider,
+  repoPath: string,
+  branchNameOverride: string | undefined,
+  sanitizedName: string,
+  settings: { branchPrefix: string; branchPrefixCustom?: string },
+  username: string | null
+): Promise<string> {
+  if (!branchNameOverride) {
+    return computeBranchName(sanitizedName, settings, username)
+  }
+  if (branchNameOverride.startsWith('-')) {
+    throw new Error('Branch name must not start with "-"')
+  }
+  await provider.exec(['check-ref-format', '--branch', branchNameOverride], repoPath)
+  return branchNameOverride
 }
 
 async function ensureUniqueRemoteName(repoPath: string, preferred: string): Promise<string> {
@@ -304,7 +340,14 @@ export async function createRemoteWorktree(
     /* no username configured */
   }
 
-  const branchName = computeBranchName(sanitizedName, settings, username)
+  const branchName = await resolveCreateBranchNameSsh(
+    provider,
+    repo.path,
+    args.branchNameOverride,
+    sanitizedName,
+    settings,
+    username
+  )
 
   // Check branch conflict on remote
   try {
@@ -430,6 +473,10 @@ export async function createRemoteWorktree(
     )
   }
   const metaUpdates: Partial<WorktreeMeta> = {
+    // Why: path-derived worktree IDs can be reused after external deletion.
+    // Fresh creations must rotate instance identity so stale lineage cannot
+    // attach to the new occupant of the same path.
+    instanceId: randomUUID(),
     lastActivityAt: now,
     // Why: grants the new worktree a short grace window at the top of the
     // Recent sort. During worktree creation (git fetch + add can take several
@@ -448,7 +495,8 @@ export async function createRemoteWorktree(
     ...(isTuiAgent(args.createdWithAgent) ? { createdWithAgent: args.createdWithAgent } : {}),
     ...(args.linkedIssue !== undefined ? { linkedIssue: args.linkedIssue } : {}),
     ...(args.linkedPR !== undefined ? { linkedPR: args.linkedPR } : {}),
-    ...(args.linkedLinearIssue !== undefined ? { linkedLinearIssue: args.linkedLinearIssue } : {})
+    ...(args.linkedLinearIssue !== undefined ? { linkedLinearIssue: args.linkedLinearIssue } : {}),
+    ...(args.workspaceStatus !== undefined ? { workspaceStatus: args.workspaceStatus } : {})
   }
   const meta = store.setWorktreeMeta(worktreeId, metaUpdates)
   const worktree = mergeWorktree(repo.id, created, meta)
@@ -572,8 +620,18 @@ export async function createLocalWorktree(
           ? `${requestedName}-${suffix}`
           : effectiveSanitizedName
 
-    branchName = computeBranchName(effectiveSanitizedName, settings, username)
-    lastBranchConflictKind = await getBranchConflictKind(repo.path, branchName)
+    branchName = await resolveCreateBranchName(
+      repo.path,
+      suffix === 1 && args.branchNameOverride
+        ? args.branchNameOverride
+        : args.branchNameOverride
+          ? `${args.branchNameOverride}-${suffix}`
+          : undefined,
+      effectiveSanitizedName,
+      settings,
+      username
+    )
+    lastBranchConflictKind = await getBranchConflictKind(repo.path, branchName, baseBranch)
     if (lastBranchConflictKind) {
       continue
     }
@@ -716,6 +774,10 @@ export async function createLocalWorktree(
   const worktreeId = `${repo.id}::${created.path}`
   const now = Date.now()
   const metaUpdates: Partial<WorktreeMeta> = {
+    // Why: path-derived worktree IDs can be reused after external deletion.
+    // Fresh creations must rotate instance identity so stale lineage cannot
+    // attach to the new occupant of the same path.
+    instanceId: randomUUID(),
     // Stamp activity so the worktree sorts into its final position
     // immediately — prevents scroll-to-reveal racing with a later
     // bumpWorktreeActivity that would re-sort the list.
@@ -740,7 +802,8 @@ export async function createLocalWorktree(
     ...(isTuiAgent(args.createdWithAgent) ? { createdWithAgent: args.createdWithAgent } : {}),
     ...(args.linkedIssue !== undefined ? { linkedIssue: args.linkedIssue } : {}),
     ...(args.linkedPR !== undefined ? { linkedPR: args.linkedPR } : {}),
-    ...(args.linkedLinearIssue !== undefined ? { linkedLinearIssue: args.linkedLinearIssue } : {})
+    ...(args.linkedLinearIssue !== undefined ? { linkedLinearIssue: args.linkedLinearIssue } : {}),
+    ...(args.workspaceStatus !== undefined ? { workspaceStatus: args.workspaceStatus } : {})
   }
   const meta = store.setWorktreeMeta(worktreeId, metaUpdates)
   const worktree = mergeWorktree(repo.id, created, meta)

@@ -5,9 +5,11 @@ import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { preloadE2EConfig } from './e2e-config'
 import { glApi } from './gitlab'
+import type { AppIdentity } from '../shared/app-identity'
 import type { CliInstallStatus } from '../shared/cli-install-types'
 import type { AgentHookInstallStatus } from '../shared/agent-hook-types'
 import type {
+  BaseRefSearchResult,
   BaseRefDefaultResult,
   BrowserViewportOverride,
   CreateWorktreeArgs,
@@ -32,7 +34,9 @@ import type {
   WorktreeBaseStatusEvent,
   WorktreeRemoteBranchConflictEvent
 } from '../shared/types'
+import type { GitHistoryOptions, GitHistoryResult } from '../shared/git-history'
 import type { ShellOpenLocalPathResult } from '../shared/shell-open-types'
+import type { SkillDiscoveryResult } from '../shared/skills'
 import type {
   RuntimeStatus,
   RuntimeSyncWindowGraph,
@@ -100,8 +104,12 @@ import type {
   AutomationCreateInput,
   AutomationDispatchRequest,
   AutomationDispatchResult,
+  ExternalAutomationCreateInput,
   ExternalAutomationActionInput,
   ExternalAutomationManager,
+  ExternalAutomationRunsInput,
+  ExternalAutomationRunsPage,
+  ExternalAutomationUpdateInput,
   AutomationRun,
   AutomationUpdateInput
 } from '../shared/automations-types'
@@ -323,6 +331,7 @@ document.addEventListener(
 // Custom APIs for renderer
 const api = {
   app: {
+    getIdentity: (): Promise<AppIdentity> => ipcRenderer.invoke('app:getIdentity'),
     getFeatureWallAssetBaseUrl: (): Promise<string> =>
       ipcRenderer.invoke('app:getFeatureWallAssetBaseUrl'),
     relaunch: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
@@ -403,6 +412,12 @@ const api = {
     searchBaseRefs: (args: { repoId: string; query: string; limit?: number }): Promise<string[]> =>
       ipcRenderer.invoke('repos:searchBaseRefs', args),
 
+    searchBaseRefDetails: (args: {
+      repoId: string
+      query: string
+      limit?: number
+    }): Promise<BaseRefSearchResult[]> => ipcRenderer.invoke('repos:searchBaseRefDetails', args),
+
     onChanged: (callback: () => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent) => callback()
       ipcRenderer.on('repos:changed', listener)
@@ -465,6 +480,15 @@ const api = {
       updates: Record<string, unknown>
     }): Promise<unknown> => ipcRenderer.invoke('worktrees:updateMeta', args),
 
+    listLineage: (): Promise<Record<string, unknown>> =>
+      ipcRenderer.invoke('worktrees:listLineage'),
+
+    updateLineage: (args: {
+      worktreeId: string
+      parentWorktreeId?: string
+      noParent?: boolean
+    }): Promise<unknown> => ipcRenderer.invoke('worktrees:updateLineage', args),
+
     persistSortOrder: (args: { orderedIds: string[] }): Promise<void> =>
       ipcRenderer.invoke('worktrees:persistSortOrder', args),
 
@@ -492,6 +516,19 @@ const api = {
       ipcRenderer.on('worktree:remoteBranchConflict', listener)
       return () => ipcRenderer.removeListener('worktree:remoteBranchConflict', listener)
     }
+  },
+
+  workspaceCleanup: {
+    scan: (args?: { worktreeId?: string; skipGitWorktreeIds?: string[] }): Promise<unknown> =>
+      ipcRenderer.invoke('workspaceCleanup:scan', args),
+    dismiss: (args: { dismissals: unknown[] }): Promise<void> =>
+      ipcRenderer.invoke('workspaceCleanup:dismiss', args),
+    clearDismissals: (): Promise<void> => ipcRenderer.invoke('workspaceCleanup:clearDismissals'),
+    hasKillableLocalProcesses: (args: {
+      worktreeId: string
+      connectionId?: string | null
+      worktreePath?: string
+    }): Promise<unknown> => ipcRenderer.invoke('workspaceCleanup:hasKillableLocalProcesses', args)
   },
 
   workspaceSpace: {
@@ -673,6 +710,20 @@ const api = {
       ipcRenderer.invoke('feedback:submit', args)
   },
 
+  crashReports: {
+    getLatestPending: () => ipcRenderer.invoke('crashReports:getLatestPending'),
+    dismiss: (args: { reportId: string }) => ipcRenderer.invoke('crashReports:dismiss', args),
+    copyLatestDiagnostics: (args?: { reportId?: string; notes?: string }) =>
+      ipcRenderer.invoke('crashReports:copyLatestDiagnostics', args),
+    submit: (args: {
+      reportId?: string
+      notes?: string
+      submitAnonymously?: boolean
+      githubLogin: string | null
+      githubEmail: string | null
+    }) => ipcRenderer.invoke('crashReports:submit', args)
+  },
+
   export: {
     htmlToPdf: (args: {
       html: string
@@ -779,6 +830,15 @@ const api = {
       threadId: string
       resolve: boolean
     }): Promise<boolean> => ipcRenderer.invoke('gh:resolveReviewThread', args),
+
+    setPRFileViewed: (args: {
+      repoPath: string
+      repoId?: string
+      prNumber: number
+      pullRequestId: string
+      path: string
+      viewed: boolean
+    }): Promise<boolean> => ipcRenderer.invoke('gh:setPRFileViewed', args),
 
     updatePRTitle: (args: {
       repoPath: string
@@ -1092,12 +1152,20 @@ const api = {
       ipcRenderer.invoke('agentHooks:geminiStatus'),
     cursorStatus: (): Promise<AgentHookInstallStatus> =>
       ipcRenderer.invoke('agentHooks:cursorStatus'),
-    droidStatus: (): Promise<AgentHookInstallStatus> => ipcRenderer.invoke('agentHooks:droidStatus')
+    droidStatus: (): Promise<AgentHookInstallStatus> =>
+      ipcRenderer.invoke('agentHooks:droidStatus'),
+    grokStatus: (): Promise<AgentHookInstallStatus> => ipcRenderer.invoke('agentHooks:grokStatus'),
+    copilotStatus: (): Promise<AgentHookInstallStatus> =>
+      ipcRenderer.invoke('agentHooks:copilotStatus'),
+    hermesStatus: (): Promise<AgentHookInstallStatus> =>
+      ipcRenderer.invoke('agentHooks:hermesStatus')
   },
 
   agentTrust: {
-    markTrusted: (args: { preset: 'cursor' | 'copilot'; workspacePath: string }): Promise<void> =>
-      ipcRenderer.invoke('agentTrust:markTrusted', args)
+    markTrusted: (args: {
+      preset: 'cursor' | 'copilot' | 'codex'
+      workspacePath: string
+    }): Promise<void> => ipcRenderer.invoke('agentTrust:markTrusted', args)
   },
 
   preflight: {
@@ -1108,6 +1176,13 @@ const api = {
       gh: { installed: boolean; authenticated: boolean }
       glab?: { installed: boolean; authenticated: boolean }
       bitbucket?: { configured: boolean; authenticated: boolean; account: string | null }
+      azureDevOps?: {
+        configured: boolean
+        authenticated: boolean
+        account: string | null
+        baseUrl: string | null
+        tokenConfigured: boolean
+      }
       gitea?: {
         configured: boolean
         authenticated: boolean
@@ -1222,8 +1297,8 @@ const api = {
     openInFileManager: (path: string): Promise<ShellOpenLocalPathResult> =>
       ipcRenderer.invoke('shell:openInFileManager', path),
 
-    openInExternalEditor: (path: string): Promise<ShellOpenLocalPathResult> =>
-      ipcRenderer.invoke('shell:openInExternalEditor', path),
+    openInExternalEditor: (path: string, command?: string): Promise<ShellOpenLocalPathResult> =>
+      ipcRenderer.invoke('shell:openInExternalEditor', path, command),
 
     openUrl: (url: string): Promise<void> => ipcRenderer.invoke('shell:openUrl', url),
 
@@ -1244,6 +1319,10 @@ const api = {
 
     copyFile: (args: { srcPath: string; destPath: string }): Promise<void> =>
       ipcRenderer.invoke('shell:copyFile', args)
+  },
+
+  skills: {
+    discover: (): Promise<SkillDiscoveryResult> => ipcRenderer.invoke('skills:discover')
   },
 
   pet: {
@@ -1274,6 +1353,9 @@ const api = {
       browserPageId: string
       override: BrowserViewportOverride | null
     }): Promise<boolean> => ipcRenderer.invoke('browser:setViewportOverride', args),
+
+    setAnnotationViewportBridge: (args): Promise<boolean> =>
+      ipcRenderer.invoke('browser:setAnnotationViewportBridge', args),
 
     onGuestLoadFailed: (
       callback: (args: {
@@ -1830,8 +1912,19 @@ const api = {
   },
 
   git: {
-    status: (args: { worktreePath: string; connectionId?: string }): Promise<unknown> =>
-      ipcRenderer.invoke('git:status', args),
+    status: (args: {
+      worktreePath: string
+      connectionId?: string
+      includeIgnored?: boolean
+    }): Promise<unknown> => ipcRenderer.invoke('git:status', args),
+    checkIgnored: (args: {
+      worktreePath: string
+      paths: string[]
+      connectionId?: string
+    }): Promise<string[]> => ipcRenderer.invoke('git:checkIgnored', args),
+    history: (
+      args: { worktreePath: string; connectionId?: string } & GitHistoryOptions
+    ): Promise<GitHistoryResult> => ipcRenderer.invoke('git:history', args),
     conflictOperation: (args: { worktreePath: string; connectionId?: string }): Promise<unknown> =>
       ipcRenderer.invoke('git:conflictOperation', args),
     diff: (args: {
@@ -1846,6 +1939,11 @@ const api = {
       baseRef: string
       connectionId?: string
     }): Promise<unknown> => ipcRenderer.invoke('git:branchCompare', args),
+    commitCompare: (args: {
+      worktreePath: string
+      commitId: string
+      connectionId?: string
+    }): Promise<unknown> => ipcRenderer.invoke('git:commitCompare', args),
     upstreamStatus: (args: {
       worktreePath: string
       connectionId?: string
@@ -1867,6 +1965,14 @@ const api = {
       oldPath?: string
       connectionId?: string
     }): Promise<unknown> => ipcRenderer.invoke('git:branchDiff', args),
+    commitDiff: (args: {
+      worktreePath: string
+      commitOid: string
+      parentOid?: string | null
+      filePath: string
+      oldPath?: string
+      connectionId?: string
+    }): Promise<unknown> => ipcRenderer.invoke('git:commitDiff', args),
     commit: (args: {
       worktreePath: string
       message: string
@@ -1880,6 +1986,18 @@ const api = {
       worktreePath: string
       connectionId?: string
     }): Promise<void> => ipcRenderer.invoke('git:cancelGenerateCommitMessage', args),
+    generatePullRequestFields: (args: {
+      worktreePath: string
+      base: string
+      title: string
+      body: string
+      draft: boolean
+      connectionId?: string
+    }): Promise<unknown> => ipcRenderer.invoke('git:generatePullRequestFields', args),
+    cancelGeneratePullRequestFields: (args: {
+      worktreePath: string
+      connectionId?: string
+    }): Promise<void> => ipcRenderer.invoke('git:cancelGeneratePullRequestFields', args),
     stage: (args: {
       worktreePath: string
       filePath: string
@@ -1930,6 +2048,11 @@ const api = {
       const listener = (_event: Electron.IpcRendererEvent) => callback()
       ipcRenderer.on('ui:openFeatureTour', listener)
       return () => ipcRenderer.removeListener('ui:openFeatureTour', listener)
+    },
+    onOpenCrashReport: (callback: () => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent) => callback()
+      ipcRenderer.on('ui:openCrashReport', listener)
+      return () => ipcRenderer.removeListener('ui:openCrashReport', listener)
     },
     onShowFeatureTourNudge: (callback: () => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent) => callback()
@@ -2077,6 +2200,17 @@ const api = {
       ipcRenderer.on('ui:switchTerminalTab', listener)
       return () => ipcRenderer.removeListener('ui:switchTerminalTab', listener)
     },
+    onCtrlTabKeyDown: (callback: (data: { shiftKey: boolean }) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { shiftKey: boolean }) =>
+        callback(data)
+      ipcRenderer.on('ui:ctrlTabKeyDown', listener)
+      return () => ipcRenderer.removeListener('ui:ctrlTabKeyDown', listener)
+    },
+    onCtrlTabKeyUp: (callback: () => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent) => callback()
+      ipcRenderer.on('ui:ctrlTabKeyUp', listener)
+      return () => ipcRenderer.removeListener('ui:ctrlTabKeyUp', listener)
+    },
     onToggleStatusBar: (callback: () => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent) => callback()
       ipcRenderer.on('ui:toggleStatusBar', listener)
@@ -2146,6 +2280,7 @@ const api = {
         afterTabId?: string
         command?: string
         title?: string
+        activate?: boolean
       }) => void
     ): (() => void) => {
       const listener = (
@@ -2156,6 +2291,7 @@ const api = {
           afterTabId?: string
           command?: string
           title?: string
+          activate?: boolean
         }
       ) => callback(data)
       ipcRenderer.on('terminal:requestTabCreate', listener)
@@ -2273,10 +2409,14 @@ const api = {
       return () => ipcRenderer.removeListener('terminal:zoom', listener)
     },
     readClipboardText: (): Promise<string> => ipcRenderer.invoke('clipboard:readText'),
+    readSelectionClipboardText: (): Promise<string> =>
+      ipcRenderer.invoke('clipboard:readSelectionText'),
     saveClipboardImageAsTempFile: (): Promise<string | null> =>
       ipcRenderer.invoke('clipboard:saveImageAsTempFile'),
     writeClipboardText: (text: string): Promise<void> =>
       ipcRenderer.invoke('clipboard:writeText', text),
+    writeSelectionClipboardText: (text: string): Promise<void> =>
+      ipcRenderer.invoke('clipboard:writeSelectionText', text),
     writeClipboardImage: (dataUrl: string): Promise<void> =>
       ipcRenderer.invoke('clipboard:writeImage', dataUrl),
     onFileDrop: (callback: (data: NativeFileDropPayload) => void): (() => void) =>
@@ -2401,6 +2541,22 @@ const api = {
       ipcRenderer.invoke('codexUsage:getBreakdown', args),
     getRecentSessions: (args: { scope: string; range: string; limit?: number }): Promise<unknown> =>
       ipcRenderer.invoke('codexUsage:getRecentSessions', args)
+  },
+
+  openCodeUsage: {
+    getScanState: (): Promise<unknown> => ipcRenderer.invoke('openCodeUsage:getScanState'),
+    setEnabled: (args: { enabled: boolean }): Promise<unknown> =>
+      ipcRenderer.invoke('openCodeUsage:setEnabled', args),
+    refresh: (args?: { force?: boolean }): Promise<unknown> =>
+      ipcRenderer.invoke('openCodeUsage:refresh', args),
+    getSummary: (args: { scope: string; range: string }): Promise<unknown> =>
+      ipcRenderer.invoke('openCodeUsage:getSummary', args),
+    getDaily: (args: { scope: string; range: string }): Promise<unknown> =>
+      ipcRenderer.invoke('openCodeUsage:getDaily', args),
+    getBreakdown: (args: { scope: string; range: string; kind: string }): Promise<unknown> =>
+      ipcRenderer.invoke('openCodeUsage:getBreakdown', args),
+    getRecentSessions: (args: { scope: string; range: string; limit?: number }): Promise<unknown> =>
+      ipcRenderer.invoke('openCodeUsage:getRecentSessions', args)
   },
 
   runtime: {
@@ -2648,6 +2804,12 @@ const api = {
       ipcRenderer.invoke('automations:listRuns', args),
     listExternalManagers: (): Promise<ExternalAutomationManager[]> =>
       ipcRenderer.invoke('automations:listExternalManagers'),
+    listExternalRuns: (input: ExternalAutomationRunsInput): Promise<ExternalAutomationRunsPage> =>
+      ipcRenderer.invoke('automations:listExternalRuns', input),
+    createExternal: (input: ExternalAutomationCreateInput): Promise<void> =>
+      ipcRenderer.invoke('automations:createExternal', input),
+    updateExternal: (input: ExternalAutomationUpdateInput): Promise<void> =>
+      ipcRenderer.invoke('automations:updateExternal', input),
     runExternalAction: (input: ExternalAutomationActionInput): Promise<void> =>
       ipcRenderer.invoke('automations:runExternalAction', input),
     create: (input: AutomationCreateInput): Promise<Automation> =>
@@ -2659,6 +2821,8 @@ const api = {
       ipcRenderer.invoke('automations:runNow', args),
     markDispatchResult: (result: AutomationDispatchResult): Promise<AutomationRun> =>
       ipcRenderer.invoke('automations:markDispatchResult', result),
+    snapshotWorkspaceName: (args: { workspaceId: string; displayName: string }): Promise<number> =>
+      ipcRenderer.invoke('automations:snapshotWorkspaceName', args),
     rendererReady: (): Promise<void> => ipcRenderer.invoke('automations:rendererReady'),
     onDispatchRequested: (callback: (request: AutomationDispatchRequest) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, request: AutomationDispatchRequest) =>

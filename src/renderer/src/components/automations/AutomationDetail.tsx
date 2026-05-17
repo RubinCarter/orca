@@ -5,14 +5,13 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { AGENT_CATALOG, AgentIcon } from '@/lib/agent-catalog'
 import type { Automation, AutomationRun } from '../../../../shared/automations-types'
-import type { Worktree } from '../../../../shared/types'
-import { parseAutomationRrule } from '../../../../shared/automation-schedules'
+import { formatAutomationSchedule } from '../../../../shared/automation-schedules'
+import { formatAutomationDateTimeWithRelative } from './automation-page-parts'
 import {
-  formatAutomationDateTime,
-  formatAutomationDateTimeWithRelative,
-  getAutomationRunStatusLabel,
-  getAutomationRunStatusVariant
-} from './automation-page-parts'
+  formatAutomationCost,
+  formatAutomationTokens,
+  summarizeAutomationRunUsage
+} from './automation-usage-model'
 
 type AutomationDetailProps = {
   automation: Automation | null
@@ -20,10 +19,8 @@ type AutomationDetailProps = {
   projectName: string
   workspaceName: string
   projectDefaultBaseRef: string | null
-  worktreeMap: Map<string, Worktree>
   now: number
   onRunNow: (automation: Automation) => void
-  onOpenRunWorkspace: (run: AutomationRun) => void
   onEdit: (automation: Automation) => void
   onToggle: (automation: Automation) => void
   onDelete: (automation: Automation) => void
@@ -38,15 +35,6 @@ function DetailMetric({ label, value }: { label: string; value: string }): React
   )
 }
 
-function formatTime(hour: number, minute: number): string {
-  const date = new Date()
-  date.setHours(hour, minute, 0, 0)
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: '2-digit'
-  }).format(date)
-}
-
 function formatGrace(minutes: number): string {
   if (minutes <= 0) {
     return 'No grace'
@@ -56,24 +44,6 @@ function formatGrace(minutes: number): string {
   }
   const hours = minutes / 60
   return `${hours} ${hours === 1 ? 'hour' : 'hours'}`
-}
-
-function formatSchedule(rrule: string): string {
-  const schedule = parseAutomationRrule(rrule)
-  if (schedule.preset === 'hourly') {
-    return `Hourly at :${String(schedule.minute).padStart(2, '0')}`
-  }
-  const time = formatTime(schedule.hour, schedule.minute)
-  if (schedule.preset === 'daily') {
-    return `Daily at ${time}`
-  }
-  if (schedule.preset === 'weekdays') {
-    return `Weekdays at ${time}`
-  }
-  const day = new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(
-    new Date(2026, 0, 4 + schedule.dayOfWeek)
-  )
-  return `${day}s at ${time}`
 }
 
 function ToolbarIconButton({
@@ -114,10 +84,8 @@ export function AutomationDetail({
   projectName,
   workspaceName,
   projectDefaultBaseRef,
-  worktreeMap,
   now,
   onRunNow,
-  onOpenRunWorkspace,
   onEdit,
   onToggle,
   onDelete
@@ -129,6 +97,13 @@ export function AutomationDetail({
       </div>
     )
   }
+  const usageSummary = summarizeAutomationRunUsage(runs)
+  const usageCoverage =
+    usageSummary.knownRuns > 0
+      ? `${usageSummary.knownRuns}/${runs.length} runs`
+      : usageSummary.unavailableRuns > 0
+        ? 'Unavailable'
+        : 'No runs'
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -175,8 +150,7 @@ export function AutomationDetail({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-4 gap-6 rounded-md border border-border/50 bg-muted/30 px-4 py-3 shadow-sm">
-        <DetailMetric label="Run location" value={`${projectName} / ${workspaceName}`} />
+      <div className="grid grid-cols-6 gap-6 rounded-md border border-border/50 bg-muted/30 px-4 py-3 shadow-sm">
         <DetailMetric
           label="Next run"
           value={
@@ -189,6 +163,12 @@ export function AutomationDetail({
           label="Last run"
           value={formatAutomationDateTimeWithRelative(automation.lastRunAt, now)}
         />
+        <DetailMetric
+          label="Est. spend"
+          value={formatAutomationCost(usageSummary.estimatedCostUsd)}
+        />
+        <DetailMetric label="Tokens" value={formatAutomationTokens(usageSummary.totalTokens)} />
+        <DetailMetric label="Usage coverage" value={usageCoverage} />
         <DetailMetric label="Grace" value={formatGrace(automation.missedRunGraceMinutes)} />
       </div>
 
@@ -205,7 +185,7 @@ export function AutomationDetail({
               </span>
             </div>
           </div>
-          <DetailMetric label="Schedule" value={formatSchedule(automation.rrule)} />
+          <DetailMetric label="Schedule" value={formatAutomationSchedule(automation.rrule)} />
           <DetailMetric
             label={automation.workspaceMode === 'new_per_run' ? 'Create from' : 'Workspace'}
             value={
@@ -220,69 +200,6 @@ export function AutomationDetail({
               {automation.prompt}
             </p>
           </div>
-        </div>
-      </div>
-
-      <div className="rounded-md border border-border/50 bg-muted/20 shadow-sm">
-        <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
-          <div className="text-sm font-medium">Run history</div>
-          <div className="text-xs text-muted-foreground">{runs.length} runs</div>
-        </div>
-        <div className="grid grid-cols-[minmax(10rem,1fr)_minmax(12rem,1.4fr)_minmax(6rem,auto)] gap-3 border-b border-border/50 px-3 py-1.5 text-[11px] font-medium uppercase text-muted-foreground">
-          <div>Run</div>
-          <div>Workspace</div>
-          <div>Status</div>
-        </div>
-        <div className="divide-y divide-border/50">
-          {runs.map((run) => {
-            const runWorktree = run.workspaceId ? (worktreeMap.get(run.workspaceId) ?? null) : null
-            const workspaceLabel = run.workspaceId
-              ? (runWorktree?.displayName ?? 'Missing workspace')
-              : 'Not launched'
-            const rowClassName =
-              'grid grid-cols-[minmax(10rem,1fr)_minmax(12rem,1.4fr)_minmax(6rem,auto)] items-center gap-3 px-3 py-2 text-left text-sm outline-none transition-colors'
-            const rowContent = (
-              <>
-                <div className="min-w-0">
-                  <div>{formatAutomationDateTime(run.scheduledFor)}</div>
-                  {run.error ? (
-                    <div className="mt-1 truncate text-xs text-muted-foreground">{run.error}</div>
-                  ) : null}
-                </div>
-                <div
-                  className={
-                    runWorktree
-                      ? 'min-w-0 truncate text-foreground'
-                      : 'min-w-0 truncate text-muted-foreground'
-                  }
-                >
-                  {workspaceLabel}
-                </div>
-                <div className="flex justify-start">
-                  <Badge variant={getAutomationRunStatusVariant(run.status)}>
-                    {getAutomationRunStatusLabel(run.status)}
-                  </Badge>
-                </div>
-              </>
-            )
-            return runWorktree ? (
-              <button
-                key={run.id}
-                type="button"
-                className={`${rowClassName} w-full cursor-pointer hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50`}
-                onClick={() => onOpenRunWorkspace(run)}
-              >
-                {rowContent}
-              </button>
-            ) : (
-              <div key={run.id} className={rowClassName}>
-                {rowContent}
-              </div>
-            )
-          })}
-          {runs.length === 0 ? (
-            <div className="px-3 py-6 text-center text-sm text-muted-foreground">No runs yet.</div>
-          ) : null}
         </div>
       </div>
     </div>

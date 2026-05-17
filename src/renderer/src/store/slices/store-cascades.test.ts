@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { buildWorktreeComparator } from '@/components/sidebar/smart-sort'
 import type * as AgentStatusModule from '@/lib/agent-status'
+import { getDefaultSettings } from '../../../../shared/constants'
 
 // Mock sonner (imported by repos.ts)
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
@@ -60,6 +61,7 @@ import {
   makeWorktree,
   seedStore
 } from './store-test-helpers'
+import { shutdownBufferCaptures } from '@/components/terminal-pane/shutdown-buffer-captures'
 
 // ─── Tests ────────────────────────────────────────────────────────────
 
@@ -166,6 +168,8 @@ describe('removeWorktree cascade', () => {
     // State NOT cleaned up
     expect(s.worktreesByRepo['repo1']).toHaveLength(1)
     expect(s.tabsByWorktree[worktreeId]).toHaveLength(1)
+    expect(s.ptyIdsByTabId['tab1']).toEqual(['pty1'])
+    expect(mockApi.pty.kill).not.toHaveBeenCalled()
     expect(s.activeWorktreeId).toBe(worktreeId)
   })
 
@@ -267,7 +271,7 @@ describe('removeWorktree cascade', () => {
     expect(s.fileSearchStateByWorktree[wt1]).toBeUndefined()
   })
 
-  it('shuts down terminals before asking the backend to remove the worktree', async () => {
+  it('shuts down terminals after the backend confirms worktree removal', async () => {
     const store = createTestStore()
     const worktreeId = 'repo1::/path/wt1'
     const callOrder: string[] = []
@@ -297,7 +301,7 @@ describe('removeWorktree cascade', () => {
     const result = await store.getState().removeWorktree(worktreeId)
 
     expect(result).toEqual({ ok: true })
-    expect(callOrder).toEqual(['kill', 'remove'])
+    expect(callOrder).toEqual(['remove', 'kill'])
   })
 })
 
@@ -623,6 +627,75 @@ describe('setActiveWorktree', () => {
     )
     expect(groups[0].activeTabId).toBe(terminal.id)
     expect(groups[0].tabOrder).toEqual([terminal.id])
+  })
+
+  it('stamps the Windows default shell onto new terminal tabs', () => {
+    const originalNavigator = globalThis.navigator
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      configurable: true
+    })
+    try {
+      const store = createTestStore()
+      const wt = 'repo1::/path/wt1'
+
+      seedStore(store, {
+        settings: { ...getDefaultSettings('/tmp'), terminalWindowsShell: 'wsl.exe' },
+        worktreesByRepo: {
+          repo1: [makeWorktree({ id: wt, repoId: 'repo1', path: '/path/wt1' })]
+        }
+      })
+
+      const terminal = store.getState().createTab(wt)
+      expect(terminal.shellOverride).toBe('wsl.exe')
+
+      store.setState({
+        settings: { ...store.getState().settings!, terminalWindowsShell: 'cmd.exe' }
+      })
+      expect(store.getState().tabsByWorktree[wt][0].shellOverride).toBe('wsl.exe')
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        configurable: true
+      })
+    }
+  })
+
+  it('does not stamp local Windows shell icons onto SSH terminal tabs', () => {
+    const originalNavigator = globalThis.navigator
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      configurable: true
+    })
+    try {
+      const store = createTestStore()
+      const wt = 'remote-repo::/path/wt1'
+
+      seedStore(store, {
+        repos: [
+          {
+            id: 'remote-repo',
+            path: '/remote/repo',
+            displayName: 'Remote Repo',
+            badgeColor: '#000',
+            addedAt: 0,
+            connectionId: 'ssh-1'
+          }
+        ],
+        settings: { ...getDefaultSettings('/tmp'), terminalWindowsShell: 'wsl.exe' },
+        worktreesByRepo: {
+          'remote-repo': [makeWorktree({ id: wt, repoId: 'remote-repo', path: '/path/wt1' })]
+        }
+      })
+
+      const terminal = store.getState().createTab(wt, undefined, 'cmd.exe')
+      expect(terminal.shellOverride).toBeUndefined()
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        configurable: true
+      })
+    }
   })
 
   it('publishes the first terminal and root tab group atomically', () => {
@@ -1366,6 +1439,28 @@ describe('shutdownWorktreeTerminals (sleep) — agent status hygiene', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockApi.pty.kill.mockResolvedValue(undefined)
+    shutdownBufferCaptures.clear()
+  })
+
+  it('asks sleep-time buffer capture to skip local scrollback serialization', async () => {
+    const store = createTestStore()
+    const wt = 'repo1::/path/wt1'
+    const capture = vi.fn()
+
+    seedStore(store, {
+      worktreesByRepo: {
+        repo1: [makeWorktree({ id: wt, repoId: 'repo1', path: '/path/wt1' })]
+      },
+      tabsByWorktree: {
+        [wt]: [makeTab({ id: 'tab-1', worktreeId: wt, ptyId: 'pty-1' })]
+      },
+      ptyIdsByTabId: { 'tab-1': ['pty-1'] }
+    })
+    shutdownBufferCaptures.set('tab-1', capture)
+
+    await store.getState().shutdownWorktreeTerminals(wt, { keepIdentifiers: true })
+
+    expect(capture).toHaveBeenCalledWith({ includeLocalBuffers: false })
   })
 
   it('drops live agentStatusByPaneKey entries on sleep so the working row disappears', async () => {
