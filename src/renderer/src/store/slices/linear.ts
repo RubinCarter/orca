@@ -437,8 +437,9 @@ export const createLinearSlice: StateCreator<AppState, [], [], LinearSlice> = (s
         console.warn('[linear] listLinearTeams failed:', error)
         if (looksLikeAuthError(error)) {
           set({ linearStatus: { connected: false, viewer: null } })
+          return []
         }
-        return []
+        return get().linearTeamCache[cacheKey]?.data ?? []
       })
       .finally(() => {
         inflightTeamRequests.delete(cacheKey)
