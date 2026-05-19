@@ -49,6 +49,27 @@ export function registerSpeechHandlers(store: Store): void {
   const getDesktopOwner = (senderId: number, sessionId: string): string =>
     `desktop:${senderId}:${sessionId}`
 
+  // Why: must be invoked by the renderer BEFORE opening the mic stream.
+  // Without this gate, getUserMedia briefly opens the OS mic capture
+  // (mic indicator can flash) on macOS systems where TCC permission for
+  // the microphone has not been granted to Electron, before
+  // startDictation's own permission probe rejects the start.
+  ipcMain.handle('speech:ensureMicrophoneAccess', async () => {
+    if (process.platform === 'darwin') {
+      const micStatus = systemPreferences.getMediaAccessStatus('microphone')
+      if (micStatus !== 'granted') {
+        await systemPreferences.askForMediaAccess('microphone')
+        const newStatus = systemPreferences.getMediaAccessStatus('microphone')
+        if (newStatus !== 'granted') {
+          throw new Error(
+            'Microphone access not granted. In System Settings > Privacy & Security > Microphone, ' +
+              'click "+" and add the Electron app, then restart Orca.'
+          )
+        }
+      }
+    }
+  })
+
   ipcMain.handle(
     'speech:startDictation',
     async (event, modelId: string, hotwords?: string[], sessionId = 'desktop') => {

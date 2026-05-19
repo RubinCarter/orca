@@ -3036,6 +3036,8 @@ const api = {
       ipcRenderer.invoke('speech:cancelDownload', modelId),
     deleteModel: (modelId: string): Promise<void> =>
       ipcRenderer.invoke('speech:deleteModel', modelId),
+    ensureMicrophoneAccess: (): Promise<void> =>
+      ipcRenderer.invoke('speech:ensureMicrophoneAccess'),
     startDictation: (
       modelId: string,
       hotwords: string[] | undefined,

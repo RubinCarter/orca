@@ -110,6 +110,15 @@ export function DictationController() {
     let captureStarted = false
 
     try {
+      // Why: probe macOS TCC microphone permission BEFORE startCapture so
+      // getUserMedia never opens the mic stream on permission-denied systems
+      // (the OS mic indicator would otherwise briefly flash before the main
+      // process rejected startDictation).
+      await window.api.speech.ensureMicrophoneAccess()
+      if (dictationRunRef.current !== runId) {
+        insertionTargetRef.current = null
+        return
+      }
       // Why: worker startup can take seconds after idle teardown. Capture first
       // and buffer locally so speech during "Starting..." is not discarded.
       await startCapture({ bufferAudio: true, sessionId })
