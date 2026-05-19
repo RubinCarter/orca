@@ -327,6 +327,15 @@ export function IntegrationsStep(): React.JSX.Element {
       <div className="space-y-3">
         <GitHubRow />
         <LinearRow />
+        <div className="mt-4 flex items-center justify-between rounded-xl border border-border bg-muted/10 px-5 py-3.5">
+          <div className="flex items-center gap-3">
+            <span className="text-[14px] font-medium text-foreground/70">Jira</span>
+            <span className="text-[13px] text-muted-foreground">
+              Issues, sprints, and assignees.
+            </span>
+          </div>
+          <StatusPill tone="neutral">Coming soon</StatusPill>
+        </div>
       </div>
     </div>
   )
