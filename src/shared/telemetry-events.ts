@@ -101,6 +101,15 @@ export const addRepoSetupStepActionSchema = z.enum([
 ])
 export type AddRepoSetupStepAction = z.infer<typeof addRepoSetupStepActionSchema>
 
+export const addRepoExistingWorkspaceSourceSchema = z.enum([
+  'local_folder_picker',
+  'runtime_server_path',
+  'ssh_remote_path',
+  'clone_url',
+  'create_project'
+])
+export type AddRepoExistingWorkspaceSource = z.infer<typeof addRepoExistingWorkspaceSourceSchema>
+
 // Deliberately a separate enum from `errorClassSchema` (PTY-spawn taxonomy):
 // different domain — this one buckets git/filesystem failures thrown by
 // `createLocalWorktree` / `createRemoteWorktree`. Merging the two would lock
@@ -286,8 +295,32 @@ const featureWallTileClickedSchema = z
   })
   .strict()
 
+const existingWorkspaceCountSchema = z.number().int().min(1).max(50)
+const addRepoExistingWorkspaceContextSchema = {
+  source: addRepoExistingWorkspaceSourceSchema,
+  existing_workspace_count: existingWorkspaceCountSchema,
+  existing_linked_workspace_count: z.number().int().min(0).max(50)
+} as const
+
 const addRepoSetupStepActionEventSchema = z
-  .object({ action: addRepoSetupStepActionSchema, nth_repo_added: nthRepoAddedSchema })
+  .object({
+    action: addRepoSetupStepActionSchema,
+    source: addRepoExistingWorkspaceSourceSchema.optional(),
+    existing_workspace_count: existingWorkspaceCountSchema.optional(),
+    existing_linked_workspace_count: z.number().int().min(0).max(50).optional(),
+    nth_repo_added: nthRepoAddedSchema
+  })
+  .strict()
+const addRepoExistingWorkspacesDetectedSchema = z
+  .object({
+    ...addRepoExistingWorkspaceContextSchema,
+    main_workspace_count: z.number().int().min(0).max(50),
+    branch_named_workspace_count: z.number().int().min(0).max(50),
+    detached_workspace_count: z.number().int().min(0).max(50),
+    custom_named_workspace_count: z.number().int().min(0).max(50),
+    sparse_workspace_count: z.number().int().min(0).max(50),
+    nth_repo_added: nthRepoAddedSchema
+  })
   .strict()
 
 // Why: same enum-only discipline as `agent_error` — `.strict()` rejects raw
@@ -710,6 +743,7 @@ export const eventSchemas = {
 
   repo_added: repoAddedSchema,
   add_repo_setup_step_action: addRepoSetupStepActionEventSchema,
+  add_repo_existing_workspaces_detected: addRepoExistingWorkspacesDetectedSchema,
   workspace_created: workspaceCreatedSchema,
   workspace_create_failed: workspaceCreateFailedSchema,
 
@@ -791,6 +825,7 @@ type _CohortExtendedRoster =
   | 'app_opened'
   | 'repo_added'
   | 'add_repo_setup_step_action'
+  | 'add_repo_existing_workspaces_detected'
   | 'workspace_created'
   | 'workspace_create_failed'
   | 'agent_started'
