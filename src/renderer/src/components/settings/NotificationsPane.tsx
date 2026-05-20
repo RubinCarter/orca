@@ -1,10 +1,11 @@
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { GlobalSettings } from '../../../../shared/types'
 import { Button } from '../ui/button'
 import { Label } from '../ui/label'
 import { Separator } from '../ui/separator'
-import { BellRing, Bot, FileAudio, Siren, X } from 'lucide-react'
+import { Slider } from '../ui/slider'
+import { BellRing, Bot, FileAudio, Siren, Volume2, X } from 'lucide-react'
 import type { SettingsSearchEntry } from './settings-search'
 import { basename } from '@/lib/path'
 
@@ -34,6 +35,11 @@ export const NOTIFICATIONS_PANE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
     description:
       'Choose one local audio file (MP3, WAV, OGG, M4A, AAC, or FLAC) for all delivered desktop notifications.',
     keywords: ['notifications', 'sound', 'audio', 'mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac']
+  },
+  {
+    title: 'Notification Volume',
+    description: 'Playback volume for the custom notification sound.',
+    keywords: ['notifications', 'sound', 'volume', 'loudness']
   },
   {
     title: 'Send Test Notification',
@@ -71,15 +77,31 @@ export function NotificationsPane({
   updateSettings
 }: NotificationsPaneProps): React.JSX.Element {
   const notificationSettings = settings.notifications
+  const notificationSettingsRef = useRef(notificationSettings)
   const [isPickingSound, setIsPickingSound] = useState(false)
 
   const updateNotificationSettings = (updates: Partial<GlobalSettings['notifications']>): void => {
     updateSettings({
       notifications: {
-        ...notificationSettings,
+        ...notificationSettingsRef.current,
         ...updates
       }
     })
+  }
+
+  // Why: keep dragging local and persist only on Radix's commit event. That
+  // avoids IPC on every tick without a debounce timer that can race settings updates.
+  const [volumeDraft, setVolumeDraft] = useState(notificationSettings.customSoundVolume)
+
+  useEffect(() => {
+    notificationSettingsRef.current = notificationSettings
+    setVolumeDraft(notificationSettings.customSoundVolume)
+  }, [notificationSettings])
+
+  const handleVolumeCommit = (value: number): void => {
+    if (notificationSettingsRef.current.customSoundVolume !== value) {
+      updateNotificationSettings({ customSoundVolume: value })
+    }
   }
 
   const handleSendTestNotification = async (): Promise<void> => {
@@ -103,7 +125,10 @@ export function NotificationsPane({
       // it twice in quick succession — the in-flight dedupe is for incidental
       // bursts of real notifications, not for an explicit user action.
       const soundResult = notificationSettings.customSoundPath
-        ? await window.api.notifications.playSound({ force: true })
+        ? await window.api.notifications.playSound({
+            force: true,
+            volume: volumeDraft
+          })
         : null
       if (notificationSettings.customSoundPath && soundResult && !soundResult.played) {
         toast.error('Custom notification sound could not be played')
@@ -232,6 +257,25 @@ export function NotificationsPane({
             </Button>
           ) : null}
         </div>
+        {selectedSoundPath ? (
+          <div className="flex items-center gap-3 pt-1">
+            <Volume2 className="size-4 text-muted-foreground" />
+            <Slider
+              value={[volumeDraft]}
+              min={0}
+              max={100}
+              step={5}
+              disabled={!notificationSettings.enabled}
+              onValueChange={([value]) => setVolumeDraft(value)}
+              onValueCommit={([value]) => handleVolumeCommit(value)}
+              className="flex-1"
+              aria-label="Notification sound volume"
+            />
+            <span className="w-10 text-right font-mono text-xs tabular-nums text-muted-foreground">
+              {volumeDraft}%
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <Separator />

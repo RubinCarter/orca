@@ -39,6 +39,7 @@ export async function createWebRuntimeSessionTerminal(args: {
   targetGroupId?: string
   command?: string
   activate?: boolean
+  selectWorktree?: boolean
 }): Promise<boolean> {
   const environmentId =
     args.environmentId?.trim() ??
@@ -48,7 +49,9 @@ export async function createWebRuntimeSessionTerminal(args: {
     return false
   }
 
-  selectWebRuntimeSessionWorktree(args.worktreeId)
+  if (args.selectWorktree !== false) {
+    selectWebRuntimeSessionWorktree(args.worktreeId)
+  }
   try {
     const response = await window.api.runtimeEnvironments.call({
       selector: environmentId,
@@ -80,6 +83,7 @@ export async function createWebRuntimeSessionBrowserTab(args: {
   url?: string
   profileId?: string | null
   targetGroupId?: string
+  selectWorktree?: boolean
 }): Promise<boolean> {
   const environmentId =
     args.environmentId?.trim() ??
@@ -89,8 +93,11 @@ export async function createWebRuntimeSessionBrowserTab(args: {
     return false
   }
 
+  const shouldSelectWorktree = args.selectWorktree !== false
   const stagedFromWorktreeId = useAppStore.getState().activeWorktreeId
-  selectWebRuntimeSessionWorktree(args.worktreeId)
+  if (shouldSelectWorktree) {
+    selectWebRuntimeSessionWorktree(args.worktreeId)
+  }
   try {
     const response = await window.api.runtimeEnvironments.call({
       selector: environmentId,
@@ -114,8 +121,9 @@ export async function createWebRuntimeSessionBrowserTab(args: {
       url: args.url,
       targetGroupId: args.targetGroupId,
       restoreFocus:
-        stagedFromWorktreeId === args.worktreeId ||
-        useAppStore.getState().activeWorktreeId === args.worktreeId
+        shouldSelectWorktree &&
+        (stagedFromWorktreeId === args.worktreeId ||
+          useAppStore.getState().activeWorktreeId === args.worktreeId)
     })
     void refreshWebRuntimeSessionTabsSnapshot(environmentId, args.worktreeId)
     return true

@@ -227,13 +227,14 @@ describe('Store', () => {
     expect(settings.floatingTerminalEnabled).toBe(true)
     expect(settings.floatingTerminalDefaultedForAllUsers).toBe(true)
     expect(settings.notifications.customSoundPath).toBeNull()
+    expect(settings.notifications.customSoundVolume).toBe(100)
   })
 
   it('returns default UI state when no data file exists', async () => {
     const store = await createStore()
     const ui = store.getUI()
     expect(ui.sidebarWidth).toBe(280)
-    expect(ui.groupBy).toBe('repo')
+    expect(ui.groupBy).toBe('workspace-status')
     expect(ui.lastActiveRepoId).toBeNull()
     expect(ui.dismissedUpdateVersion).toBeNull()
     expect(ui.lastUpdateCheckAt).toBeNull()
@@ -455,6 +456,47 @@ describe('Store', () => {
     store.flush()
     const persisted = readDataFile() as { automations: { baseBranch: string | null }[] }
     expect(persisted.automations[0].baseBranch).toBeNull()
+  })
+
+  it('persists session reuse only for existing-workspace automations', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo())
+
+    const existingWorkspace = store.createAutomation({
+      name: 'Digest',
+      prompt: 'Summarize changes',
+      agentId: 'claude',
+      projectId: 'r1',
+      workspaceMode: 'existing',
+      workspaceId: 'wt1',
+      reuseSession: true,
+      timezone: 'UTC',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      dtstart: new Date('2026-05-13T00:00:00Z').getTime()
+    })
+    const newPerRun = store.createAutomation({
+      name: 'Fresh',
+      prompt: 'Run checks',
+      agentId: 'claude',
+      projectId: 'r1',
+      workspaceMode: 'new_per_run',
+      reuseSession: true,
+      timezone: 'UTC',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      dtstart: new Date('2026-05-13T00:00:00Z').getTime()
+    })
+
+    expect(existingWorkspace.reuseSession).toBe(true)
+    expect(newPerRun.reuseSession).toBe(false)
+    expect(
+      store.updateAutomation(existingWorkspace.id, { workspaceMode: 'new_per_run' }).reuseSession
+    ).toBe(false)
+
+    const persisted = readDataFile() as { automations: Record<string, unknown>[] }
+    delete persisted.automations[0].reuseSession
+    writeDataFile(persisted)
+    const reloaded = await createStore()
+    expect(reloaded.listAutomations()[0].reuseSession).toBe(false)
   })
 
   it('numbers automation run titles per automation', async () => {
@@ -719,8 +761,47 @@ describe('Store', () => {
       agentTaskComplete: true,
       terminalBell: false,
       suppressWhenFocused: true,
-      customSoundPath: '/Users/kaylee/Downloads/Note_block_pling.ogg'
+      customSoundPath: '/Users/kaylee/Downloads/Note_block_pling.ogg',
+      customSoundVolume: 100
     })
+  })
+
+  it('clamps notification custom sound volume from persisted settings', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        notifications: {
+          customSoundVolume: 250
+        }
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getSettings().notifications.customSoundVolume).toBe(100)
+  })
+
+  it('defaults invalid notification custom sound volume from persisted settings', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        notifications: {
+          customSoundVolume: Number.NaN
+        }
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getSettings().notifications.customSoundVolume).toBe(100)
   })
 
   it('preserves editorAutoSaveDelayMs when set in persisted data', async () => {
@@ -960,6 +1041,20 @@ describe('Store', () => {
     ])
   })
 
+  it('updateSettings deep-merges and clamps notification custom sound volume', async () => {
+    const store = await createStore()
+    const updated = store.updateSettings({
+      notifications: {
+        ...store.getSettings().notifications,
+        customSoundVolume: -20
+      }
+    })
+
+    expect(updated.notifications.customSoundVolume).toBe(0)
+    expect(updated.notifications.enabled).toBe(true)
+    expect(updated.notifications.customSoundPath).toBeNull()
+  })
+
   it('updateSettings toggles editorAutoSave', async () => {
     const store = await createStore()
     expect(store.getSettings().editorAutoSave).toBe(false)
@@ -1116,7 +1211,7 @@ describe('Store', () => {
     store.updateUI({ sidebarWidth: 400 })
     const ui = store.getUI()
     expect(ui.sidebarWidth).toBe(400)
-    expect(ui.groupBy).toBe('repo') // default preserved
+    expect(ui.groupBy).toBe('workspace-status') // default preserved
     expect(ui.dismissedUpdateVersion).toBeNull()
   })
 

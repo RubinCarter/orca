@@ -75,6 +75,7 @@ import {
   destroyPersistentWebview,
   getHiddenContainer,
   MAX_PARKED_WEBVIEWS,
+  moveFocusToRendererBeforeWebviewDetach,
   parkedAtByTabId,
   registerPersistentWebview,
   registeredWebContentsIds,
@@ -3571,6 +3572,7 @@ function BrowserPagePane({
       }
 
       if (webviewRegistry.get(browserTab.id) === webview) {
+        moveFocusToRendererBeforeWebviewDetach(webview)
         getHiddenContainer().appendChild(webview)
         parkedAtByTabId.set(browserTab.id, Date.now())
         evictParkedWebviews(browserTab.id)
@@ -4543,7 +4545,7 @@ function BrowserPagePane({
                     groupId={activeGroupId ?? worktreeId}
                     onFocusTerminal={focusTerminalTabSurface}
                     prompt={browserAnnotationsPrompt}
-                    promptDelivery="draft"
+                    promptDelivery="submit-after-ready"
                     launchSource="notes_send"
                   />
                 </DropdownMenuContent>
@@ -4729,7 +4731,7 @@ function BrowserPagePane({
                     groupId={activeGroupId ?? worktreeId}
                     onFocusTerminal={focusTerminalTabSurface}
                     prompt={browserAnnotationsPrompt}
-                    promptDelivery="draft"
+                    promptDelivery="submit-after-ready"
                     launchSource="notes_send"
                   />
                 </DropdownMenuContent>

@@ -980,6 +980,7 @@ export default function TerminalPane({
     cwd,
     isActive,
     isVisible,
+    paneCount,
     managerRef,
     containerRef,
     paneTransportsRef,

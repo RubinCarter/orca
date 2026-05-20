@@ -201,6 +201,48 @@ describe('createWebRuntimeSessionBrowserTab', () => {
     expect(setStateResults.at(-1)).toEqual({ state: 'after' })
   })
 
+  it('can create a browser tab without selecting the target worktree', async () => {
+    const setStateResults: unknown[] = []
+    mocks.setState.mockImplementation((updater: (state: unknown) => unknown) => {
+      const result = updater({
+        state: 'before-stage',
+        activeWorktreeId: 'main-worktree'
+      })
+      setStateResults.push(result)
+    })
+    const runtimeCall = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: 'create',
+        ok: true,
+        result: { browserPageId: 'remote-browser-page-1' }
+      })
+      .mockResolvedValueOnce({
+        id: 'list',
+        ok: true,
+        result: makeSnapshot()
+      })
+
+    vi.stubGlobal('window', {
+      api: {
+        runtimeEnvironments: {
+          call: runtimeCall
+        }
+      }
+    })
+
+    await expect(
+      createWebRuntimeSessionBrowserTab({
+        worktreeId: WORKTREE_ID,
+        url: 'https://example.com/',
+        selectWorktree: false
+      })
+    ).resolves.toBe(true)
+
+    expect(setStateResults).not.toContainEqual({ activeWorktreeId: WORKTREE_ID })
+    expect(mocks.focusBrowserTabInWorktree).not.toHaveBeenCalled()
+  })
+
   it('does not focus a staged browser tab when the user leaves before host create resolves', async () => {
     let activeWorktreeId = WORKTREE_ID
     mocks.getState.mockImplementation(() => ({
@@ -394,6 +436,60 @@ describe('createWebRuntimeSessionTerminal', () => {
       snapshot,
       ENVIRONMENT_ID
     )
+  })
+
+  it('can create a terminal without selecting the target worktree', async () => {
+    const setStateResults: unknown[] = []
+    mocks.setState.mockImplementation((updater: (state: unknown) => unknown) => {
+      const result = updater({
+        state: 'before',
+        activeWorktreeId: 'main-worktree'
+      })
+      setStateResults.push(result)
+    })
+    const runtimeCall = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: 'create-terminal',
+        ok: true,
+        result: {
+          tab: {
+            type: 'terminal',
+            id: 'host-tab-2::leaf-1',
+            parentTabId: 'host-tab-2',
+            leafId: 'leaf-1',
+            title: 'Terminal 2',
+            terminal: 'pty-2',
+            status: 'ready',
+            isActive: true
+          },
+          publicationEpoch: 'epoch-1',
+          snapshotVersion: 2
+        }
+      })
+      .mockResolvedValueOnce({
+        id: 'list',
+        ok: true,
+        result: makeSnapshot()
+      })
+
+    vi.stubGlobal('window', {
+      api: {
+        runtimeEnvironments: {
+          call: runtimeCall
+        }
+      }
+    })
+
+    await expect(
+      createWebRuntimeSessionTerminal({
+        worktreeId: WORKTREE_ID,
+        activate: true,
+        selectWorktree: false
+      })
+    ).resolves.toBe(true)
+
+    expect(setStateResults).not.toContainEqual({ activeWorktreeId: WORKTREE_ID })
   })
 })
 

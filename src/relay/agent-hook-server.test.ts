@@ -117,6 +117,7 @@ describe('RelayAgentHookServer', () => {
       expect(forward.mock.calls[0][0].source).toBe('claude')
       expect(forward.mock.calls[0][0].env).toBe('remote')
       expect(forward.mock.calls[0][0].version).toBe('1')
+      expect(forward.mock.calls[0][0].isReplay).toBe(true)
     } finally {
       server.stop()
     }

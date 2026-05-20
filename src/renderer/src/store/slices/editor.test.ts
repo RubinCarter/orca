@@ -9,6 +9,7 @@ import {
   type RuntimeEnvironmentCallRequest
 } from '../../runtime/runtime-compatibility-test-fixture'
 import { clearRuntimeCompatibilityCacheForTests } from '../../runtime/runtime-rpc-client'
+import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 
 const { toastErrorMock } = vi.hoisted(() => ({
   toastErrorMock: vi.fn()
@@ -248,6 +249,34 @@ describe('createEditorSlice openDiff', () => {
       })
     ])
     expect(store.getState().activeFileId).toBe('wt-1::diff::staged::file.ts')
+  })
+})
+
+describe('createEditorSlice floating editor activation', () => {
+  it('opens floating markdown tabs without changing the main active editor surface', () => {
+    const store = createEditorStore()
+    store.setState({
+      activeFileId: '/repo/main.md',
+      activeTabType: 'editor',
+      activeFileIdByWorktree: { 'wt-1': '/repo/main.md' },
+      activeTabTypeByWorktree: { 'wt-1': 'editor' }
+    } as Partial<AppState>)
+
+    store.getState().openFile({
+      filePath: '/tmp/orca/untitled.md',
+      relativePath: 'untitled.md',
+      worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+      language: 'markdown',
+      isUntitled: true,
+      mode: 'edit'
+    })
+
+    expect(store.getState().activeFileId).toBe('/repo/main.md')
+    expect(store.getState().activeTabType).toBe('editor')
+    expect(store.getState().activeFileIdByWorktree[FLOATING_TERMINAL_WORKTREE_ID]).toBe(
+      '/tmp/orca/untitled.md'
+    )
+    expect(store.getState().activeTabTypeByWorktree[FLOATING_TERMINAL_WORKTREE_ID]).toBe('editor')
   })
 })
 

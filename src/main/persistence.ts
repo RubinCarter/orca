@@ -36,6 +36,7 @@ import type {
   WorktreeMeta,
   WorktreeLineage,
   GlobalSettings,
+  NotificationSettings,
   OnboardingChecklistState,
   OnboardingOutcome,
   OnboardingState,
@@ -183,6 +184,22 @@ function normalizeSortBy(sortBy: unknown): 'name' | 'smart' | 'recent' | 'repo' 
   return getDefaultUIState().sortBy
 }
 
+function normalizeNotificationSettings(value: unknown): NotificationSettings {
+  const defaults = getDefaultNotificationSettings()
+  const candidate =
+    value && typeof value === 'object' ? (value as Partial<NotificationSettings>) : {}
+  const rawVolume = candidate.customSoundVolume
+  const customSoundVolume =
+    typeof rawVolume === 'number' && Number.isFinite(rawVolume)
+      ? Math.min(100, Math.max(0, rawVolume))
+      : defaults.customSoundVolume
+  return {
+    ...defaults,
+    ...candidate,
+    customSoundVolume
+  }
+}
+
 function normalizeAutomationRunWorkspaceDisplayName(value: string | null): string | null {
   const trimmed = value?.trim()
   return trimmed ? trimmed : null
@@ -206,6 +223,13 @@ function normalizeAutomationRunOutputSnapshot(
         ? value.capturedAt
         : Date.now(),
     truncated: value.truncated === true
+  }
+}
+
+function normalizeAutomationSessionReuse(automation: Automation): Automation {
+  return {
+    ...automation,
+    reuseSession: automation.workspaceMode === 'existing' && automation.reuseSession === true
   }
 }
 
@@ -1242,10 +1266,7 @@ export class Store {
               parsed.settings?.visibleTaskProviders
             ),
             openInApplications: normalizeOpenInApplications(parsed.settings?.openInApplications),
-            notifications: {
-              ...getDefaultNotificationSettings(),
-              ...parsed.settings?.notifications
-            },
+            notifications: normalizeNotificationSettings(parsed.settings?.notifications),
             voice: {
               ...getDefaultVoiceSettings(),
               ...parsed.settings?.voice
@@ -1834,9 +1855,9 @@ export class Store {
   // ── Automations ───────────────────────────────────────────────────
 
   listAutomations(): Automation[] {
-    return [...(this.state.automations ?? [])].sort((left, right) =>
-      left.name.localeCompare(right.name)
-    )
+    return (this.state.automations ?? [])
+      .map((automation) => normalizeAutomationSessionReuse(automation))
+      .sort((left, right) => left.name.localeCompare(right.name))
   }
 
   listAutomationRuns(automationId?: string): AutomationRun[] {
@@ -1862,6 +1883,7 @@ export class Store {
       workspaceMode: input.workspaceMode,
       workspaceId: input.workspaceMode === 'existing' ? (input.workspaceId ?? null) : null,
       baseBranch: input.workspaceMode === 'new_per_run' ? (input.baseBranch ?? null) : null,
+      reuseSession: input.workspaceMode === 'existing' ? (input.reuseSession ?? false) : false,
       timezone: input.timezone,
       rrule: input.rrule,
       dtstart: input.dtstart,
@@ -1912,6 +1934,10 @@ export class Store {
             ? (updates.baseBranch ?? null)
             : (current.baseBranch ?? null)
           : null,
+      reuseSession:
+        workspaceMode === 'existing'
+          ? (updates.reuseSession ?? current.reuseSession ?? false)
+          : false,
       rrule,
       dtstart,
       nextRunAt: scheduleChanged
@@ -2137,10 +2163,10 @@ export class Store {
     this.state.settings = {
       ...this.state.settings,
       ...sanitizedUpdates,
-      notifications: {
+      notifications: normalizeNotificationSettings({
         ...this.state.settings.notifications,
         ...sanitizedUpdates.notifications
-      },
+      }),
       ...(mergedTelemetry !== undefined ? { telemetry: mergedTelemetry } : {})
     }
     this.scheduleSave()

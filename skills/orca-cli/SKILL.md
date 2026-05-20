@@ -132,6 +132,8 @@ orca worktree ps --json
 orca worktree current --json
 orca worktree show --worktree id:<worktreeId> --json
 orca worktree create --repo id:<repoId> --name my-task --issue 123 --comment "seed" --json
+orca worktree create --repo id:<repoId> --name related-task --parent-worktree active --json
+orca worktree create --repo id:<repoId> --name independent-task --no-parent --json
 orca worktree set --worktree id:<worktreeId> --display-name "My Task" --json
 orca worktree set --worktree active --comment "reproduced bug; collecting logs from staging" --json
 orca worktree set --worktree active --comment "waiting on review" --json
@@ -146,6 +148,25 @@ Worktree selectors supported in focused v1:
 - `issue:<number>`
 - `active` / `current` to resolve the enclosing Orca-managed worktree from the shell `cwd`
 
+### Worktree Lineage
+
+Worktree lineage records intent; it is not a required flag sequence. When creating a worktree from inside an Orca-managed worktree, decide whether the new work is related to the current work or independent of it.
+
+For related work, rely on Orca's inferred parent. Use `--parent-worktree active` when the current worktree relationship should be explicit or when the shell context might not make the intended parent obvious.
+
+```bash
+orca worktree create --repo id:<repoId> --name related-task --json
+orca worktree create --repo id:<repoId> --name related-task --parent-worktree active --json
+```
+
+For independent work, pass `--no-parent`.
+
+```bash
+orca worktree create --repo id:<repoId> --name independent-task --no-parent --json
+```
+
+A different branch, issue, or name is not enough by itself to make the work independent. Treat lineage as a record of why the workspace exists, not as a property of the branch name.
+
 ### Automations
 
 ```bash
@@ -153,7 +174,8 @@ orca automations list --json
 orca automations show <automationId> --json
 orca automations create --name "Daily review" --trigger daily --time 09:00 --prompt "Review open changes" --provider codex --repo id:<repoId> --json
 orca automations create --name "Weekday triage" --trigger "0 9 * * 1-5" --prompt "Triage issues" --provider claude --repo path:/abs/repo --disabled --json
-orca automations edit <automationId> --name "Weekday review" --trigger weekdays --time 09:30 --json
+orca automations create --name "Inbox digest" --trigger hourly --prompt "Summarize unread mail" --provider codex --workspace active --reuse-session --json
+orca automations edit <automationId> --name "Weekday review" --trigger weekdays --time 09:30 --fresh-session --json
 orca automations run <automationId> --json
 orca automations runs --id <automationId> --json
 orca automations remove <automationId> --json
@@ -162,6 +184,8 @@ orca automations remove <automationId> --json
 Automation schedules accept `hourly`, `daily`, `weekdays`, `weekly`, a 5-field cron expression, or an RRULE string. Use `--time <HH:MM>` with `daily`, `weekdays`, or `weekly`; use `--day <0-6>` only with `weekly`, where Sunday is `0`.
 
 Use `--repo <selector>` for a new worktree per run, or `--workspace <selector>` / `--workspace-mode existing` when the automation should run in an existing Orca worktree. `--repo` and `--workspace` are mutually exclusive.
+
+Use `--reuse-session` only for existing-workspace automations when later runs should submit into the previous live automation terminal. Use `--fresh-session` to turn reuse back off. If the previous live terminal is gone, Orca falls back to a fresh session.
 
 Why: automations are persisted through the running Orca runtime, so use the CLI instead of editing automation storage files directly. Prefer `--disabled` when creating an automation during tests or setup so it cannot run before the user reviews it.
 
@@ -203,6 +227,8 @@ Why: `--direction horizontal` splits the pane **left and right** (new pane appea
 - Prefer `--json` for all machine-driven use.
 - Use `worktree ps` as the first summary view when many worktrees may exist.
 - Use `worktree current` or `--worktree active` when the agent is already running inside the target worktree.
+- When creating a worktree from an existing workspace, choose lineage based on intent: related work should keep parent context, independent work should use `--no-parent`.
+- Let Orca infer the parent when the current/caller workspace is the right parent; use `--parent-worktree active` when making that relationship explicit is useful.
 - Treat `orca worktree set --worktree active --comment ... --json` as a default coding-agent behavior whenever the agent reaches a meaningful checkpoint in the current Orca-managed worktree; the user does not need to explicitly ask for each update.
 - Update the worktree comment at significant checkpoints, not every trivial command. Good checkpoints include reproducing a bug, confirming a hypothesis, starting a risky migration, finishing a meaningful implementation slice, switching from investigation to fix, or blocking on external input.
 - Write comments as short status snapshots of the current state, for example `debugging AWS CLI profile resolution`, `confirmed flaky test is caused by temp-dir race`, or `fix implemented; running integration tests`.

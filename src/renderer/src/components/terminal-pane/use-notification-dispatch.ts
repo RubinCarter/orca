@@ -22,6 +22,28 @@ function hasLivePtyForWorktree(
   return tabs.some((tab) => (state.ptyIdsByTabId[tab.id] ?? []).length > 0)
 }
 
+function hasLivePtyForPaneKey(
+  state: ReturnType<typeof useAppStore.getState>,
+  paneKey: string | undefined
+): boolean {
+  if (!paneKey) {
+    return false
+  }
+  const tabId = getPaneKeyTabId(paneKey)
+  return tabId !== null && (state.ptyIdsByTabId[tabId] ?? []).length > 0
+}
+
+function hasLivePtyForNotification(
+  state: ReturnType<typeof useAppStore.getState>,
+  worktreeId: string,
+  paneKey: string | undefined
+): boolean {
+  // Why: inactive-worktree hook completions can arrive while the worktree tab
+  // list is between renderer hydration states; the pane-key PTY binding is the
+  // live terminal source in that path.
+  return hasLivePtyForWorktree(state, worktreeId) || hasLivePtyForPaneKey(state, paneKey)
+}
+
 function getPaneKeyTabId(paneKey: string): string | null {
   const parsed = parsePaneKey(paneKey)
   if (parsed) {
@@ -132,7 +154,7 @@ export function dispatchTerminalNotification(
   // state. Checking for live PTYs at dispatch time catches ALL phantom
   // notification sources regardless of which timer or callback produced
   // them, rather than trying to cancel each one individually.
-  if (!hasLivePtyForWorktree(state, worktreeId)) {
+  if (!hasLivePtyForNotification(state, worktreeId, event.paneKey)) {
     return
   }
 
@@ -144,6 +166,7 @@ export function dispatchTerminalNotification(
   const worktree = getWorktreeMapFromState(state).get(worktreeId)
   const repo = worktree ? getRepoMapFromState(state).get(worktree.repoId) : null
   const customSoundPath = state.settings?.notifications?.customSoundPath ?? null
+  const customSoundVolume = state.settings?.notifications?.customSoundVolume ?? null
   const agentStatus =
     event.source === 'agent-task-complete' && event.paneKey
       ? state.agentStatusByPaneKey[event.paneKey]
@@ -168,6 +191,7 @@ export function dispatchTerminalNotification(
     .dispatch({
       source: event.source,
       worktreeId,
+      paneKey: event.paneKey,
       repoLabel: repo?.displayName,
       worktreeLabel: worktree?.displayName || worktree?.branch || worktreeId,
       hasMultipleActiveRepos: countReposNeedingNotificationDisambiguation(state) > 1,
@@ -177,7 +201,7 @@ export function dispatchTerminalNotification(
     })
     .then((result) => {
       if (result.delivered) {
-        void playDesktopNotificationSound(customSoundPath)
+        void playDesktopNotificationSound(customSoundPath, customSoundVolume)
       }
     })
     .catch((err) => {

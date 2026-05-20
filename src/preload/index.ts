@@ -16,6 +16,9 @@ import type {
   CustomPet,
   FsChangedPayload,
   GetRateLimitResult,
+  GitHubPRRefreshCandidate,
+  GitHubPRRefreshEvent,
+  GitHubPRRefreshReason,
   GitHubAssignableUser,
   GitHubCommentResult,
   GitHubWorkItem,
@@ -103,6 +106,7 @@ import type {
   AgentStatusIpcPayload,
   MigrationUnsupportedPtyEntry
 } from '../shared/agent-status-types'
+import type { AgentInterruptInferenceRequest } from '../shared/agent-interrupt-intent'
 import type {
   SpeechErrorEvent,
   SpeechLifecycleEvent,
@@ -349,6 +353,7 @@ const api = {
     getFeatureWallAssetBaseUrl: (): Promise<string> =>
       ipcRenderer.invoke('app:getFeatureWallAssetBaseUrl'),
     relaunch: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
+    reload: (): Promise<void> => ipcRenderer.invoke('app:reload'),
     // Why: on macOS this returns AppleCurrentKeyboardLayoutInputSourceID so
     // the renderer's keyboard-layout probe can distinguish Polish Pro / US
     // Extended / ABC Extended / IME Roman modes from plain US QWERTY (see
@@ -604,6 +609,8 @@ const api = {
     write: (id: string, data: string): void => {
       ipcRenderer.send('pty:write', { id, data })
     },
+    writeAccepted: (id: string, data: string): Promise<boolean> =>
+      ipcRenderer.invoke('pty:writeAccepted', { id, data }),
 
     resize: (id: string, cols: number, rows: number): void => {
       ipcRenderer.send('pty:resize', { id, cols, rows })
@@ -767,6 +774,27 @@ const api = {
       linkedPRNumber?: number | null
     }): Promise<unknown> => ipcRenderer.invoke('gh:prForBranch', args),
 
+    refreshPRNow: (args: { candidate: GitHubPRRefreshCandidate }): Promise<unknown> =>
+      ipcRenderer.invoke('gh:refreshPRNow', args),
+
+    enqueuePRRefresh: (args: {
+      candidate: GitHubPRRefreshCandidate
+      reason: GitHubPRRefreshReason
+      priority?: number
+    }): Promise<unknown> => ipcRenderer.invoke('gh:enqueuePRRefresh', args),
+
+    reportVisiblePRRefreshCandidates: (args: {
+      candidates: GitHubPRRefreshCandidate[]
+      generation: number
+    }): Promise<unknown> => ipcRenderer.invoke('gh:reportVisiblePRRefreshCandidates', args),
+
+    onPRRefreshEvent: (callback: (event: GitHubPRRefreshEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, event: GitHubPRRefreshEvent): void =>
+        callback(event)
+      ipcRenderer.on('gh:prRefreshEvent', listener)
+      return () => ipcRenderer.removeListener('gh:prRefreshEvent', listener)
+    },
+
     issue: (args: { repoPath: string; repoId?: string; number: number }): Promise<unknown> =>
       ipcRenderer.invoke('gh:issue', args),
 
@@ -839,6 +867,16 @@ const api = {
       noCache?: boolean
     }): Promise<unknown[]> => ipcRenderer.invoke('gh:prChecks', args),
 
+    prCheckDetails: (args: {
+      repoPath: string
+      repoId?: string
+      checkRunId?: number
+      workflowRunId?: number
+      checkName?: string
+      url?: string | null
+      prRepo?: { owner: string; repo: string } | null
+    }): Promise<unknown | null> => ipcRenderer.invoke('gh:prCheckDetails', args),
+
     rerunPRChecks: (args: {
       repoPath: string
       repoId?: string
@@ -904,6 +942,14 @@ const api = {
       reviewers: string[]
     }): Promise<{ ok: true } | { ok: false; error: string }> =>
       ipcRenderer.invoke('gh:requestPRReviewers', args),
+
+    removePRReviewers: (args: {
+      repoPath: string
+      repoId?: string
+      prNumber: number
+      reviewers: string[]
+    }): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('gh:removePRReviewers', args),
 
     updateIssue: (args: {
       repoPath: string
@@ -1209,6 +1255,8 @@ const api = {
       ipcRenderer.invoke('agentHooks:codexStatus'),
     geminiStatus: (): Promise<AgentHookInstallStatus> =>
       ipcRenderer.invoke('agentHooks:geminiStatus'),
+    antigravityStatus: (): Promise<AgentHookInstallStatus> =>
+      ipcRenderer.invoke('agentHooks:antigravityStatus'),
     cursorStatus: (): Promise<AgentHookInstallStatus> =>
       ipcRenderer.invoke('agentHooks:cursorStatus'),
     droidStatus: (): Promise<AgentHookInstallStatus> =>
@@ -1267,7 +1315,10 @@ const api = {
       ipcRenderer.invoke('notifications:getPermissionStatus'),
     requestPermission: (): Promise<NotificationPermissionStatusResult> =>
       ipcRenderer.invoke('notifications:requestPermission'),
-    playSound: async (options?: { force?: boolean }): Promise<NotificationSoundResult> => {
+    playSound: async (options?: {
+      force?: boolean
+      volume?: number
+    }): Promise<NotificationSoundResult> => {
       try {
         // Why: drop replays while the sound is still ringing. The "test"
         // button bypasses with force so the user always hears a confirmation.
@@ -1308,6 +1359,9 @@ const api = {
         // the sound from the start instead of stacking overlapping copies.
         // Matches GNOME canberra and VS Code AccessibilitySignalService.
         audio.currentTime = 0
+        if (typeof options?.volume === 'number' && Number.isFinite(options.volume)) {
+          audio.volume = Math.min(1, Math.max(0, options.volume / 100))
+        }
         isNotificationSoundPlaying = true
         const release = (): void => {
           isNotificationSoundPlaying = false
@@ -2411,11 +2465,25 @@ const api = {
       return () => ipcRenderer.removeListener('ui:renameTerminal', listener)
     },
     onFocusTerminal: (
-      callback: (data: { tabId: string; worktreeId: string; leafId?: string | null }) => void
+      callback: (data: {
+        tabId: string
+        worktreeId: string
+        leafId?: string | null
+        ackPaneKeyOnSuccess?: string
+        flashFocusedPane?: boolean
+        scrollToBottomIfOutputSinceLastView?: boolean
+      }) => void
     ): (() => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        data: { tabId: string; worktreeId: string; leafId?: string | null }
+        data: {
+          tabId: string
+          worktreeId: string
+          leafId?: string | null
+          ackPaneKeyOnSuccess?: string
+          flashFocusedPane?: boolean
+          scrollToBottomIfOutputSinceLastView?: boolean
+        }
       ) => callback(data)
       ipcRenderer.on('ui:focusTerminal', listener)
       return () => ipcRenderer.removeListener('ui:focusTerminal', listener)
@@ -3023,6 +3091,8 @@ const api = {
      *  knows which tabs exist. */
     getSnapshot: (): Promise<AgentStatusIpcPayload[]> =>
       ipcRenderer.invoke('agentStatus:getSnapshot'),
+    inferInterrupt: (request: AgentInterruptInferenceRequest): Promise<boolean> =>
+      ipcRenderer.invoke('agentStatus:inferInterrupt', request),
     onMigrationUnsupported: (
       callback: (entry: MigrationUnsupportedPtyEntry) => void
     ): (() => void) => {

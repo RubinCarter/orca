@@ -114,6 +114,7 @@ describe('listWorkItems', () => {
             author: { login: 'octocat' },
             isDraft: false,
             headRefName: 'feature/add-feature',
+            headRefOid: 'head-42',
             baseRefName: 'main',
             reviewRequests: [
               {
@@ -156,7 +157,7 @@ describe('listWorkItems', () => {
         '--limit',
         '10',
         '--json',
-        'number,title,state,url,labels,updatedAt,author,isDraft,headRefName,baseRefName,headRepositoryOwner,reviewRequests',
+        'number,title,state,url,labels,updatedAt,author,isDraft,headRefName,baseRefName,headRefOid,headRepositoryOwner,reviewRequests',
         '--repo',
         'acme/widgets',
         '--assignee',
@@ -192,6 +193,8 @@ describe('listWorkItems', () => {
         author: 'octocat',
         branchName: 'feature/add-feature',
         baseRefName: 'main',
+        headSha: 'head-42',
+        prRepo: { owner: 'acme', repo: 'widgets' },
         reviewRequests: [
           {
             login: 'AmethystLiang',
@@ -218,6 +221,7 @@ describe('listWorkItems', () => {
           author: { login: 'octocat' },
           isDraft: true,
           headRefName: 'draft/work',
+          headRefOid: 'head-7',
           baseRefName: 'main'
         }
       ])
@@ -231,7 +235,7 @@ describe('listWorkItems', () => {
         '--limit',
         '10',
         '--json',
-        'number,title,state,url,labels,updatedAt,author,isDraft,headRefName,baseRefName,headRepositoryOwner,reviewRequests',
+        'number,title,state,url,labels,updatedAt,author,isDraft,headRefName,baseRefName,headRefOid,headRepositoryOwner,reviewRequests',
         '--repo',
         'acme/widgets',
         '--state',
@@ -252,7 +256,9 @@ describe('listWorkItems', () => {
         updatedAt: '2026-03-30T00:00:00Z',
         author: 'octocat',
         branchName: 'draft/work',
-        baseRefName: 'main'
+        baseRefName: 'main',
+        headSha: 'head-7',
+        prRepo: { owner: 'acme', repo: 'widgets' }
       }
     ])
   })
@@ -304,6 +310,7 @@ describe('listWorkItems', () => {
             author: { login: 'octocat' },
             isDraft: false,
             headRefName: 'feature/open-pr',
+            headRefOid: 'head-2',
             baseRefName: 'main'
           }
         ])
@@ -331,7 +338,7 @@ describe('listWorkItems', () => {
         '--limit',
         '10',
         '--json',
-        'number,title,state,url,labels,updatedAt,author,isDraft,headRefName,baseRefName,headRepositoryOwner,reviewRequests',
+        'number,title,state,url,labels,updatedAt,author,isDraft,headRefName,baseRefName,headRefOid,headRepositoryOwner,reviewRequests',
         '--repo',
         'acme/widgets',
         '--state',
@@ -362,7 +369,9 @@ describe('listWorkItems', () => {
         updatedAt: '2026-03-30T00:00:00Z',
         author: 'octocat',
         branchName: 'feature/open-pr',
-        baseRefName: 'main'
+        baseRefName: 'main',
+        headSha: 'head-2',
+        prRepo: { owner: 'acme', repo: 'widgets' }
       }
     ])
   })
@@ -381,6 +390,7 @@ describe('listWorkItems', () => {
           user: { login: 'contributor' },
           head: {
             ref: 'feat/onboarding-model-choice-782',
+            sha: 'head-1849',
             repo: null,
             label: 'contributor:feat/onboarding-model-choice-782'
           },
@@ -403,6 +413,8 @@ describe('listWorkItems', () => {
         author: 'contributor',
         branchName: 'feat/onboarding-model-choice-782',
         baseRefName: 'main',
+        headSha: 'head-1849',
+        prRepo: { owner: 'stablyai', repo: 'orca' },
         isCrossRepository: true
       }
     ])

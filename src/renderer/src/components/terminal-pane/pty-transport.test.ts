@@ -28,6 +28,7 @@ describe('createIpcPtyTransport', () => {
           ...originalWindow?.api?.pty,
           spawn: vi.fn().mockResolvedValue({ id: 'pty-1' }),
           write: vi.fn(),
+          writeAccepted: vi.fn().mockResolvedValue(true),
           resize: vi.fn(),
           kill: vi.fn(),
           onData: vi.fn((callback: (payload: { id: string; data: string }) => void) => {
@@ -65,6 +66,19 @@ describe('createIpcPtyTransport', () => {
     expect(onData).not.toBeNull()
     expect(onExit).not.toBeNull()
     transport.disconnect()
+  })
+
+  it('uses acknowledged writes only for local IPC PTYs', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const localTransport = createIpcPtyTransport({})
+
+    await localTransport.connect({ url: '', callbacks: {} })
+    await expect(localTransport.sendInputAccepted?.('\x03')).resolves.toBe(true)
+    expect(window.api.pty.writeAccepted).toHaveBeenCalledWith('pty-1', '\x03')
+
+    const sshTransport = createIpcPtyTransport({ connectionId: 'ssh-1' })
+    await sshTransport.connect({ url: '', callbacks: {} })
+    expect(sshTransport.sendInputAccepted).toBeUndefined()
   })
 
   it('suppresses attention side effects when replaying eager-buffered data during attach', async () => {

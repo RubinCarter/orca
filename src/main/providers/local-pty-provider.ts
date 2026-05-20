@@ -440,6 +440,9 @@ export class LocalPtyProvider implements IPtyProvider {
 
   // Local PTYs are always attached -- no-op. Remote providers use this to resubscribe.
   async attach(_id: string): Promise<void> {}
+  hasPty(id: string): boolean {
+    return ptyProcesses.has(id)
+  }
   write(id: string, data: string): void {
     ptyProcesses.get(id)?.write(data)
   }

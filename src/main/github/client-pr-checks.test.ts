@@ -7,6 +7,7 @@ const {
   getIssueOwnerRepoMock,
   gitExecFileAsyncMock,
   extractExecErrorMock,
+  getRateLimitMock,
   rateLimitGuardMock,
   noteRateLimitSpendMock,
   acquireMock,
@@ -27,6 +28,7 @@ const {
     }
     return { stderr: String(err), stdout: '' }
   }),
+  getRateLimitMock: vi.fn(),
   rateLimitGuardMock: vi.fn(() => ({ blocked: false })),
   noteRateLimitSpendMock: vi.fn(),
   acquireMock: vi.fn(),
@@ -54,6 +56,7 @@ vi.mock('../git/runner', () => ({
 }))
 
 vi.mock('./rate-limit', () => ({
+  getRateLimit: getRateLimitMock,
   rateLimitGuard: rateLimitGuardMock,
   noteRateLimitSpend: noteRateLimitSpendMock
 }))
@@ -68,6 +71,8 @@ describe('getPRChecks', () => {
     getIssueOwnerRepoMock.mockReset()
     gitExecFileAsyncMock.mockReset()
     extractExecErrorMock.mockClear()
+    getRateLimitMock.mockReset()
+    getRateLimitMock.mockResolvedValue({ resources: {} })
     rateLimitGuardMock.mockReset()
     rateLimitGuardMock.mockReturnValue({ blocked: false })
     noteRateLimitSpendMock.mockReset()
@@ -157,7 +162,7 @@ describe('getPRChecks', () => {
     consoleWarnSpy.mockRestore()
   })
 
-  it('keeps unexpected gh pr checks fallback failures inside the empty-checks contract', async () => {
+  it('throws unexpected gh pr checks fallback failures so callers preserve cache', async () => {
     const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
     ghExecFileAsyncMock
@@ -169,12 +174,8 @@ describe('getPRChecks', () => {
         })
       )
 
-    const checks = await getPRChecks('/repo-root', 42, 'head-oid')
-
-    expect(checks).toEqual([])
-    expect(consoleWarnSpy).toHaveBeenCalledWith(
-      'getPRChecks via head SHA failed, falling back to gh pr checks:',
-      expect.any(Error)
+    await expect(getPRChecks('/repo-root', 42, 'head-oid')).rejects.toThrow(
+      'Command failed: gh pr checks 42'
     )
     expect(consoleWarnSpy).toHaveBeenCalledWith('getPRChecks failed:', expect.any(Error))
     consoleWarnSpy.mockRestore()
@@ -251,5 +252,14 @@ describe('getPRChecks', () => {
       ['pr', 'checks', '42', '--json', 'name,state,link', '--repo', 'acme/widgets'],
       { cwd: '/repo-root' }
     )
+  })
+
+  it('throws when both check-runs and gh pr checks fail', async () => {
+    getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    ghExecFileAsyncMock
+      .mockRejectedValueOnce(new Error('gh: No commit found for SHA: stale-head (HTTP 422)'))
+      .mockRejectedValueOnce(new Error('rate limited'))
+
+    await expect(getPRChecks('/repo-root', 42, 'stale-head')).rejects.toThrow('rate limited')
   })
 })

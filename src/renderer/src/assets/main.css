@@ -1343,6 +1343,63 @@
   letter-spacing: 0.03em;
 }
 
+.orca-diff-comment-author-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.orca-diff-comment-avatar {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--foreground) 15%, transparent);
+  background: var(--muted);
+}
+
+.orca-diff-comment-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.orca-diff-comment-author {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orca-diff-comment-created-at {
+  flex: 0 0 auto;
+}
+
+.orca-diff-comment-link {
+  margin-left: auto;
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.orca-diff-comment-link:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
 /* Why: keep edit + delete close together but visually distinct from the meta
    label. Both share the same subtle button styling; only delete recolours on
    hover (destructive intent). */
@@ -1406,6 +1463,10 @@
   color: var(--foreground);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.orca-diff-comment-review-body {
+  padding-left: 24px;
 }
 
 /* Why: mirror the saved-note card treatment so the "entering" and "saved"

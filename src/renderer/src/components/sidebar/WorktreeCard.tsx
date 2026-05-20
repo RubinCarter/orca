@@ -42,8 +42,6 @@ type WorktreeCardProps = {
   isMultiSelected?: boolean
   selectedWorktrees?: readonly Worktree[]
   hideRepoBadge?: boolean
-  parentLabel?: string
-  lineageState?: 'valid' | 'missing'
   lineageChildCount?: number
   lineageCollapsed?: boolean
   lineageChildren?: React.ReactNode
@@ -75,8 +73,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
   onContextMenuSelect,
   nativeDragEnabled = true,
   hideRepoBadge,
-  parentLabel,
-  lineageState,
   lineageChildCount = 0,
   lineageCollapsed = false,
   lineageChildren,
@@ -545,9 +541,10 @@ const WorktreeCard = React.memo(function WorktreeCard({
           </div>
         </div>
 
-        {/* Subtitle row: Repo badge + Branch */}
+        {/* Why: the left metadata lane clips before the right metadata badges,
+             so long lineage labels truncate instead of painting underneath icons. */}
         <div className="flex items-center gap-1.5 min-w-0">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
             {repo && !hideRepoBadge && (
               <div className="flex items-center gap-1.5 shrink-0 px-1.5 py-0.5 rounded-[4px] bg-accent border border-border dark:bg-accent/50 dark:border-border/60">
                 <div
@@ -588,23 +585,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
             )}
 
             <CacheTimer worktreeId={worktree.id} />
-
-            {parentLabel && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  'h-[16px] px-1.5 text-[10px] font-medium rounded shrink-0 gap-1 leading-none',
-                  lineageState === 'missing'
-                    ? 'text-muted-foreground border-border bg-muted/40'
-                    : 'text-muted-foreground border-border bg-accent/50'
-                )}
-              >
-                <Workflow className="size-2.5" />
-                <span className="max-w-[7rem] truncate">
-                  {lineageState === 'missing' ? 'Missing parent' : `from ${parentLabel}`}
-                </span>
-              </Badge>
-            )}
           </div>
 
           {hasDetails ? (

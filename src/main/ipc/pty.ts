@@ -313,6 +313,9 @@ export function buildPtyHostEnv(
   // must inject the loopback receiver coordinates before the agent starts.
   // Without these env vars the global hook config cannot map callbacks back
   // to the correct Orca pane.
+  // Why: nested Orca terminals can inherit another process's hook endpoint or
+  // token. Strip all hook runtime coordinates before injecting this PTY's fresh
+  // server values so callbacks route to the owning app/runtime.
   for (const key of AGENT_HOOK_RUNTIME_ENV_KEYS) {
     delete baseEnv[key]
   }
@@ -583,6 +586,7 @@ export function registerPtyHandlers(
   ipcMain.removeHandler('pty:declarePendingPaneSerializer')
   ipcMain.removeHandler('pty:settlePaneSerializer')
   ipcMain.removeHandler('pty:clearPendingPaneSerializer')
+  ipcMain.removeHandler('pty:writeAccepted')
   ipcMain.removeAllListeners('pty:write')
   ipcMain.removeAllListeners('pty:ackColdRestore')
   ipcMain.removeAllListeners('pty:serializeBuffer:response')
@@ -1584,7 +1588,7 @@ export function registerPtyHandlers(
     }
   )
 
-  ipcMain.on('pty:write', (_event, args: { id: string; data: string }) => {
+  const writePtyInput = (args: { id: string; data: string }): boolean => {
     // Why: defense-in-depth for the mobile-presence lock. The renderer's
     // xterm.onData guard already drops desktop keystrokes when mobile is
     // driving, but a stale view between the main-side state flip and the
@@ -1592,14 +1596,50 @@ export function registerPtyHandlers(
     // This server-side check catches it. See
     // docs/mobile-presence-lock.md.
     if (runtime?.getDriver(args.id).kind === 'mobile') {
-      return
+      return false
     }
     const provider = ptyOwnership.has(args.id) ? tryGetProviderForPty(args.id) : undefined
     if (!provider) {
-      return
+      return false
     }
-    lastInputAtByPty.set(args.id, performance.now())
-    provider.write(args.id, args.data)
+    try {
+      lastInputAtByPty.set(args.id, performance.now())
+      provider.write(args.id, args.data)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const writePtyInputAccepted = (args: { id: string; data: string }): boolean => {
+    if (runtime?.getDriver(args.id).kind === 'mobile') {
+      return false
+    }
+    // Why: the acknowledgement is used to infer Ctrl+C/Escape actually reached
+    // the local PTY. SSH providers are fire-and-forget relay notifications, so
+    // they cannot truthfully acknowledge until the relay protocol grows a write
+    // request/response.
+    if (ptyOwnership.get(args.id) !== null) {
+      return false
+    }
+    const provider = tryGetProviderForPty(args.id)
+    if (!provider?.hasPty?.(args.id)) {
+      return false
+    }
+    try {
+      lastInputAtByPty.set(args.id, performance.now())
+      provider.write(args.id, args.data)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  ipcMain.on('pty:write', (_event, args: { id: string; data: string }) => {
+    writePtyInput(args)
+  })
+  ipcMain.handle('pty:writeAccepted', (_event, args: { id: string; data: string }): boolean => {
+    return writePtyInputAccepted(args)
   })
 
   // Why: resize is fire-and-forget — the renderer doesn't need a reply.

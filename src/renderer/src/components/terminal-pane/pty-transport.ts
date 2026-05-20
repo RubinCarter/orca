@@ -520,6 +520,17 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
       return true
     },
 
+    ...(connectionId
+      ? {}
+      : {
+          async sendInputAccepted(data: string): Promise<boolean> {
+            if (!connected || !ptyId) {
+              return false
+            }
+            return window.api.pty.writeAccepted(ptyId, data)
+          }
+        }),
+
     resize(cols: number, rows: number): boolean {
       if (!connected || !ptyId) {
         return false

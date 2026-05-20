@@ -187,8 +187,8 @@ Selectors:
   --repo <selector>         Registered repo selector such as id:<id>, name:<name>, or path:<path>
   --worktree <selector>     Worktree selector such as id:<id>, branch:<branch>, issue:<number>, path:<path>, or active/current
   --terminal <handle>       Runtime-issued terminal handle returned by \`orca terminal list --json\`
-  --parent-worktree <selector> Parent worktree selector; create infers one from the Orca terminal or current directory by default
-  --no-parent               Force worktree creation/update to have no parent lineage
+  --parent-worktree <selector> Parent worktree selector; create infers a child of the caller/current worktree by default
+  --no-parent               Force no parent lineage for unrelated worktree creation/update
 
 Terminal Send Options:
   --text <text>             Text to send to the terminal
@@ -355,11 +355,11 @@ export function formatFlagHelp(flag: string): string {
     limit: '--limit <n>            Maximum number of rows to return',
     'mouse-button': '--mouse-button <btn>   Mouse button: left, right, or middle',
     name: '--name <name>          Name for the new worktree or automation',
-    'no-parent': '--no-parent            Force no parent lineage',
+    'no-parent': '--no-parent            Force no parent lineage for unrelated work',
     'no-screenshot': '--no-screenshot       Skip screenshot capture after the operation',
     pages: '--pages <n>           Number of scroll pages',
     'parent-worktree':
-      '--parent-worktree <selector> Parent worktree selector; create infers one by default',
+      '--parent-worktree <selector> Parent selector; create infers the caller/current worktree by default',
     path: '--path <path>          Filesystem path to the repo',
     query: '--query <text>        Search text for matching refs',
     ref: '--ref <ref>            Base ref to persist for the repo',
@@ -386,6 +386,9 @@ export function formatFlagHelp(flag: string): string {
     timezone: '--timezone <tz>       IANA timezone for the automation',
     enabled: '--enabled              Enable the automation',
     disabled: '--disabled             Disable the automation',
+    'reuse-session':
+      '--reuse-session        Reuse the previous live session for existing-workspace runs',
+    'fresh-session': '--fresh-session        Disable session reuse for future runs',
     'workspace-mode': '--workspace-mode <mode> existing or new-per-run',
     'missed-run-grace-minutes': '--missed-run-grace-minutes <n> Missed-run grace window',
     'value-stdin': '--value-stdin         Read set-value payload from stdin',

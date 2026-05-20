@@ -289,6 +289,8 @@ export type DiffComment = {
   lineNumber: number
   body: string
   createdAt: number
+  /** Set after the note has been handed to an agent. Edits clear it. */
+  sentAt?: number
   // Reserved for future "comments on the original side" — always 'modified' in v1.
   side: 'modified'
 }
@@ -608,6 +610,88 @@ export type PRInfo = {
   conflictSummary?: PRConflictSummary
 }
 
+export type PRRefreshOutcome =
+  | { kind: 'found'; pr: PRInfo; fetchedAt: number }
+  | { kind: 'no-pr'; fetchedAt: number }
+  | {
+      kind: 'upstream-error'
+      errorType:
+        | 'rate_limited'
+        | 'auth'
+        | 'network'
+        | 'permission'
+        | 'repo_unavailable'
+        | 'gh_unavailable'
+        | 'unknown'
+      message: string
+      fetchedAt: number
+    }
+
+export type GitHubPRRefreshReason = 'visible' | 'active' | 'post-push' | 'manual' | 'swr'
+
+export type GitHubPRRefreshAlias = {
+  cacheKey: string
+  repoId?: string
+  repoPath: string
+  branch: string
+  worktreeId?: string
+}
+
+export type GitHubPRRefreshCandidate = GitHubPRRefreshAlias & {
+  linkedPRNumber?: number | null
+  repoKind: RepoKind
+  repoId: string
+  isBare?: boolean
+  isArchived?: boolean
+  connectionId?: string | null
+  connectionState?: 'connected' | 'disconnected' | 'unknown'
+  cachedFetchedAt?: number | null
+  cachedHasPR?: boolean | null
+  cachedPRState?: PRState | null
+  cachedChecksStatus?: CheckStatus | null
+}
+
+export type GitHubPRRefreshSkippedReason =
+  | 'fresh'
+  | 'not-git'
+  | 'bare'
+  | 'archived'
+  | 'disconnected'
+  | 'remote'
+  | 'rate-limit'
+
+type GitHubPRRefreshEventBase = {
+  sequence: number
+  reason: GitHubPRRefreshReason
+  aliases: GitHubPRRefreshAlias[]
+}
+
+export type GitHubPRRefreshEvent =
+  | (GitHubPRRefreshEventBase & {
+      outcome: PRRefreshOutcome
+      status?: never
+      pausedUntil?: never
+      skippedReason?: never
+    })
+  | (GitHubPRRefreshEventBase & {
+      status: 'queued' | 'in-flight'
+      outcome?: never
+      pausedUntil?: never
+      skippedReason?: never
+    })
+  | (GitHubPRRefreshEventBase & {
+      status: 'paused'
+      pausedUntil: number
+      skippedReason: 'rate-limit'
+      outcome?: never
+    })
+  | (GitHubPRRefreshEventBase & {
+      status: 'skipped'
+      skippedReason: GitHubPRRefreshSkippedReason
+      outcome?: never
+      pausedUntil?: never
+    })
+
 export type PRCheckDetail = {
   name: string
   status: 'queued' | 'in_progress' | 'completed'
@@ -623,6 +707,49 @@ export type PRCheckDetail = {
   url: string | null
   checkRunId?: number
   workflowRunId?: number
+}
+
+export type PRCheckAnnotation = {
+  path: string | null
+  startLine: number | null
+  endLine: number | null
+  annotationLevel: string | null
+  title: string | null
+  message: string
+  rawDetails: string | null
+}
+
+export type PRCheckStep = {
+  name: string
+  status: string | null
+  conclusion: string | null
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export type PRCheckJob = {
+  name: string
+  status: string | null
+  conclusion: string | null
+  startedAt: string | null
+  completedAt: string | null
+  url: string | null
+  steps: PRCheckStep[]
+}
+
+export type PRCheckRunDetails = {
+  name: string
+  status: PRCheckDetail['status'] | string | null
+  conclusion: PRCheckDetail['conclusion'] | string | null
+  url: string | null
+  detailsUrl: string | null
+  startedAt: string | null
+  completedAt: string | null
+  title: string | null
+  summary: string | null
+  text: string | null
+  annotations: PRCheckAnnotation[]
+  jobs: PRCheckJob[]
 }
 
 export type GitHubRerunPRChecksResult = { ok: true; count: number } | { ok: false; error: string }
@@ -657,6 +784,8 @@ export type PRComment = {
   threadId?: string
   /** Whether the review thread has been resolved. Only meaningful when threadId is set. */
   isResolved?: boolean
+  /** True when GitHub no longer maps the thread to the current diff. */
+  isOutdated?: boolean
   /** End line of the review annotation (1-based). */
   line?: number
   /** Start line of the review annotation range (1-based). Absent for single-line comments. */
@@ -718,6 +847,10 @@ export type GitHubWorkItem = {
   author: string | null
   branchName?: string
   baseRefName?: string
+  // Why: PR checks are keyed by head commit; carrying this lets task rows use
+  // the cached check-runs endpoint instead of one `gh pr checks` call per row.
+  headSha?: string
+  prRepo?: GitHubRepositoryIdentity
   additions?: number
   deletions?: number
   changedFiles?: number
@@ -748,6 +881,8 @@ export type GitHubPRFile = {
   deletions: number
   /** GitHub marks files above its diff size limit as binary-like; we skip content fetches for these. */
   isBinary: boolean
+  /** Modified-side line numbers that GitHub accepts for inline review comments. */
+  reviewCommentLineNumbers?: number[]
   /** GitHub's per-viewer review state. DISMISSED means new changes arrived after the file was viewed. */
   viewerViewedState?: GitHubPRFileViewedState
 }
@@ -873,10 +1008,9 @@ export type LinearComment = {
 export type GitHubIssueUpdate = {
   state?: 'open' | 'closed'
   title?: string
-  // Why: body writes are driven by the Project-mode slug-addressed path
-  // (`updateIssueBySlug`) because `gh issue edit` does not consistently
-  // cover every body-edit case the dialog needs; the repoPath-based
-  // `updateIssue` flow keeps ignoring `body` for backward compatibility.
+  // Why: body writes use the REST issue endpoint instead of `gh issue edit`
+  // because that command does not consistently cover every body-edit case the
+  // dialog needs.
   body?: string
   addLabels?: string[]
   removeLabels?: string[]
@@ -1205,6 +1339,7 @@ export type NotificationSettings = {
   terminalBell: boolean
   suppressWhenFocused: boolean
   customSoundPath: string | null
+  customSoundVolume: number
 }
 
 export type CodexManagedAccount = {
@@ -1272,6 +1407,7 @@ export type TuiAgent =
   | 'opencode' // OpenCode
   | 'pi' // Pi (pi.dev)
   | 'gemini' // Gemini CLI
+  | 'antigravity' // Google Antigravity CLI
   | 'aider' // Aider
   | 'goose' // Goose
   | 'amp' // Amp
@@ -1706,6 +1842,8 @@ export type NotificationEventSource = 'agent-task-complete' | 'terminal-bell' | 
 export type NotificationDispatchRequest = {
   source: NotificationEventSource
   worktreeId?: string
+  /** Stable `${tabId}:${leafId}` terminal pane key for click-to-focus routing. */
+  paneKey?: string
   repoLabel?: string
   worktreeLabel?: string
   hasMultipleActiveRepos?: boolean

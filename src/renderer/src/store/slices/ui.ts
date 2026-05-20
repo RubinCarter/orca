@@ -5,6 +5,7 @@ import { findPrevLiveWorktreeHistoryIndex } from './worktree-nav-history'
 import type {
   ChangelogData,
   CustomPet,
+  GitHubWorkItem,
   PersistedTrustedOrcaHooks,
   PersistedUIState,
   StatusBarItem,
@@ -45,6 +46,11 @@ import type { OrcaHookScriptKind } from '../../lib/orca-hook-trust'
 import { DEFAULT_PET_ID, isBundledPetId } from '../../components/pet/pet-models'
 import { revokeCustomPetBlobUrl } from '../../components/pet/pet-blob-cache'
 import { isGitRepoKind } from '../../../../shared/repo-kind'
+
+export type PendingSidebarWorktreeReveal = {
+  worktreeId: string
+  behavior: 'auto' | 'smooth'
+}
 
 function clampPetSize(size: number): number {
   if (!Number.isFinite(size)) {
@@ -278,6 +284,8 @@ export type UISlice = {
   }
   taskResumeState: TaskResumeState | undefined
   setTaskResumeState: (updates: Partial<TaskResumeState>) => void
+  githubTaskDrawerWorkItem: GitHubWorkItem | null
+  setGithubTaskDrawerWorkItem: (item: GitHubWorkItem | null) => void
   newWorkspaceDraft: {
     repoId: string | null
     name: string
@@ -420,8 +428,11 @@ export type UISlice = {
    *  problem. */
   petSize: number
   setPetSize: (size: number) => void
-  pendingRevealWorktreeId: string | null
-  revealWorktreeInSidebar: (worktreeId: string) => void
+  pendingRevealWorktree: PendingSidebarWorktreeReveal | null
+  revealWorktreeInSidebar: (
+    worktreeId: string,
+    options?: { behavior?: PendingSidebarWorktreeReveal['behavior'] }
+  ) => void
   clearPendingRevealWorktreeId: () => void
   // Why: lets the SourceControl sidebar request that the diff editor scroll
   // to a specific note. Cleared by the diff decorator after it reveals the
@@ -521,6 +532,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   setActiveView: (view) => set({ activeView: view }),
   taskPageData: {},
   taskResumeState: undefined,
+  githubTaskDrawerWorkItem: null,
   newWorkspaceDraft: null,
   openTaskPage: (data = {}) => {
     // Why: record a Tasks visit in the shared back/forward history so the
@@ -601,6 +613,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       window.api.ui.set({ taskResumeState: next }).catch(console.error)
       return { taskResumeState: next }
     }),
+  setGithubTaskDrawerWorkItem: (item) => set({ githubTaskDrawerWorkItem: item }),
   closeTaskPage: () =>
     set((state) => {
       // Why: Esc-close from Tasks must rewind the history index if we're
@@ -790,7 +803,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       return { setupScriptPromptDismissedRepoIds: next }
     }),
 
-  groupBy: 'repo',
+  groupBy: 'workspace-status',
   // Why: group keys are mode-specific (e.g. repo id vs PR status), so
   // collapsed state from one mode is meaningless in another. Clearing
   // also prevents unbounded accumulation of stale keys across mode switches.
@@ -944,9 +957,15 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       return partial
     }),
 
-  pendingRevealWorktreeId: null,
-  revealWorktreeInSidebar: (worktreeId) => set({ pendingRevealWorktreeId: worktreeId }),
-  clearPendingRevealWorktreeId: () => set({ pendingRevealWorktreeId: null }),
+  pendingRevealWorktree: null,
+  revealWorktreeInSidebar: (worktreeId, options) =>
+    set({
+      pendingRevealWorktree: {
+        worktreeId,
+        behavior: options?.behavior ?? 'smooth'
+      }
+    }),
+  clearPendingRevealWorktreeId: () => set({ pendingRevealWorktree: null }),
   scrollToDiffCommentId: null,
   setScrollToDiffCommentId: (id) => set({ scrollToDiffCommentId: id }),
   persistedUIReady: false,

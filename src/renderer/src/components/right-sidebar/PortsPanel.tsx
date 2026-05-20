@@ -275,7 +275,11 @@ function LocalWorkspacePortsPanel({ isVisible }: { isVisible: boolean }): React.
     }
 
     async function run(): Promise<void> {
-      await refresh()
+      try {
+        await refresh()
+      } catch {
+        // Why: a transient RPC failure must not halt the poll loop.
+      }
       if (!cancelled) {
         timeout = setTimeout(() => void run(), LOCAL_PORT_SCAN_INTERVAL_MS)
       }

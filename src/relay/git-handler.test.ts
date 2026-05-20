@@ -433,6 +433,35 @@ describe('GitHandler', () => {
       expect(entry).toBeDefined()
       expect(entry!.path).toBe('docs/日本語/sample.md')
     })
+
+    it('treats an unborn branch with a resolvable base as having no committed branch changes', async () => {
+      gitInit(tmpDir)
+      writeFileSync(path.join(tmpDir, 'base.txt'), 'base')
+      gitCommit(tmpDir, 'initial')
+      const baseRef = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+        cwd: tmpDir,
+        encoding: 'utf-8'
+      }).trim()
+
+      execFileSync('git', ['checkout', '--orphan', 'feature'], { cwd: tmpDir, stdio: 'pipe' })
+      execFileSync('git', ['rm', '-rf', '.'], { cwd: tmpDir, stdio: 'pipe' })
+
+      const result = (await dispatcher.callRequest('git.branchCompare', {
+        worktreePath: tmpDir,
+        baseRef
+      })) as { summary: Record<string, unknown>; entries: Record<string, unknown>[] }
+
+      expect(result.summary).toMatchObject({
+        baseRef,
+        compareRef: 'feature',
+        headOid: null,
+        changedFiles: 0,
+        commitsAhead: 0,
+        status: 'ready'
+      })
+      expect(result.summary.baseOid).toMatch(/^[0-9a-f]{40}$/)
+      expect(result.entries).toEqual([])
+    })
   })
 
   describe('branchDiff', () => {

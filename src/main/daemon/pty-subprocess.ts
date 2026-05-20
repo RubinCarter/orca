@@ -63,6 +63,17 @@ function removeUnspecifiedPaneIdentityEnv(
   }
 }
 
+function removeInheritedDevAgentHookEndpoint(
+  env: Record<string, string>,
+  explicitEnv: Record<string, string> | undefined
+): void {
+  if (explicitEnv?.ORCA_AGENT_HOOK_ENV === 'development') {
+    // Why: the daemon inherits the app process env before per-PTY env is
+    // merged, so dev terminals must explicitly drop a parent endpoint.env.
+    delete env.ORCA_AGENT_HOOK_ENDPOINT
+  }
+}
+
 function formatMissingDaemonPathError(kind: 'helper' | 'cwd', path: string): DaemonProtocolError {
   const detailName = kind === 'helper' ? 'helper' : 'cwd'
   const step = kind === 'helper' ? 'posix_spawn' : 'daemon_cwd'
@@ -165,6 +176,7 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
   // Why: the daemon is forked from Electron and can inherit the pane identity
   // of the terminal that launched `pn dev`; each PTY must opt into its own.
   removeUnspecifiedPaneIdentityEnv(env, opts.env)
+  removeInheritedDevAgentHookEndpoint(env, opts.env)
   removeInheritedNoColor(env)
 
   env.LANG ??= 'en_US.UTF-8'

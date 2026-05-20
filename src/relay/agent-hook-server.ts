@@ -176,7 +176,7 @@ export class RelayAgentHookServer {
       if (!meta) {
         continue
       }
-      this.forwardEvent(event, meta.source, meta.env, meta.version)
+      this.forwardEvent(event, meta.source, meta.env, meta.version, { isReplay: true })
       count++
     }
     return count
@@ -267,7 +267,8 @@ export class RelayAgentHookServer {
     event: AgentHookEventPayload,
     source: AgentHookSource,
     env?: string,
-    version?: string
+    version?: string,
+    options: { isReplay?: boolean } = {}
   ): void {
     const envelope: AgentHookRelayEnvelope = {
       source,
@@ -275,6 +276,8 @@ export class RelayAgentHookServer {
       tabId: event.tabId,
       worktreeId: event.worktreeId,
       connectionId: null,
+      hasExplicitPrompt: event.hasExplicitPrompt,
+      isReplay: options.isReplay === true ? true : undefined,
       env,
       version,
       payload: event.payload

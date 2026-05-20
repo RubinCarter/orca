@@ -39,7 +39,22 @@ function getPtyIdForPaneKey(paneKey: string): string | null {
   if (!parsed) {
     return null
   }
-  return useAppStore.getState().ptyIdsByTabId?.[parsed.tabId]?.[0] ?? null
+  const state = useAppStore.getState()
+  const tabPtyIds = state.ptyIdsByTabId?.[parsed.tabId]
+  if (!tabPtyIds || tabPtyIds.length === 0) {
+    return null
+  }
+  // Why: split-pane leaves share one tab-level pty list, so a tab-level lookup
+  // would return a sibling's pty for an already-closed leaf and let a late
+  // 'done' hook event fire a spurious notification. Resolve liveness through
+  // the leaf-keyed binding maintained by syncPanePtyLayoutBinding, which
+  // deletes the entry when the leaf closes.
+  const ptyIdsByLeafId = state.terminalLayoutsByTabId?.[parsed.tabId]?.ptyIdsByLeafId
+  if (ptyIdsByLeafId) {
+    const leafPtyId = ptyIdsByLeafId[parsed.leafId]
+    return leafPtyId && tabPtyIds.includes(leafPtyId) ? leafPtyId : null
+  }
+  return tabPtyIds[0] ?? null
 }
 
 function paneHasLivePty(paneKey: string): boolean {

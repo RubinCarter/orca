@@ -83,6 +83,7 @@ export type PtySpawnResult = {
 export type IPtyProvider = {
   spawn(opts: PtySpawnOptions): Promise<PtySpawnResult>
   attach(id: string): Promise<void>
+  hasPty?: (id: string) => boolean
   write(id: string, data: string): void
   resize(id: string, cols: number, rows: number): void
   shutdown(id: string, opts: { immediate?: boolean; keepHistory?: boolean }): Promise<void>
