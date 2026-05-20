@@ -1,8 +1,12 @@
+/* eslint-disable max-lines -- Why: this hook owns the Monaco view-zone
+lifecycle, inline React roots, range selection, and scroll-to-comment
+coordination so those invariants stay in one place. */
 import { useEffect, useMemo, useRef } from 'react'
 import * as monaco from 'monaco-editor'
 import type { editor as monacoEditor, IDisposable } from 'monaco-editor'
 import { createRoot, type Root } from 'react-dom/client'
 import type { DiffComment } from '../../../../shared/types'
+import { getDiffCommentLineLabel } from '@/lib/diff-comment-compat'
 import { DiffCommentCard } from './DiffCommentCard'
 import { getDiffCommentPopoverTop } from './diff-comment-popover-position'
 
@@ -14,11 +18,20 @@ import { getDiffCommentPopoverTop } from './diff-comment-popover-position'
 // than Monaco decorations, and we get pixel-accurate positioning via Monaco's
 // getTopForLineNumber.
 
+export type DecoratedDiffComment = DiffComment & {
+  author?: string
+  authorAvatarUrl?: string
+  createdAtLabel?: string
+  url?: string
+  canDelete?: boolean
+  canEdit?: boolean
+}
+
 type DecoratorArgs = {
   editor: monacoEditor.ICodeEditor | null
   filePath: string
   worktreeId: string
-  comments: DiffComment[]
+  comments: readonly DecoratedDiffComment[]
   commentableLineNumbers?: readonly number[]
   addButtonLabel?: string
   onAddCommentClick: (args: { lineNumber: number; startLine?: number; top: number }) => void
@@ -44,7 +57,7 @@ type ZoneEntry = {
   // mutating the delegate is the supported way to grow a zone in place.
   delegate: monacoEditor.IViewZone
   root: Root
-  lastBody: string
+  lastRenderSignature: string
   // Why: Monaco invokes IViewZone.onDomNodeTop on every render once the zone
   // is in the layout. The first invocation is our deterministic "this zone is
   // now part of the editor's vertical layout" signal — equivalent in role to
@@ -60,6 +73,19 @@ type ZoneEntry = {
 const ZONE_CHROME_PX = 52
 const ZONE_LINE_PX = 18
 const ZONE_MIN_PX = 72
+
+function getRenderSignature(comment: DecoratedDiffComment): string {
+  return JSON.stringify({
+    body: comment.body,
+    sentAt: comment.sentAt ?? null,
+    author: comment.author ?? null,
+    authorAvatarUrl: comment.authorAvatarUrl ?? null,
+    createdAtLabel: comment.createdAtLabel ?? null,
+    url: comment.url ?? null,
+    canDelete: comment.canDelete ?? null,
+    canEdit: comment.canEdit ?? null
+  })
+}
 
 export function useDiffCommentDecorator({
   editor,
@@ -428,16 +454,23 @@ export function useDiffCommentDecorator({
     // Why: render helper used by BOTH the new-zone branch and the patch-
     // existing-zone branch so the card's prop wiring stays in lockstep — any
     // future prop is added once.
-    const renderCard = (root: Root, comment: DiffComment): void => {
+    const renderCard = (root: Root, comment: DecoratedDiffComment): void => {
       root.render(
         <DiffCommentCard
           lineNumber={comment.lineNumber}
           startLine={comment.startLine}
+          label={comment.author ? getDiffCommentLineLabel(comment).toLowerCase() : undefined}
           body={comment.body}
           sentAt={comment.sentAt}
-          onDelete={() => onDeleteCommentRef.current(comment.id)}
+          author={comment.author}
+          authorAvatarUrl={comment.authorAvatarUrl}
+          createdAtLabel={comment.createdAtLabel}
+          url={comment.url}
+          onDelete={
+            comment.canDelete === false ? undefined : () => onDeleteCommentRef.current(comment.id)
+          }
           onSubmitEdit={
-            onUpdateCommentRef.current
+            onUpdateCommentRef.current && comment.canEdit !== false
               ? async (body) => {
                   const fn = onUpdateCommentRef.current
                   if (!fn) {
@@ -494,7 +527,8 @@ export function useDiffCommentDecorator({
         // padding 12, header+meta ~22, trailing breathing room) and the
         // per-line factor matches the 12px/1.4 body line-height.
         const lineCount = c.body.split('\n').length
-        const heightInPx = Math.max(ZONE_MIN_PX, ZONE_CHROME_PX + lineCount * ZONE_LINE_PX)
+        const chromePx = c.author ? ZONE_CHROME_PX + 24 : ZONE_CHROME_PX
+        const heightInPx = Math.max(ZONE_MIN_PX, chromePx + lineCount * ZONE_LINE_PX)
 
         // Why: suppressMouseDown: false so clicks inside the zone (Delete
         // button) reach our DOM listeners. With true, Monaco intercepts the
@@ -532,23 +566,24 @@ export function useDiffCommentDecorator({
           domNode: dom,
           delegate,
           root,
-          lastBody: c.body,
+          lastRenderSignature: getRenderSignature(c),
           laidOut: false
         })
       }
 
-      // Patch existing zones whose body text changed in place — re-render the
-      // same root with new props instead of removing/re-adding the zone.
+      // Patch existing zones whose visible props changed in place — re-render
+      // the same root instead of removing/re-adding the zone.
       for (const c of relevant) {
         const entry = zones.get(c.id)
         if (!entry) {
           continue
         }
-        if (entry.lastBody === c.body) {
+        const renderSignature = getRenderSignature(c)
+        if (entry.lastRenderSignature === renderSignature) {
           continue
         }
         renderCard(entry.root, c)
-        entry.lastBody = c.body
+        entry.lastRenderSignature = renderSignature
       }
     })
 

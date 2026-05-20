@@ -66,6 +66,7 @@ import CommentMarkdown from '@/components/sidebar/CommentMarkdown'
 import { detectLanguage } from '@/lib/language-detect'
 import { cn } from '@/lib/utils'
 import { DiffSectionItem } from '@/components/editor/DiffSectionItem'
+import type { DecoratedDiffComment } from '@/components/diff-comments/useDiffCommentDecorator'
 import {
   CombinedDiffFileTree,
   createCombinedDiffSectionIndexMap,
@@ -1542,6 +1543,7 @@ function getPRFileDiffResult(contents: GitHubPRFileContents): GitDiffResult {
 
 type PRFilesCombinedDiffViewerProps = {
   files: GitHubPRFile[]
+  comments: PRComment[]
   repoPath: string
   repoId: string
   prNumber: number
@@ -1555,6 +1557,7 @@ type PRFilesCombinedDiffViewerProps = {
 
 function PRFilesCombinedDiffViewer({
   files,
+  comments,
   repoPath,
   repoId,
   prNumber,
@@ -1596,6 +1599,37 @@ function PRFilesCombinedDiffViewer({
     return nextEntries
   }, [diffEntrySignature, files])
   const fileByPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files])
+  const inlineReviewComments = useMemo<DecoratedDiffComment[]>(
+    () =>
+      comments.flatMap((comment): DecoratedDiffComment[] => {
+        // Why: stale threads keep originalLine for the sidebar, but rendering
+        // that number inline can attach the comment to unrelated current code.
+        if (comment.isOutdated || !comment.path || typeof comment.line !== 'number') {
+          return []
+        }
+        const createdAtMs = new Date(comment.createdAt).getTime()
+        return [
+          {
+            id: `github-pr-comment:${comment.id}`,
+            worktreeId: `github-pr:${repoId}:${prNumber}`,
+            filePath: comment.path,
+            source: 'diff',
+            startLine: comment.startLine,
+            lineNumber: comment.line,
+            body: comment.body,
+            createdAt: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+            side: 'modified',
+            author: comment.author,
+            authorAvatarUrl: comment.authorAvatarUrl,
+            createdAtLabel: formatRelativeTime(comment.createdAt),
+            url: comment.url,
+            canDelete: false,
+            canEdit: false
+          }
+        ]
+      }),
+    [comments, prNumber, repoId]
+  )
   const entrySignature = useMemo(
     () =>
       JSON.stringify({
@@ -1985,6 +2019,7 @@ function PRFilesCombinedDiffViewer({
                     settings={settings}
                     sectionHeight={sectionHeights[virtualItem.index]}
                     worktreeId={`github-pr:${repoId}:${prNumber}`}
+                    inlineComments={inlineReviewComments}
                     loadSection={loadSection}
                     retrySection={retrySection}
                     toggleSection={toggleSection}
@@ -5501,6 +5536,7 @@ export default function GitHubItemDialog({
                           ) : (
                             <PRFilesCombinedDiffViewer
                               files={files}
+                              comments={comments}
                               repoPath={repoPath ?? ''}
                               repoId={effectiveRepoId ?? ''}
                               prNumber={workItem.number}

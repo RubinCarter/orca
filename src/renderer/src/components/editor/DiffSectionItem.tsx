@@ -17,7 +17,10 @@ import { detectLanguage } from '@/lib/language-detect'
 import { useAppStore } from '@/store'
 import { computeEditorFontSize } from '@/lib/editor-font-zoom'
 import { findWorktreeById } from '@/store/slices/worktree-helpers'
-import { useDiffCommentDecorator } from '../diff-comments/useDiffCommentDecorator'
+import {
+  useDiffCommentDecorator,
+  type DecoratedDiffComment
+} from '../diff-comments/useDiffCommentDecorator'
 import { DiffCommentPopover } from '../diff-comments/DiffCommentPopover'
 import {
   getDiffCommentPopoverLeft,
@@ -53,6 +56,7 @@ export function DiffSectionItem({
   onAddLineComment,
   addLineCommentLabel,
   addLineCommentPlaceholder,
+  inlineComments,
   getCommentableLineNumbers,
   setSectionHeights,
   setSections,
@@ -83,6 +87,7 @@ export function DiffSectionItem({
   ) => Promise<boolean>
   addLineCommentLabel?: string
   addLineCommentPlaceholder?: string
+  inlineComments?: readonly DecoratedDiffComment[]
   getCommentableLineNumbers?: (section: DiffSection) => readonly number[] | undefined
   setSectionHeights: React.Dispatch<React.SetStateAction<Record<number, number>>>
   setSections: React.Dispatch<React.SetStateAction<DiffSection[]>>
@@ -165,7 +170,7 @@ export function DiffSectionItem({
     editor: hasLineCommentAction ? modifiedEditor : null,
     filePath: section.path,
     worktreeId: worktreeId ?? '',
-    comments: worktreeId ? diffComments : [],
+    comments: inlineComments ?? (worktreeId ? diffComments : []),
     commentableLineNumbers: getCommentableLineNumbers?.(section),
     addButtonLabel: addLineCommentLabel,
     onAddCommentClick: ({ lineNumber, startLine, top }) =>

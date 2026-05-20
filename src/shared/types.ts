@@ -784,6 +784,8 @@ export type PRComment = {
   threadId?: string
   /** Whether the review thread has been resolved. Only meaningful when threadId is set. */
   isResolved?: boolean
+  /** True when GitHub no longer maps the thread to the current diff. */
+  isOutdated?: boolean
   /** End line of the review annotation (1-based). */
   line?: number
   /** Start line of the review annotation range (1-based). Absent for single-line comments. */

@@ -2416,6 +2416,7 @@ export async function getPRComments(
               path: c.path,
               threadId: thread.id,
               isResolved: thread.isResolved,
+              isOutdated: thread.line == null,
               // Why: GitHub nulls out line/startLine when the commented code is
               // outdated (e.g. after a force-push). Fall back to originalLine which
               // always preserves the line numbers from when the comment was created.
