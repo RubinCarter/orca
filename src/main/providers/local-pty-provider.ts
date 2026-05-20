@@ -129,7 +129,11 @@ function safeKillAndClean(id: string, proc: pty.IPty): void {
 }
 
 export type LocalPtyProviderOptions = {
-  buildSpawnEnv?: (id: string, baseEnv: Record<string, string>) => Record<string, string>
+  buildSpawnEnv?: (
+    id: string,
+    baseEnv: Record<string, string>,
+    context?: { isWsl: boolean }
+  ) => Record<string, string>
   /** Whether worktree-scoped shell history is enabled. When true (or absent)
    *  and a worktreeId is provided, HISTFILE is scoped per-worktree. */
   isHistoryEnabled?: () => boolean
@@ -268,14 +272,18 @@ export class LocalPtyProvider implements IPtyProvider {
       spawnEnv.PYTHONUTF8 ??= '1'
     }
 
-    const finalEnv = this.opts.buildSpawnEnv ? this.opts.buildSpawnEnv(id, spawnEnv) : spawnEnv
+    const isWslShell = Boolean(wslInfo) || basename(shellPath).toLowerCase() === 'wsl.exe'
+    const finalEnv = this.opts.buildSpawnEnv
+      ? this.opts.buildSpawnEnv(id, spawnEnv, { isWsl: isWslShell })
+      : spawnEnv
     if (!wslInfo && process.platform !== 'win32') {
       // Why: any Orca-injected overlay env that user rc files can clobber
       // needs the wrapper so the post-rc restore line runs.
       const needsNoMarkerWrapper =
         finalEnv.ORCA_ATTRIBUTION_SHIM_DIR ||
         finalEnv.ORCA_OPENCODE_CONFIG_DIR ||
-        finalEnv.ORCA_PI_CODING_AGENT_DIR
+        finalEnv.ORCA_PI_CODING_AGENT_DIR ||
+        finalEnv.ORCA_CODEX_HOME
       getFallbackShellReadyConfig = args.command
         ? (shell) => getShellReadyLaunchConfig(shell)
         : needsNoMarkerWrapper

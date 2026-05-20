@@ -217,6 +217,24 @@ if (hasSingleInstanceLock) {
   enableMainProcessGpuFeatures()
 }
 
+function prepareCodexRuntimeHomeForLaunch(): string {
+  const runtimeHomePath = codexRuntimeHome!.prepareForCodexLaunch()
+  try {
+    const status = codexHookService.install()
+    if (status.state === 'error') {
+      console.warn(
+        '[codex-hook-service] failed to refresh runtime hooks before launch',
+        status.detail
+      )
+    }
+  } catch (error) {
+    // Why: hook freshness is best-effort launch prep. A malformed hooks file
+    // should not block the Codex process from starting with its prepared auth.
+    console.warn('[codex-hook-service] failed to refresh runtime hooks before launch', error)
+  }
+  return runtimeHomePath
+}
+
 function openMainWindow(): BrowserWindow {
   if (!store) {
     throw new Error('Store must be initialized before opening the main window')
@@ -316,7 +334,7 @@ function openMainWindow(): BrowserWindow {
     window.webContents.id,
     automations,
     {
-      prepareForCodexLaunch: () => codexRuntimeHome!.prepareForCodexLaunch(),
+      prepareForCodexLaunch: prepareCodexRuntimeHomeForLaunch,
       prepareForClaudeLaunch: () => claudeRuntimeAuth!.prepareForClaudeLaunch()
     },
     agentAwakeService ?? undefined,
@@ -324,12 +342,8 @@ function openMainWindow(): BrowserWindow {
   )
   automations.setWebContents(window.webContents)
   automations.start()
-  attachMainWindowServices(
-    window,
-    store,
-    runtime,
-    () => codexRuntimeHome!.prepareForCodexLaunch(),
-    () => claudeRuntimeAuth!.prepareForClaudeLaunch()
+  attachMainWindowServices(window, store, runtime, prepareCodexRuntimeHomeForLaunch, () =>
+    claudeRuntimeAuth!.prepareForClaudeLaunch()
   )
   rateLimits.attach(window)
   rateLimits.start()
@@ -790,7 +804,7 @@ app.whenReady().then(async () => {
     // Why: local Codex hooks and auth now live in Orca's managed runtime home
     // even for the system-default path, so every Orca-launched Codex process
     // must resolve CODEX_HOME through the runtime-home service.
-    prepareForCodexLaunch: () => codexRuntimeHome!.prepareForCodexLaunch(),
+    prepareForCodexLaunch: prepareCodexRuntimeHomeForLaunch,
     prepareForClaudeLaunch: () => claudeRuntimeAuth!.prepareForClaudeLaunch()
   })
   disposeFeatureWallFirstAgentTour = registerFeatureWallFirstAgentTour({
@@ -959,7 +973,7 @@ app.whenReady().then(async () => {
   if (serveOptions) {
     registerHeadlessPtyRuntime(
       runtime,
-      () => codexRuntimeHome!.prepareForCodexLaunch(),
+      prepareCodexRuntimeHomeForLaunch,
       () => store!.getSettings(),
       () => claudeRuntimeAuth!.prepareForClaudeLaunch(),
       store

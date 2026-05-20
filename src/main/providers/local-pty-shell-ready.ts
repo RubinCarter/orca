@@ -148,6 +148,8 @@ __orca_restore_attribution_path
 [[ -n "\${ORCA_OPENCODE_CONFIG_DIR:-}" ]] && export OPENCODE_CONFIG_DIR="\${ORCA_OPENCODE_CONFIG_DIR}"
 # Why: PI_CODING_AGENT_DIR is also a single-root env var users may re-export.
 [[ -n "\${ORCA_PI_CODING_AGENT_DIR:-}" ]] && export PI_CODING_AGENT_DIR="\${ORCA_PI_CODING_AGENT_DIR}"
+# Why: Codex must keep using Orca's runtime CODEX_HOME after profile scripts.
+[[ -n "\${ORCA_CODEX_HOME:-}" ]] && export CODEX_HOME="\${ORCA_CODEX_HOME}"
 # Why: append the marker through PROMPT_COMMAND so it fires after the login
 # startup files have rebuilt the prompt, without re-running user rc files.
 if [[ "\${ORCA_SHELL_READY_MARKER:-0}" == "1" ]]; then
@@ -187,6 +189,8 @@ if [[ ! -o login ]]; then
   [[ -n "\${ORCA_OPENCODE_CONFIG_DIR:-}" ]] && export OPENCODE_CONFIG_DIR="\${ORCA_OPENCODE_CONFIG_DIR}"
   # Why: PI_CODING_AGENT_DIR must keep the same PTY-scoped overlay after rc files.
   [[ -n "\${ORCA_PI_CODING_AGENT_DIR:-}" ]] && export PI_CODING_AGENT_DIR="\${ORCA_PI_CODING_AGENT_DIR}"
+  # Why: Codex must keep using Orca's runtime CODEX_HOME after rc files.
+  [[ -n "\${ORCA_CODEX_HOME:-}" ]] && export CODEX_HOME="\${ORCA_CODEX_HOME}"
 fi
 __orca_osc133_precmd() {
   local exit_code=$?
@@ -279,6 +283,7 @@ __orca_restore_attribution_path
 # Why: .zlogin is the final login startup file before the prompt is shown.
 [[ -n "\${ORCA_OPENCODE_CONFIG_DIR:-}" ]] && export OPENCODE_CONFIG_DIR="\${ORCA_OPENCODE_CONFIG_DIR}"
 [[ -n "\${ORCA_PI_CODING_AGENT_DIR:-}" ]] && export PI_CODING_AGENT_DIR="\${ORCA_PI_CODING_AGENT_DIR}"
+[[ -n "\${ORCA_CODEX_HOME:-}" ]] && export CODEX_HOME="\${ORCA_CODEX_HOME}"
 # Why: zsh precmd runs before the prompt is drawn and before zle owns input,
 # which can double-echo startup commands. line-init fires when zle is ready.
 if [[ "\${ORCA_SHELL_READY_MARKER:-0}" == "1" ]]; then

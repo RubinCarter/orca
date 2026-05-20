@@ -1,5 +1,4 @@
 /* eslint-disable max-lines -- Why: getStatus + install + remove all share the managed-command and trust-key derivation. Splitting would hide that the three operations must agree on group index, event label, and command bytes. */
-import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import type { SFTPWrapper } from 'ssh2'
 import type { AgentHookInstallState, AgentHookInstallStatus } from '../../shared/agent-hook-types'
@@ -7,11 +6,13 @@ import {
   createManagedCommandMatcher,
   buildWindowsAgentHookPostCommand,
   getSharedManagedScriptPath,
+  hookDefinitionHasManagedCommand,
   readHooksJson,
   removeManagedCommands,
   wrapPosixHookCommand,
   writeHooksJson,
   writeManagedScript,
+  type HookCommandConfig,
   type HookDefinition
 } from '../agent-hooks/installer-utils'
 import {
@@ -33,8 +34,8 @@ import {
   type CodexHookTrustState,
   type CodexTrustEntry
 } from './config-toml-trust'
-import { writeFileAtomically } from '../codex-accounts/fs-utils'
 import { getOrcaManagedCodexHomePath, getSystemCodexHomePath } from './codex-home-paths'
+import { syncSystemConfigIntoManagedCodexHome } from './codex-config-mirror'
 
 // Why: PreToolUse/PostToolUse give the dashboard a live readout of the
 // in-flight tool (name + input preview) between UserPromptSubmit and Stop.
@@ -58,18 +59,6 @@ function getCodexConfigTomlPath(): string {
   return join(getOrcaManagedCodexHomePath(), 'config.toml')
 }
 
-function syncSystemConfigIntoManagedCodexHome(): void {
-  const systemConfigPath = join(getSystemCodexHomePath(), 'config.toml')
-  const runtimeConfigPath = getCodexConfigTomlPath()
-  if (!existsSync(systemConfigPath) || existsSync(runtimeConfigPath)) {
-    return
-  }
-  // Why: Orca-launched Codex now reads the Orca-owned runtime CODEX_HOME.
-  // Seed once from the user's real Codex config before appending Orca hook
-  // trust, but never overwrite runtime-only edits Codex made later.
-  writeFileAtomically(runtimeConfigPath, readFileSync(systemConfigPath, 'utf-8'))
-}
-
 // Why: Codex's hash key uses the snake_case event label (see
 // codex-rs/hooks/src/lib.rs::hook_event_key_label). Our hooks.json uses the
 // PascalCase serde-rename. Map between them at one place so the trust-write
@@ -83,6 +72,12 @@ const CODEX_EVENT_LABEL: Record<(typeof CODEX_EVENTS)[number], CodexEventLabel> 
   Stop: 'stop'
 }
 
+const CODEX_HOOK_EVENT_LABEL: Record<string, CodexEventLabel> = {
+  ...CODEX_EVENT_LABEL,
+  PreCompact: 'pre_compact',
+  PostCompact: 'post_compact'
+}
+
 function getManagedScriptFileName(): string {
   return process.platform === 'win32' ? 'codex-hook.cmd' : 'codex-hook.sh'
 }
@@ -93,6 +88,311 @@ function getManagedScriptPath(): string {
 
 function getManagedCommand(scriptPath: string): string {
   return process.platform === 'win32' ? scriptPath : wrapPosixHookCommand(scriptPath)
+}
+
+function getSystemConfigPath(): string {
+  return join(getSystemCodexHomePath(), 'hooks.json')
+}
+
+function getSystemCodexConfigTomlPath(): string {
+  return join(getSystemCodexHomePath(), 'config.toml')
+}
+
+function collectManagedTrustEntries(
+  sourcePath: string,
+  eventName: string,
+  definitions: readonly HookDefinition[],
+  isManagedCommand: (command: string | undefined) => boolean
+): CodexTrustEntry[] {
+  const entries: CodexTrustEntry[] = []
+  definitions.forEach((definition, groupIndex) => {
+    const hooks = Array.isArray(definition.hooks) ? definition.hooks : []
+    hooks.forEach((hook, handlerIndex) => {
+      if (!isManagedCommand(hook.command)) {
+        return
+      }
+      const entry = createHookTrustEntry(
+        sourcePath,
+        eventName,
+        groupIndex,
+        handlerIndex,
+        definition,
+        hook
+      )
+      if (entry) {
+        entries.push(entry)
+      }
+    })
+  })
+  return entries
+}
+
+function createHookTrustEntry(
+  sourcePath: string,
+  eventName: string,
+  groupIndex: number,
+  handlerIndex: number,
+  definition: HookDefinition,
+  hook: HookCommandConfig
+): CodexTrustEntry | null {
+  const eventLabel = CODEX_HOOK_EVENT_LABEL[eventName]
+  if (!eventLabel || !hook.command) {
+    return null
+  }
+
+  return {
+    sourcePath,
+    eventLabel,
+    groupIndex,
+    handlerIndex,
+    command: hook.command,
+    ...(typeof hook.timeout === 'number' ? { timeoutSec: hook.timeout } : {}),
+    ...(typeof hook.async === 'boolean' ? { async: hook.async } : {}),
+    ...(typeof definition.matcher === 'string' ? { matcher: definition.matcher } : {}),
+    ...(typeof hook.statusMessage === 'string' ? { statusMessage: hook.statusMessage } : {})
+  }
+}
+
+function removeMatchingTrustEntries(configPath: string, entries: readonly CodexTrustEntry[]): void {
+  if (entries.length === 0) {
+    return
+  }
+
+  const existingEntries = readHookTrustEntries(configPath)
+  const ownedKeys = entries
+    .map((entry) => {
+      const key = computeTrustKey(entry)
+      return existingEntries.get(key)?.trustedHash === computeTrustedHash(entry) ? key : null
+    })
+    .filter((key): key is string => key !== null)
+  if (ownedKeys.length > 0) {
+    removeHookTrustEntries(configPath, ownedKeys)
+  }
+}
+
+function removeStaleRuntimeHookTrustEntries(
+  tomlPath: string,
+  runtimeHooksPath: string,
+  expectedEntries: readonly CodexTrustEntry[]
+): void {
+  const expectedHashes = new Map(
+    expectedEntries.map((entry) => [computeTrustKey(entry), computeTrustedHash(entry)])
+  )
+  const staleKeys: string[] = []
+  for (const [key, state] of readHookTrustEntries(tomlPath)) {
+    const parsed = parseTrustKey(key)
+    if (!parsed || parsed.sourcePath !== runtimeHooksPath) {
+      continue
+    }
+    if (expectedHashes.get(key) === state.trustedHash) {
+      continue
+    }
+    staleKeys.push(key)
+  }
+  if (staleKeys.length > 0) {
+    removeHookTrustEntries(tomlPath, staleKeys)
+  }
+}
+
+function getTrustSignature(entry: CodexTrustEntry): string {
+  return JSON.stringify({
+    eventLabel: entry.eventLabel,
+    command: entry.command,
+    timeoutSec: Math.max(1, entry.timeoutSec ?? 600),
+    async: entry.async ?? false,
+    matcher: entry.matcher ?? null,
+    statusMessage: entry.statusMessage ?? null
+  })
+}
+
+function getRuntimeHooksWithSystemUserHooks(
+  runtimeHooks: Record<string, HookDefinition[]> | undefined,
+  isManagedCommand: (command: string | undefined) => boolean
+): { hooks: Record<string, HookDefinition[]>; trustEntries: CodexTrustEntry[] } {
+  const systemConfigPath = getSystemConfigPath()
+  const runtimeConfigPath = getConfigPath()
+  if (systemConfigPath === getConfigPath()) {
+    return { hooks: { ...runtimeHooks }, trustEntries: [] }
+  }
+
+  const systemConfig = readHooksJson(systemConfigPath)
+  if (!systemConfig?.hooks) {
+    return { hooks: {}, trustEntries: [] }
+  }
+
+  const nextHooks: Record<string, HookDefinition[]> = {}
+  const trustedSystemHookSignatures = getTrustedSystemUserHookSignatures(
+    systemConfigPath,
+    systemConfig.hooks,
+    isManagedCommand
+  )
+  for (const [eventName, systemDefinitions] of Object.entries(systemConfig.hooks)) {
+    if (!Array.isArray(systemDefinitions)) {
+      continue
+    }
+
+    const systemUserDefinitions = removeManagedCommands(systemDefinitions, isManagedCommand)
+    if (systemUserDefinitions.length === 0) {
+      continue
+    }
+
+    // Why: runtime hooks are derived from the user's system hooks plus Orca's
+    // managed hooks. Reusing old runtime user-hook copies would keep deleted or
+    // edited ~/.codex/hooks.json entries alive for new Orca-launched sessions.
+    nextHooks[eventName] = dedupeHookDefinitions(systemUserDefinitions)
+  }
+
+  return {
+    hooks: nextHooks,
+    trustEntries: collectMirroredRuntimeUserHookTrustEntries(
+      runtimeConfigPath,
+      nextHooks,
+      trustedSystemHookSignatures,
+      isManagedCommand
+    )
+  }
+}
+
+function getTrustedSystemUserHookSignatures(
+  systemConfigPath: string,
+  systemHooks: Record<string, HookDefinition[]>,
+  isManagedCommand: (command: string | undefined) => boolean
+): Set<string> {
+  const signatures = new Set<string>()
+  let trustEntries: Map<string, CodexHookTrustState>
+  try {
+    trustEntries = readHookTrustEntries(getSystemCodexConfigTomlPath())
+  } catch (error) {
+    // Why: a hand-broken system config.toml should only disable user-hook
+    // trust mirroring; Orca's managed runtime hooks can still be installed.
+    console.warn('[codex-hook-service] failed to read system hook trust entries', error)
+    return signatures
+  }
+  for (const [eventName, definitions] of Object.entries(systemHooks)) {
+    if (!Array.isArray(definitions)) {
+      continue
+    }
+    definitions.forEach((definition, groupIndex) => {
+      const hooks = Array.isArray(definition.hooks) ? definition.hooks : []
+      hooks.forEach((hook, handlerIndex) => {
+        if (isManagedCommand(hook.command)) {
+          return
+        }
+        const entry = createHookTrustEntry(
+          systemConfigPath,
+          eventName,
+          groupIndex,
+          handlerIndex,
+          definition,
+          hook
+        )
+        if (!entry) {
+          return
+        }
+        const state = trustEntries.get(computeTrustKey(entry))
+        if (state?.trustedHash === computeTrustedHash(entry) && state.enabled !== false) {
+          signatures.add(getTrustSignature(entry))
+        }
+      })
+    })
+  }
+  return signatures
+}
+
+function collectMirroredRuntimeUserHookTrustEntries(
+  runtimeConfigPath: string,
+  runtimeHooks: Record<string, HookDefinition[]>,
+  trustedSystemHookSignatures: ReadonlySet<string>,
+  isManagedCommand: (command: string | undefined) => boolean
+): CodexTrustEntry[] {
+  if (trustedSystemHookSignatures.size === 0) {
+    return []
+  }
+
+  const entries: CodexTrustEntry[] = []
+  for (const [eventName, definitions] of Object.entries(runtimeHooks)) {
+    if (!Array.isArray(definitions)) {
+      continue
+    }
+    definitions.forEach((definition, groupIndex) => {
+      const hooks = Array.isArray(definition.hooks) ? definition.hooks : []
+      hooks.forEach((hook, handlerIndex) => {
+        if (isManagedCommand(hook.command)) {
+          return
+        }
+        const entry = createHookTrustEntry(
+          runtimeConfigPath,
+          eventName,
+          groupIndex,
+          handlerIndex,
+          definition,
+          hook
+        )
+        if (entry && trustedSystemHookSignatures.has(getTrustSignature(entry))) {
+          entries.push(entry)
+        }
+      })
+    })
+  }
+  return entries
+}
+
+function dedupeHookDefinitions(definitions: readonly HookDefinition[]): HookDefinition[] {
+  const seen = new Set<string>()
+  return definitions.filter((definition) => {
+    const key = JSON.stringify(definition)
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+}
+
+function cleanupLegacySystemManagedHooks(): void {
+  const legacyConfigPath = getSystemConfigPath()
+  const runtimeConfigPath = getConfigPath()
+  if (legacyConfigPath === runtimeConfigPath) {
+    return
+  }
+
+  const config = readHooksJson(legacyConfigPath)
+  if (!config?.hooks) {
+    return
+  }
+
+  const isManagedCommand = createManagedCommandMatcher(getManagedScriptFileName())
+  const nextHooks = { ...config.hooks }
+  const trustEntries: CodexTrustEntry[] = []
+  let removedManagedHook = false
+  for (const [eventName, definitions] of Object.entries(nextHooks)) {
+    if (!Array.isArray(definitions)) {
+      continue
+    }
+    const eventTrustEntries = collectManagedTrustEntries(
+      legacyConfigPath,
+      eventName,
+      definitions,
+      isManagedCommand
+    )
+    trustEntries.push(...eventTrustEntries)
+    const cleaned = removeManagedCommands(definitions, isManagedCommand)
+    removedManagedHook ||= definitions.some((definition) =>
+      hookDefinitionHasManagedCommand(definition, isManagedCommand)
+    )
+    if (cleaned.length === 0) {
+      delete nextHooks[eventName]
+    } else {
+      nextHooks[eventName] = cleaned
+    }
+  }
+
+  // Why: Codex hooks moved to Orca's managed CODEX_HOME; old entries in
+  // ~/.codex would keep external Codex sessions reporting into Orca.
+  if (removedManagedHook) {
+    writeHooksJson(legacyConfigPath, { ...config, hooks: nextHooks })
+  }
+  removeMatchingTrustEntries(getSystemCodexConfigTomlPath(), trustEntries)
 }
 
 function getManagedScript(target: 'local' | 'posix' = 'local'): string {
@@ -275,15 +575,15 @@ export class CodexHookService {
       }
     }
 
-    const command = getManagedCommand(scriptPath)
-    const nextHooks = { ...config.hooks }
-    const managedEvents = new Set<string>(CODEX_EVENTS)
-
     // Why: match by script filename (not exact command string) so a fresh
     // install sweeps stale entries left by older builds or a different
     // Electron userData path (dev vs. prod). Without this, repeated installs
     // accumulate duplicate hook entries pointing at defunct scripts.
     const isManagedCommand = createManagedCommandMatcher(getManagedScriptFileName())
+    const command = getManagedCommand(scriptPath)
+    const hookPlan = getRuntimeHooksWithSystemUserHooks(config.hooks, isManagedCommand)
+    const nextHooks = hookPlan.hooks
+    const managedEvents = new Set<string>(CODEX_EVENTS)
 
     // Why: sweep managed entries out of events we no longer subscribe to
     // (e.g., PreToolUse from a prior install). Without this, users who
@@ -312,7 +612,7 @@ export class CodexHookService {
     // hook sits in the "review required" pile. We compute the trust hash for
     // each managed entry as we install it and persist it alongside hooks.json
     // so the user does not have to /hooks-approve after every install.
-    const trustEntries: CodexTrustEntry[] = []
+    const trustEntries: CodexTrustEntry[] = [...hookPlan.trustEntries]
     for (const eventName of CODEX_EVENTS) {
       const current = Array.isArray(nextHooks[eventName]) ? nextHooks[eventName] : []
       const cleaned = removeManagedCommands(current, isManagedCommand)
@@ -340,8 +640,13 @@ export class CodexHookService {
     // pointing at a hook that doesn't exist. Surface failures — without this,
     // getStatus would report green for a hook Codex won't actually fire.
     try {
+      const tomlPath = getCodexConfigTomlPath()
       syncSystemConfigIntoManagedCodexHome()
-      upsertHookTrustEntries(getCodexConfigTomlPath(), trustEntries)
+      // Why: system user hook approvals are mirrored into runtime CODEX_HOME.
+      // If the user later revokes approval in ~/.codex/config.toml, preserving
+      // all old runtime [hooks.state.*] blocks would keep Orca Codex trusted.
+      removeStaleRuntimeHookTrustEntries(tomlPath, configPath, trustEntries)
+      upsertHookTrustEntries(tomlPath, trustEntries)
     } catch (error) {
       return {
         agent: 'codex',
@@ -350,6 +655,11 @@ export class CodexHookService {
         managedHooksPresent: true,
         detail: `Hooks installed but trust entries could not be written: ${error instanceof Error ? error.message : String(error)}. Run /hooks in Codex to approve.`
       }
+    }
+    try {
+      cleanupLegacySystemManagedHooks()
+    } catch (error) {
+      console.warn('[codex-hook-service] failed to clean legacy system hooks', error)
     }
     return this.getStatus()
   }
@@ -527,6 +837,12 @@ export class CodexHookService {
       // Best effort — stale trust entries are harmless once hooks.json no
       // longer references the hook. Log so a programmer error doesn't disappear silently.
       console.warn('[codex-hook-service] failed to clean trust entries', error)
+    }
+
+    try {
+      cleanupLegacySystemManagedHooks()
+    } catch (error) {
+      console.warn('[codex-hook-service] failed to clean legacy system hooks', error)
     }
 
     return this.getStatus()

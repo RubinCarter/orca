@@ -5,7 +5,7 @@ import { realpath, readdir, stat } from 'fs/promises'
 import { createInterface } from 'readline'
 import type { Repo } from '../../shared/types'
 import { areWorktreePathsEqual } from '../ipc/worktree-logic'
-import { getOrcaManagedCodexHomePath } from '../codex/codex-home-paths'
+import { getOrcaManagedCodexHomePath, getSystemCodexHomePath } from '../codex/codex-home-paths'
 import type {
   CodexUsageAttributedEvent,
   CodexUsageDailyAggregate,
@@ -107,22 +107,30 @@ async function walkJsonlFiles(dirPath: string): Promise<string[]> {
 }
 
 export function getCodexSessionsDirectory(): string {
-  const codexHome = process.env.CODEX_HOME?.trim()
-  if (codexHome) {
-    return join(codexHome, 'sessions')
-  }
   // Why: Orca-launched Codex processes receive an Orca-owned CODEX_HOME, so
-  // the main-process usage scanner must follow that runtime home instead of
-  // the user's ambient ~/.codex directory.
+  // callers that need the primary runtime path should not consult ambient
+  // shell CODEX_HOME.
   return join(getOrcaManagedCodexHomePath(), 'sessions')
 }
 
+export function getCodexSessionDirectories(): string[] {
+  // Why: upgraded users still have ordinary Codex history under ~/.codex, while
+  // new Orca-launched sessions are written under Orca's managed runtime home.
+  return [getCodexSessionsDirectory(), join(getSystemCodexHomePath(), 'sessions')].filter(
+    (dirPath, index, allDirPaths) => allDirPaths.indexOf(dirPath) === index
+  )
+}
+
 export async function listCodexSessionFiles(): Promise<string[]> {
-  try {
-    return (await walkJsonlFiles(getCodexSessionsDirectory())).sort()
-  } catch {
-    return []
+  const files: string[] = []
+  for (const dirPath of getCodexSessionDirectories()) {
+    try {
+      files.push(...(await walkJsonlFiles(dirPath)))
+    } catch {
+      // Missing or unreadable history in one home should not hide the other.
+    }
   }
+  return [...new Set(files)].sort()
 }
 
 export async function getProcessedFileInfo(filePath: string): Promise<CodexUsageProcessedFile> {

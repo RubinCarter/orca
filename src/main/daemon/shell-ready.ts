@@ -93,6 +93,7 @@ if [[ ! -o login ]]; then
   [[ -n "\${ORCA_OPENCODE_CONFIG_DIR:-}" ]] && export OPENCODE_CONFIG_DIR="\${ORCA_OPENCODE_CONFIG_DIR}"
   # Why: PI_CODING_AGENT_DIR must keep the same PTY-scoped overlay after rc files.
   [[ -n "\${ORCA_PI_CODING_AGENT_DIR:-}" ]] && export PI_CODING_AGENT_DIR="\${ORCA_PI_CODING_AGENT_DIR}"
+  [[ -n "\${ORCA_CODEX_HOME:-}" ]] && export CODEX_HOME="\${ORCA_CODEX_HOME}"
 fi
 __orca_osc133_precmd() {
   local exit_code=$?
@@ -188,6 +189,7 @@ __orca_restore_attribution_path
 # Why: .zlogin is the final login startup file before the prompt is shown.
 [[ -n "\${ORCA_OPENCODE_CONFIG_DIR:-}" ]] && export OPENCODE_CONFIG_DIR="\${ORCA_OPENCODE_CONFIG_DIR}"
 [[ -n "\${ORCA_PI_CODING_AGENT_DIR:-}" ]] && export PI_CODING_AGENT_DIR="\${ORCA_PI_CODING_AGENT_DIR}"
+[[ -n "\${ORCA_CODEX_HOME:-}" ]] && export CODEX_HOME="\${ORCA_CODEX_HOME}"
 if [[ "\${ORCA_SHELL_READY_MARKER:-0}" == "1" ]]; then
   __orca_prompt_mark() {
     printf "${SHELL_READY_MARKER}"
@@ -221,6 +223,7 @@ __orca_restore_attribution_path
 [[ -n "\${ORCA_OPENCODE_CONFIG_DIR:-}" ]] && export OPENCODE_CONFIG_DIR="\${ORCA_OPENCODE_CONFIG_DIR}"
 # Why: PI_CODING_AGENT_DIR is also a single-root env var users may re-export.
 [[ -n "\${ORCA_PI_CODING_AGENT_DIR:-}" ]] && export PI_CODING_AGENT_DIR="\${ORCA_PI_CODING_AGENT_DIR}"
+[[ -n "\${ORCA_CODEX_HOME:-}" ]] && export CODEX_HOME="\${ORCA_CODEX_HOME}"
 if [[ "\${ORCA_SHELL_READY_MARKER:-0}" == "1" ]]; then
   __orca_prompt_mark() {
     printf "${SHELL_READY_MARKER}"

@@ -1,5 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { join } from 'path'
+import { describe, expect, it, vi } from 'vitest'
 
 const { getPathMock } = vi.hoisted(() => ({
   getPathMock: vi.fn<(name: string) => string>()
@@ -11,46 +10,7 @@ vi.mock('electron', () => ({
   }
 }))
 
-import {
-  attributeCodexUsageEvent,
-  getCodexSessionsDirectory,
-  parseCodexUsageRecord
-} from './scanner'
-
-const originalCodexHome = process.env.CODEX_HOME
-
-beforeEach(() => {
-  delete process.env.CODEX_HOME
-  getPathMock.mockImplementation((name: string) => {
-    if (name === 'userData') {
-      return '/tmp/orca-user-data'
-    }
-    throw new Error(`unexpected app.getPath(${name})`)
-  })
-})
-
-afterEach(() => {
-  if (originalCodexHome === undefined) {
-    delete process.env.CODEX_HOME
-  } else {
-    process.env.CODEX_HOME = originalCodexHome
-  }
-  vi.clearAllMocks()
-})
-
-describe('getCodexSessionsDirectory', () => {
-  it('defaults to Orca-managed Codex runtime sessions', () => {
-    expect(getCodexSessionsDirectory()).toBe(
-      join('/tmp/orca-user-data', 'codex-runtime-home', 'home', 'sessions')
-    )
-  })
-
-  it('respects an explicit CODEX_HOME override', () => {
-    process.env.CODEX_HOME = '/tmp/explicit-codex-home'
-
-    expect(getCodexSessionsDirectory()).toBe(join('/tmp/explicit-codex-home', 'sessions'))
-  })
-})
+import { attributeCodexUsageEvent, parseCodexUsageRecord } from './scanner'
 
 describe('parseCodexUsageRecord', () => {
   it('uses token totals only as a duplicate baseline', () => {
