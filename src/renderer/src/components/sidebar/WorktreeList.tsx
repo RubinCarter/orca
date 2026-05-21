@@ -100,6 +100,7 @@ import {
   setSidebarPointerDragDocumentStyles,
   updateSidebarDragPreviewPosition
 } from './worktree-sidebar-pointer-drag-dom'
+import { resolveRepoGroupHeaderColor } from './repo-header-color'
 import {
   areWorktreeSelectionsEqual,
   getWorktreeSelectionIntent,
@@ -1729,6 +1730,11 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   ? getWorkspaceStatusFromGroupKey(row.key, workspaceStatuses)
                   : null
               const isPinnedHeader = row.key === PINNED_GROUP_KEY
+              const repoHeaderColor = resolveRepoGroupHeaderColor({
+                groupBy,
+                headerKey: row.key,
+                badgeColor: row.repo?.badgeColor
+              })
               const createState = row.repo
                 ? getRepoHeaderCreateState({
                     repo: row.repo,
@@ -1822,8 +1828,9 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                         }
                         className={cn(
                           'flex size-4 shrink-0 items-center justify-center rounded-[4px]',
-                          row.repo ? 'text-muted-foreground' : row.tone
+                          repoHeaderColor ? 'text-muted-foreground' : row.tone
                         )}
+                        style={repoHeaderColor ? { color: repoHeaderColor } : undefined}
                       >
                         <row.icon className={row.repo ? 'size-3.5' : 'size-3'} />
                       </div>
