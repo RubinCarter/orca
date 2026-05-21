@@ -482,6 +482,23 @@ function resolveRemoteActionError(kind: RemoteOpKind, error: unknown): string {
   })
 }
 
+export function refreshSourceControlAfterRemoteAction({
+  refreshGitStatus,
+  refreshBranchCompare,
+  refreshGitHistory,
+  onError = (error) => console.warn('[SourceControl] post-remote refresh failed', error)
+}: {
+  refreshGitStatus: () => Promise<void>
+  refreshBranchCompare: () => Promise<void>
+  refreshGitHistory: () => Promise<void>
+  onError?: (error: unknown) => void
+}): void {
+  // Why: fetch/sync can move the remote base ref without changing local files.
+  // Refresh all three visible git projections so the branch comparison table
+  // re-runs against the newly fetched base instead of waiting for polling.
+  void Promise.all([refreshGitStatus(), refreshBranchCompare(), refreshGitHistory()]).catch(onError)
+}
+
 function HostedReviewIcon({
   review,
   className
@@ -970,53 +987,12 @@ function SourceControlInner(): React.JSX.Element {
     linkedGitLabMR
   ])
 
-  useEffect(() => {
-    if (!isBranchVisible || !activeRepo || isFolder || !branchName) {
-      setHostedReviewCreation(null)
-      return
-    }
-    let stale = false
-    void getHostedReviewCreationEligibility({
-      repoPath: activeRepo.path,
-      ...(worktreePath ? { worktreePath } : {}),
-      branch: branchName,
-      base: effectiveBaseRef ?? null,
-      hasUncommittedChanges: hasUncommittedEntries,
-      hasUpstream: remoteStatus?.hasUpstream,
-      ahead: remoteStatus?.ahead,
-      behind: remoteStatus?.behind,
-      linkedGitHubPR,
-      linkedGitLabMR
-    })
-      .then((result) => {
-        if (!stale) {
-          setHostedReviewCreation(result)
-        }
-      })
-      .catch((error) => {
-        console.warn('[SourceControl] hosted review creation eligibility failed', error)
-        if (!stale) {
-          setHostedReviewCreation(null)
-        }
-      })
-    return () => {
-      stale = true
-    }
-  }, [
-    activeRepo,
-    branchName,
-    effectiveBaseRef,
-    getHostedReviewCreationEligibility,
-    hasUncommittedEntries,
-    isBranchVisible,
-    isFolder,
-    linkedGitHubPR,
-    linkedGitLabMR,
-    remoteStatus?.ahead,
-    remoteStatus?.behind,
-    remoteStatus?.hasUpstream,
-    worktreePath
-  ])
+  // Why: eligibility is recomputed below, after prGenerating / isCreatingPr are
+  // available, so the effect can pause refetches while a user-initiated PR flow
+  // is in flight. AI generation runs `git fetch` + `git rebase`, which mutates
+  // ahead/behind counts; without this guard the next refetch would return
+  // canCreate:false (typically needs_push), flip primaryAction.kind off
+  // create_pr, unmount the composer, and cancel the in-flight generation.
 
   const grouped = useMemo(() => {
     const groups = {
@@ -1517,7 +1493,11 @@ function SourceControlInner(): React.JSX.Element {
           }
         }))
       } finally {
-        void refreshGitHistoryRef.current()
+        refreshSourceControlAfterRemoteAction({
+          refreshGitStatus: refreshActiveGitStatusAfterMutation,
+          refreshBranchCompare: refreshBranchCompareRef.current,
+          refreshGitHistory: refreshGitHistoryRef.current
+        })
       }
     },
     [
@@ -1526,6 +1506,7 @@ function SourceControlInner(): React.JSX.Element {
       fetchBranch,
       pullBranch,
       pushBranch,
+      refreshActiveGitStatusAfterMutation,
       syncBranch,
       worktreePath
     ]
@@ -1634,12 +1615,72 @@ function SourceControlInner(): React.JSX.Element {
     onBranchChangedByGeneration: handleBranchChangedByPullRequestGeneration
   })
 
+  useEffect(() => {
+    if (!isBranchVisible || !activeRepo || isFolder || !branchName) {
+      setHostedReviewCreation(null)
+      return
+    }
+    // Why: skip refetches while the user's PR flow is mid-flight. AI generation
+    // rebases the branch (changing ahead/behind), and submission runs network
+    // calls that briefly perturb the same counts. Either flip can switch
+    // canCreate to false and tear down the composer underneath the user. The
+    // post-completion eligibility refresh in handlePullRequestCreated /
+    // onBranchChangedByGeneration restores the truth once the work settles.
+    if (prGenerating || isCreatingPr) {
+      return
+    }
+    let stale = false
+    void getHostedReviewCreationEligibility({
+      repoPath: activeRepo.path,
+      ...(worktreePath ? { worktreePath } : {}),
+      branch: branchName,
+      base: effectiveBaseRef ?? null,
+      hasUncommittedChanges: hasUncommittedEntries,
+      hasUpstream: remoteStatus?.hasUpstream,
+      ahead: remoteStatus?.ahead,
+      behind: remoteStatus?.behind,
+      linkedGitHubPR,
+      linkedGitLabMR
+    })
+      .then((result) => {
+        if (!stale) {
+          setHostedReviewCreation(result)
+        }
+      })
+      .catch((error) => {
+        console.warn('[SourceControl] hosted review creation eligibility failed', error)
+        if (!stale) {
+          setHostedReviewCreation(null)
+        }
+      })
+    return () => {
+      stale = true
+    }
+  }, [
+    activeRepo,
+    branchName,
+    effectiveBaseRef,
+    getHostedReviewCreationEligibility,
+    hasUncommittedEntries,
+    isBranchVisible,
+    isCreatingPr,
+    isFolder,
+    linkedGitHubPR,
+    linkedGitLabMR,
+    prGenerating,
+    remoteStatus?.ahead,
+    remoteStatus?.behind,
+    remoteStatus?.hasUpstream,
+    worktreePath
+  ])
+
   const handleCreatePullRequest = useCallback(async (): Promise<void> => {
     if (
       !activeRepo ||
       !activeWorktreeId ||
       !worktreePath ||
       !hostedReviewCreation?.canCreate ||
+      prGenerating ||
       createPrInFlightRef.current[activeWorktreeId]
     ) {
       return
@@ -1726,6 +1767,7 @@ function SourceControlInner(): React.JSX.Element {
     prBase,
     prBody,
     prDraft,
+    prGenerating,
     prTitle,
     worktreePath
   ])
@@ -1792,6 +1834,7 @@ function SourceControlInner(): React.JSX.Element {
         isPRStateLoading: isHostedReviewStateLoading,
         inFlightRemoteOpKind,
         hostedReviewCreation,
+        isPullRequestOperationActive: prGenerating || isCreatingPr,
         branchCommitsAhead:
           branchSummary?.status === 'ready' ? (branchSummary.commitsAhead ?? 0) : undefined
       }),
@@ -1804,8 +1847,10 @@ function SourceControlInner(): React.JSX.Element {
       isRemoteOperationActive,
       inFlightRemoteOpKind,
       hostedReviewCreation,
+      isCreatingPr,
       isHostedReviewStateLoading,
       hostedReview?.state,
+      prGenerating,
       branchSummary?.commitsAhead,
       branchSummary?.status,
       remoteStatus,
@@ -1819,6 +1864,9 @@ function SourceControlInner(): React.JSX.Element {
   // pure remote actions go through runRemoteAction.
   const handleActionInvoke = useCallback(
     (kind: DropdownActionKind): void => {
+      if (prGenerating || isCreatingPr) {
+        return
+      }
       switch (kind) {
         case 'commit':
           void handleCommit()
@@ -1851,7 +1899,14 @@ function SourceControlInner(): React.JSX.Element {
         }
       }
     },
-    [handleCommit, handleCreatePullRequest, runCompoundCommitAction, runRemoteAction]
+    [
+      handleCommit,
+      handleCreatePullRequest,
+      isCreatingPr,
+      prGenerating,
+      runCompoundCommitAction,
+      runRemoteAction
+    ]
   )
 
   const handleOpenDiff = useCallback(
@@ -3644,23 +3699,42 @@ function PullRequestComposer({
   onDropdownAction
 }: PullRequestComposerProps): React.JSX.Element {
   const normalizedBase = stripBaseRef(base)
+  const strippedBranch = stripBaseRef(branch)
+  const baseSameAsBranch = normalizedBase.toLowerCase() === strippedBranch.toLowerCase()
   const createDisabled =
     primaryAction.disabled ||
     generating ||
     title.trim().length === 0 ||
     normalizedBase.trim().length === 0 ||
-    normalizedBase.toLowerCase() === stripBaseRef(branch).toLowerCase()
+    baseSameAsBranch
+  // Why: surface a concrete reason on the disabled Create PR button so the
+  // user knows what's blocking submission instead of a silent gray state.
+  let createDisabledReason: string | undefined
+  if (generating) {
+    createDisabledReason = 'Wait for AI generation to finish.'
+  } else if (title.trim().length === 0) {
+    createDisabledReason = 'Enter a pull request title.'
+  } else if (normalizedBase.trim().length === 0) {
+    createDisabledReason = 'Choose a base branch.'
+  } else if (baseSameAsBranch) {
+    createDisabledReason = 'Base branch must differ from the head branch.'
+  }
+
+  // Why: lock the title/body/base inputs while AI generation is running so
+  // the user can't race the request — the hook otherwise rejects the result
+  // with "Fields changed while generating" and silently drops the draft.
+  const fieldsLocked = generating
 
   return (
     <div className="px-3 pb-2">
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         <div className="flex min-w-0 items-center justify-between gap-2">
-          <div className="min-w-0 truncate text-[11px] text-muted-foreground">
-            <span className="font-medium text-foreground">Create Pull Request</span>
-            <span className="mx-1">·</span>
-            <span>
-              {branch} → {normalizedBase || 'base'}
-            </span>
+          <div className="flex min-w-0 items-center gap-1.5 text-xs">
+            <GitPullRequestArrow
+              className="size-3.5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span className="font-medium text-foreground">New pull request</span>
           </div>
           {aiGenerationEnabled ? (
             generating ? (
@@ -3671,47 +3745,118 @@ function PullRequestComposer({
                 title="Stop generating"
                 aria-label="Stop generating pull request details"
               >
-                <RefreshCw className="size-3.5 animate-spin" />
-                Generating
-                <Square className="size-3 fill-current" />
+                <RefreshCw className="size-3 animate-spin" />
+                <span>Generating…</span>
+                <Square className="size-2.5 fill-current" />
               </button>
             ) : (
               <button
                 type="button"
                 disabled={generateDisabled}
                 onClick={() => onGenerate()}
-                className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-background"
+                className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-background px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-background"
                 title={generateDisabledReason ?? 'Generate pull request details with AI'}
                 aria-label="Generate pull request details with AI"
               >
-                <Sparkles className="size-3.5" />
+                <Sparkles className="size-3" />
                 Generate
               </button>
             )
           ) : null}
         </div>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_96px] gap-1.5">
+        {/* Why: a single line that shows the head→base flow plain-language so
+            the user can sanity-check the merge direction at a glance. */}
+        <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="truncate font-mono text-foreground" title={strippedBranch}>
+            {strippedBranch}
+          </span>
+          <ArrowDownUp className="size-3 rotate-90 shrink-0 opacity-60" aria-hidden="true" />
+          <span
+            className={cn(
+              'truncate font-mono',
+              baseSameAsBranch ? 'text-destructive' : 'text-foreground'
+            )}
+            title={normalizedBase || 'base'}
+          >
+            {normalizedBase || 'base'}
+          </span>
+        </div>
+
+        <div className="relative space-y-2">
           <input
             aria-label="Pull request title"
             value={title}
+            disabled={fieldsLocked}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Title"
-            className="h-8 min-w-0 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring"
+            className="h-8 w-full min-w-0 rounded-md border border-border bg-background px-2 text-xs font-medium text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
           />
-          <div className="relative">
+
+          <textarea
+            aria-label="Pull request description"
+            rows={6}
+            value={body}
+            disabled={fieldsLocked}
+            onChange={(event) => setBody(event.target.value)}
+            placeholder="Description (optional)"
+            className="min-h-[7.5rem] w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 scrollbar-sleek"
+          />
+
+          {generating ? (
+            // Why: visible scrim + status row so the user understands the
+            // title and description fields will be replaced when generation
+            // finishes; locking the inputs above also prevents the
+            // "Fields changed while generating" race in the hook.
+            <div
+              className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-md bg-background/40"
+              aria-hidden="true"
+            >
+              <div className="pointer-events-auto flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground shadow-sm">
+                <Sparkles className="size-3 animate-pulse text-foreground" />
+                <span>Generating title & description…</span>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Why: base picker as its own labeled row so the title input can use
+            the full width. The dropdown chevron makes the picker affordance
+            obvious; the inline label clarifies that this is the merge target. */}
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 text-[11px] text-muted-foreground">Base</span>
+          <div className="relative min-w-0 flex-1">
             <input
               aria-label="Pull request base branch"
               value={baseQuery || base}
+              disabled={fieldsLocked}
               onChange={(event) => {
                 setBaseQuery(event.target.value)
                 setBase(event.target.value)
               }}
               placeholder="main"
-              className="h-8 w-full min-w-0 rounded-md border border-border bg-background px-2 pr-6 text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring"
+              className="h-7 w-full min-w-0 rounded-md border border-border bg-background px-2 pr-6 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
             />
-            <ChevronDown className="pointer-events-none absolute right-1.5 top-2 size-3.5 text-muted-foreground" />
+            <ChevronDown
+              className="pointer-events-none absolute right-1.5 top-1.5 size-3.5 text-muted-foreground"
+              aria-hidden="true"
+            />
           </div>
+          <label
+            className={cn(
+              'inline-flex shrink-0 items-center gap-1.5 text-[11px]',
+              fieldsLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer text-foreground'
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={draft}
+              disabled={fieldsLocked}
+              onChange={(event) => setDraft(event.target.checked)}
+              className="size-3.5 rounded border-border accent-primary"
+            />
+            Draft
+          </label>
         </div>
 
         {baseResults.length > 0 ? (
@@ -3721,7 +3866,7 @@ function PullRequestComposer({
                 key={ref}
                 type="button"
                 className={cn(
-                  'flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent',
+                  'flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left font-mono text-xs hover:bg-accent',
                   stripBaseRef(base) === ref && 'bg-accent text-accent-foreground'
                 )}
                 onClick={() => {
@@ -3737,45 +3882,21 @@ function PullRequestComposer({
           </div>
         ) : null}
 
-        <textarea
-          aria-label="Pull request description"
-          rows={6}
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          placeholder="Description"
-          className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring"
-        />
-
-        <div className="flex items-center justify-between gap-2">
-          <label className="inline-flex items-center gap-1.5 text-xs text-foreground">
-            <input
-              type="checkbox"
-              checked={draft}
-              onChange={(event) => setDraft(event.target.checked)}
-              className="size-3.5 rounded border-border accent-primary"
-            />
-            Draft
-          </label>
-          <span className="truncate text-[11px] text-muted-foreground">
-            {normalizedBase || 'base'}
-          </span>
-        </div>
-
-        <div className="flex items-stretch">
+        <div className="flex items-stretch pt-0.5">
           <Button
             type="button"
             size="xs"
             disabled={createDisabled}
             onClick={() => onPrimaryAction()}
-            className="flex-1 rounded-r-none px-3 text-[11px]"
-            title={primaryAction.title}
+            className="h-7 flex-1 rounded-r-none px-3 text-xs"
+            title={createDisabledReason ?? primaryAction.title}
           >
             {isCreating ? (
               <RefreshCw className="size-3.5 animate-spin" />
             ) : (
               <GitPullRequestArrow className="size-3.5" />
             )}
-            Create PR
+            {isCreating ? 'Creating…' : draft ? 'Create draft PR' : 'Create PR'}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -3783,7 +3904,7 @@ function PullRequestComposer({
                 type="button"
                 size="xs"
                 className={cn(
-                  'rounded-l-none border-l border-primary-foreground/20 px-1.5 shrink-0',
+                  'h-7 rounded-l-none border-l border-primary-foreground/20 px-1.5 shrink-0',
                   createDisabled && 'opacity-50'
                 )}
                 aria-label="More pull request and remote actions"
@@ -3824,14 +3945,30 @@ function PullRequestComposer({
           </DropdownMenu>
         </div>
 
-        {normalizedBase.toLowerCase() === stripBaseRef(branch).toLowerCase() ? (
-          <p className="text-[11px] text-destructive">
-            Choose a different base branch before creating a pull request.
+        {baseSameAsBranch ? (
+          <p className="flex items-start gap-1 text-[11px] text-destructive">
+            <TriangleAlert className="mt-px size-3 shrink-0" aria-hidden="true" />
+            <span>Choose a different base branch before creating a pull request.</span>
           </p>
         ) : null}
-        {baseSearchError ? <p className="text-[11px] text-destructive">{baseSearchError}</p> : null}
-        {generateError ? <p className="text-[11px] text-destructive">{generateError}</p> : null}
-        {createError ? <p className="text-[11px] text-destructive">{createError}</p> : null}
+        {baseSearchError ? (
+          <p className="flex items-start gap-1 text-[11px] text-destructive">
+            <TriangleAlert className="mt-px size-3 shrink-0" aria-hidden="true" />
+            <span>{baseSearchError}</span>
+          </p>
+        ) : null}
+        {generateError ? (
+          <p className="flex items-start gap-1 text-[11px] text-destructive">
+            <TriangleAlert className="mt-px size-3 shrink-0" aria-hidden="true" />
+            <span>{generateError}</span>
+          </p>
+        ) : null}
+        {createError ? (
+          <p className="flex items-start gap-1 text-[11px] text-destructive">
+            <TriangleAlert className="mt-px size-3 shrink-0" aria-hidden="true" />
+            <span>{createError}</span>
+          </p>
+        ) : null}
       </div>
     </div>
   )

@@ -2,6 +2,10 @@
 
 import type { PrimaryActionInputs } from './source-control-primary-action'
 
+export type DropdownActionInputs = PrimaryActionInputs & {
+  isPullRequestOperationActive?: boolean
+}
+
 export type DropdownActionKind =
   | 'commit'
   | 'commit_push'
@@ -54,7 +58,7 @@ function formatSyncLabel(base: string, ahead: number, behind: number): string {
  * menu shape stays stable across states; inapplicable rows are disabled
  * with a tooltip reason rather than hidden.
  */
-export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry[] {
+export function resolveDropdownItems(inputs: DropdownActionInputs): DropdownEntry[] {
   const {
     stagedCount,
     hasPartiallyStagedChanges,
@@ -66,7 +70,8 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
     prState,
     isPRStateLoading,
     hostedReviewCreation,
-    branchCommitsAhead
+    branchCommitsAhead,
+    isPullRequestOperationActive = false
   } = inputs
 
   const hasStaged = stagedCount > 0
@@ -88,7 +93,7 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
   // Why: any in-flight commit or remote operation should lock the whole menu.
   // A running push shouldn't let a second pull/sync click queue up behind it
   // on a stale status snapshot.
-  const globalBusy = isCommitting || isRemoteOperationActive
+  const globalBusy = isCommitting || isRemoteOperationActive || isPullRequestOperationActive
 
   const commitDisabledReason = (() => {
     if (hasUnresolvedConflicts) {
@@ -128,7 +133,10 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
         ? 'PR is already merged'
         : !hasUpstream
           ? 'Publish the branch first to push commits'
-          : (commitDisabledReason ?? 'Commit staged changes and push')
+          : (commitDisabledReason ??
+            (behind > 0
+              ? 'Use Commit & Sync to pull remote changes before pushing'
+              : 'Commit staged changes and push'))
   const commitPushItem: DropdownItem = {
     kind: 'commit_push',
     label: 'Commit & Push',
@@ -137,6 +145,7 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
       globalBusy ||
       upstreamLoading ||
       !hasUpstream ||
+      behind > 0 ||
       publishBlockedByPRLoading ||
       publishBlockedByMergedPR ||
       commitDisabledReason !== null
@@ -182,10 +191,12 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
           ? 'PR is already merged'
           : !hasUpstream
             ? 'Publish the branch first to push commits'
-            : ahead === 0
-              ? 'Nothing to push'
-              : describePushCount(ahead),
-    disabled: globalBusy || upstreamLoading || !hasUpstream || ahead === 0
+            : behind > 0 && ahead > 0
+              ? 'Sync first to pull remote changes before pushing'
+              : ahead === 0
+                ? 'Nothing to push'
+                : describePushCount(ahead),
+    disabled: globalBusy || upstreamLoading || !hasUpstream || ahead === 0 || behind > 0
   }
 
   const pullItem: DropdownItem = {
@@ -309,7 +320,7 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
     disabled: !canPushAndCreate
   }
 
-  return [
+  const entries: DropdownEntry[] = [
     commitItem,
     commitPushItem,
     commitSyncItem,
@@ -322,4 +333,16 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
     fetchItem,
     publishItem
   ]
+  if (!isPullRequestOperationActive) {
+    return entries
+  }
+  return entries.map((entry) =>
+    entry.kind === 'separator'
+      ? entry
+      : {
+          ...entry,
+          title: 'Pull request operation in progress…',
+          disabled: true
+        }
+  )
 }

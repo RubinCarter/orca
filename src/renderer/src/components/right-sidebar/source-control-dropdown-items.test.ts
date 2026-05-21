@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { resolveDropdownItems } from './source-control-dropdown-items'
-import type { PrimaryActionInputs } from './source-control-primary-action'
+import { resolveDropdownItems, type DropdownActionInputs } from './source-control-dropdown-items'
 
 // Why: a shared defaults object keeps each case row terse while making the
 // "this is the one knob that differs from the baseline" intent obvious.
-function inputs(overrides: Partial<PrimaryActionInputs> = {}): PrimaryActionInputs {
+function inputs(overrides: Partial<DropdownActionInputs> = {}): DropdownActionInputs {
   return {
     stagedCount: 0,
     hasUnstagedChanges: false,
@@ -115,6 +114,26 @@ describe('resolveDropdownItems', () => {
     expect(byKind.sync.label).toBe('Sync (↓2 ↑3)')
   })
 
+  it('disables push-only actions on diverged branches so users sync first', () => {
+    const items = resolveDropdownItems(
+      inputs({
+        stagedCount: 1,
+        hasMessage: true,
+        upstreamStatus: { hasUpstream: true, ahead: 2, behind: 3 }
+      })
+    )
+    const byKind = Object.fromEntries(
+      items.filter((e) => e.kind !== 'separator').map((e) => [e.kind, e])
+    )
+
+    expect(byKind.push.disabled).toBe(true)
+    expect(byKind.push.title).toBe('Sync first to pull remote changes before pushing')
+    expect(byKind.commit_push.disabled).toBe(true)
+    expect(byKind.commit_push.title).toBe('Use Commit & Sync to pull remote changes before pushing')
+    expect(byKind.sync.disabled).toBe(false)
+    expect(byKind.commit_sync.disabled).toBe(false)
+  })
+
   it('omits counts from labels when ahead/behind are 0', () => {
     const items = resolveDropdownItems(
       inputs({ upstreamStatus: { hasUpstream: true, ahead: 0, behind: 0 } })
@@ -139,6 +158,29 @@ describe('resolveDropdownItems', () => {
     for (const entry of items) {
       if (entry.kind !== 'separator') {
         expect(entry.disabled).toBe(true)
+      }
+    }
+  })
+
+  it('locks every item while a pull request operation is running', () => {
+    const items = resolveDropdownItems(
+      inputs({
+        isPullRequestOperationActive: true,
+        upstreamStatus: { hasUpstream: true, ahead: 0, behind: 0 },
+        hostedReviewCreation: {
+          provider: 'github',
+          review: null,
+          canCreate: true,
+          blockedReason: null,
+          nextAction: null
+        }
+      })
+    )
+
+    for (const entry of items) {
+      if (entry.kind !== 'separator') {
+        expect(entry.disabled).toBe(true)
+        expect(entry.title).toBe('Pull request operation in progress…')
       }
     }
   })
