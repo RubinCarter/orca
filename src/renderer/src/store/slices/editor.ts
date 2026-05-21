@@ -30,6 +30,7 @@ import type {
 import { stripCredentialsFromMessage } from '../../../../shared/git-remote-error'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 import type { RemoteOpKind } from '@/components/right-sidebar/source-control-primary-action'
+import { shouldForcePushWithLeaseForUpstream } from '../../../../shared/git-upstream-status'
 import {
   fetchRuntimeGit,
   getRuntimeGitUpstreamStatus,
@@ -418,7 +419,8 @@ export type EditorSlice = {
     worktreePath: string,
     publish?: boolean,
     connectionId?: string,
-    pushTarget?: GitPushTarget
+    pushTarget?: GitPushTarget,
+    options?: { forceWithLease?: boolean }
   ) => Promise<void>
   pullBranch: (worktreeId: string, worktreePath: string, connectionId?: string) => Promise<void>
   syncBranch: (
@@ -2674,7 +2676,14 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       console.error('fetchUpstreamStatus failed', error)
     }
   },
-  pushBranch: async (worktreeId, worktreePath, publish = false, connectionId, pushTarget) => {
+  pushBranch: async (
+    worktreeId,
+    worktreePath,
+    publish = false,
+    connectionId,
+    pushTarget,
+    options = {}
+  ) => {
     // Why: don't *await* a post-op git status / upstream refresh here.
     // Chaining awaited refreshes inside the mutation extends the gap before
     // compound flows (runCompoundCommitAction → runRemoteAction) reach the
@@ -2688,7 +2697,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     try {
       await pushRuntimeGit(
         { settings: get().settings, worktreeId, worktreePath, connectionId },
-        { publish, pushTarget }
+        { publish, pushTarget, forceWithLease: options.forceWithLease }
       )
     } catch (error) {
       toast.error(resolveRemoteOperationErrorMessage(error, { publish, isPush: true }))
@@ -2732,23 +2741,35 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     try {
       const context = { settings: get().settings, worktreeId, worktreePath, connectionId }
       await fetchRuntimeGit(context)
-      await pullRuntimeGit(context)
-      // Why: push only if the pull left local commits that aren't on the
-      // remote. After a merge pull the ahead count can be >0 (local commits +
-      // the new merge commit) or 0 (pure fast-forward), and we avoid a
-      // no-op push round-trip in the fast-forward case.
-      const upstreamStatus = await getRuntimeGitUpstreamStatus(context)
-      if (upstreamStatus.ahead > 0) {
+      const upstreamStatusBeforePull = await getRuntimeGitUpstreamStatus(context)
+      if (shouldForcePushWithLeaseForUpstream(upstreamStatusBeforePull)) {
         try {
-          await pushRuntimeGit(context, { pushTarget })
+          await pushRuntimeGit(context, { pushTarget, forceWithLease: true })
           pushed = true
         } catch (error) {
-          // Why: format under the user-facing operation (sync) rather than
-          // the inner step (push) — the user clicked Sync and shouldn't see
-          // a "Push failed" toast for a step they didn't directly invoke.
           toast.error(resolveRemoteOperationErrorMessage(error, { isSync: true }))
           pushStageToastShown = true
           throw error
+        }
+      } else {
+        await pullRuntimeGit(context)
+        // Why: push only if the pull left local commits that aren't on the
+        // remote. After a merge pull the ahead count can be >0 (local commits +
+        // the new merge commit) or 0 (pure fast-forward), and we avoid a
+        // no-op push round-trip in the fast-forward case.
+        const upstreamStatus = await getRuntimeGitUpstreamStatus(context)
+        if (upstreamStatus.ahead > 0) {
+          try {
+            await pushRuntimeGit(context, { pushTarget })
+            pushed = true
+          } catch (error) {
+            // Why: format under the user-facing operation (sync) rather than
+            // the inner step (push) — the user clicked Sync and shouldn't see
+            // a "Push failed" toast for a step they didn't directly invoke.
+            toast.error(resolveRemoteOperationErrorMessage(error, { isSync: true }))
+            pushStageToastShown = true
+            throw error
+          }
         }
       }
     } catch (error) {
@@ -3324,7 +3345,8 @@ function areUpstreamStatusesEqual(
     prev.hasUpstream === next.hasUpstream &&
     prev.upstreamName === next.upstreamName &&
     prev.ahead === next.ahead &&
-    prev.behind === next.behind
+    prev.behind === next.behind &&
+    prev.behindCommitsArePatchEquivalent === next.behindCommitsArePatchEquivalent
   )
 }
 

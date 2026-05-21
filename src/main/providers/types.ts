@@ -167,7 +167,12 @@ export type IGitProvider = {
   getBranchCompare(worktreePath: string, baseRef: string): Promise<GitBranchCompareResult>
   getCommitCompare(worktreePath: string, commitId: string): Promise<GitCommitCompareResult>
   getUpstreamStatus(worktreePath: string): Promise<GitUpstreamStatus>
-  pushBranch(worktreePath: string, publish?: boolean, pushTarget?: GitPushTarget): Promise<void>
+  pushBranch(
+    worktreePath: string,
+    publish?: boolean,
+    pushTarget?: GitPushTarget,
+    options?: { forceWithLease?: boolean }
+  ): Promise<void>
   pullBranch(worktreePath: string): Promise<void>
   fetchRemote(worktreePath: string): Promise<void>
   getBranchDiff(

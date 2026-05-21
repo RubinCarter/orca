@@ -70,6 +70,21 @@ describe('git remote operations', () => {
     ])
   })
 
+  it('passes --force-with-lease when requested', async () => {
+    gitExecFileAsyncMock
+      .mockResolvedValueOnce({ stdout: 'feature\n', stderr: '' })
+      .mockResolvedValueOnce({ stdout: 'origin\n', stderr: '' })
+      .mockResolvedValueOnce({ stdout: 'refs/heads/feature\n', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+
+    await gitPush('/repo', false, undefined, { forceWithLease: true })
+
+    expect(gitExecFileAsyncMock).toHaveBeenLastCalledWith(
+      ['push', '--force-with-lease', '--set-upstream', 'origin', 'HEAD:feature'],
+      { cwd: '/repo' }
+    )
+  })
+
   it('maps non-fast-forward push failures to an actionable message', async () => {
     gitExecFileAsyncMock
       .mockRejectedValueOnce(new Error('no branch'))

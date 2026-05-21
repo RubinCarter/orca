@@ -121,7 +121,7 @@ describe('useGitStatusPolling', () => {
         hasUpstream: true,
         upstreamName: 'origin/main',
         ahead: 2,
-        behind: 1
+        behind: 0
       }
     })
 
@@ -129,7 +129,7 @@ describe('useGitStatusPolling', () => {
       hasUpstream: true,
       upstreamName: 'origin/main',
       ahead: 2,
-      behind: 1
+      behind: 0
     })
     expect(state.fetchUpstreamStatus).not.toHaveBeenCalled()
   })

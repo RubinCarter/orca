@@ -930,6 +930,7 @@ export function registerFilesystemHandlers(
       args: {
         worktreePath: string
         publish?: boolean
+        forceWithLease?: boolean
         connectionId?: string
         pushTarget?: GitPushTarget
       }
@@ -946,13 +947,17 @@ export function registerFilesystemHandlers(
         if (!provider) {
           throw new Error(SSH_GIT_PROVIDER_UNAVAILABLE_MESSAGE)
         }
-        return provider.pushBranch(args.worktreePath, publish, args.pushTarget)
+        return provider.pushBranch(args.worktreePath, publish, args.pushTarget, {
+          forceWithLease: args.forceWithLease === true
+        })
       }
       const worktreePath = await resolveRegisteredWorktreePath(args.worktreePath, store)
       if (args.pushTarget) {
         await validateGitPushTarget(worktreePath, args.pushTarget)
       }
-      await gitPush(worktreePath, publish, args.pushTarget)
+      await gitPush(worktreePath, publish, args.pushTarget, {
+        forceWithLease: args.forceWithLease === true
+      })
     }
   )
 

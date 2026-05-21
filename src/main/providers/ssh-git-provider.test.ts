@@ -290,6 +290,17 @@ describe('SshGitProvider', () => {
     })
   })
 
+  it('pushBranch forwards force-with-lease mode', async () => {
+    await provider.pushBranch('/home/user/repo', false, undefined, { forceWithLease: true })
+
+    expect(mux.request).toHaveBeenCalledWith('git.push', {
+      worktreePath: '/home/user/repo',
+      publish: false,
+      pushTarget: undefined,
+      forceWithLease: true
+    })
+  })
+
   it('pullBranch sends git.pull request', async () => {
     await provider.pullBranch('/home/user/repo')
     expect(mux.request).toHaveBeenCalledWith('git.pull', {

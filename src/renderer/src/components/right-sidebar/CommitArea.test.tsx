@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { CommitArea, ConflictSummaryCard } from './SourceControl'
 import { resolvePrimaryAction, type PrimaryActionInputs } from './source-control-primary-action'
 import { resolveDropdownItems, type DropdownActionKind } from './source-control-dropdown-items'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 function buildInputs(overrides: Partial<PrimaryActionInputs> = {}): PrimaryActionInputs {
   return {
@@ -45,7 +46,11 @@ function baseProps(overrides: Partial<PrimaryActionInputs> = {}) {
 }
 
 function renderCommitArea(props: ReturnType<typeof baseProps>): string {
-  return renderToStaticMarkup(<CommitArea {...props} />)
+  return renderToStaticMarkup(
+    <TooltipProvider>
+      <CommitArea {...props} />
+    </TooltipProvider>
+  )
 }
 
 function firstButton(markup: string): string {

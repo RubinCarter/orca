@@ -131,6 +131,7 @@ import { stripBaseRef, useCreatePullRequestDialogFields } from './useCreatePullR
 import { GitHistoryPanel, type GitHistoryPanelState } from './GitHistoryPanel'
 import type { GitHistoryItem } from '../../../../shared/git-history'
 import { normalizeHostedReviewHeadRef } from '../../../../shared/hosted-review-refs'
+import { shouldForcePushWithLeaseForUpstream } from '../../../../shared/git-upstream-status'
 import type {
   DiffComment,
   GitBranchChangeEntry,
@@ -1461,12 +1462,14 @@ function SourceControlInner(): React.JSX.Element {
           return
         }
         if (kind === 'push') {
+          const forceWithLease = shouldForcePushWithLeaseForUpstream(remoteStatus)
           await pushBranch(
             activeWorktreeId,
             worktreePath,
             false,
             connectionId,
-            activeWorktree?.pushTarget
+            activeWorktree?.pushTarget,
+            forceWithLease ? { forceWithLease: true } : undefined
           )
           return
         }
@@ -1507,6 +1510,7 @@ function SourceControlInner(): React.JSX.Element {
       pullBranch,
       pushBranch,
       refreshActiveGitStatusAfterMutation,
+      remoteStatus,
       syncBranch,
       worktreePath
     ]
@@ -4188,71 +4192,98 @@ export function CommitArea({
             and chevron share a single rounded rectangle — rounded-r-none on
             the primary and rounded-l-none + border-l on the chevron make the
             pair read as one split button instead of two detached buttons. */}
-        <Button
-          type="button"
-          size="xs"
-          disabled={primaryAction.disabled}
-          onClick={() => onPrimaryAction()}
-          className="flex-1 rounded-r-none px-3 text-[11px]"
-          title={primaryAction.title}
-        >
-          {showSpinner ? (
-            <RefreshCw className="size-3.5 animate-spin" />
-          ) : PrimaryIcon ? (
-            <PrimaryIcon className="size-3.5" aria-hidden="true" />
-          ) : null}
-          {primaryAction.label}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="flex flex-1">
+              <Button
+                type="button"
+                size="xs"
+                disabled={primaryAction.disabled}
+                onClick={() => onPrimaryAction()}
+                className="w-full rounded-r-none px-3 text-[11px]"
+                title={primaryAction.title}
+              >
+                {showSpinner ? (
+                  <RefreshCw className="size-3.5 animate-spin" />
+                ) : PrimaryIcon ? (
+                  <PrimaryIcon className="size-3.5" aria-hidden="true" />
+                ) : null}
+                {primaryAction.label}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6} className="max-w-72">
+            {primaryAction.title}
+          </TooltipContent>
+        </Tooltip>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              size="xs"
-              className={cn(
-                'rounded-l-none border-l border-primary-foreground/20 px-1.5 shrink-0',
-                // Why: mirror the primary's disabled dimming so the split
-                // button reads as one unit when Commit is unavailable. The
-                // chevron itself stays clickable — its dropdown exposes
-                // independently-gated remote actions (push / fetch / pull)
-                // that are still valid when the primary is disabled.
-                primaryAction.disabled && 'opacity-50'
-              )}
-              aria-label="More commit and remote actions"
-              title="More actions"
-            >
-              {showChevronSpinner ? (
-                <RefreshCw className="size-3.5 animate-spin" />
-              ) : (
-                <ChevronDown className="size-3.5" />
-              )}
-            </Button>
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex shrink-0">
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    size="xs"
+                    className={cn(
+                      'rounded-l-none border-l border-primary-foreground/20 px-1.5 shrink-0',
+                      // Why: mirror the primary's disabled dimming so the split
+                      // button reads as one unit when Commit is unavailable. The
+                      // chevron itself stays clickable — its dropdown exposes
+                      // independently-gated remote actions (push / fetch / pull)
+                      // that are still valid when the primary is disabled.
+                      primaryAction.disabled && 'opacity-50'
+                    )}
+                    aria-label="More commit and remote actions"
+                    title="More actions"
+                  >
+                    {showChevronSpinner ? (
+                      <RefreshCw className="size-3.5 animate-spin" />
+                    ) : (
+                      <ChevronDown className="size-3.5" />
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6}>
+              More commit and remote actions
+            </TooltipContent>
+          </Tooltip>
           <DropdownMenuContent align="end" className="min-w-[14rem]">
             {dropdownItems.map((entry, index) =>
               entry.kind === 'separator' ? (
                 <DropdownMenuSeparator key={`sep-${index}`} />
               ) : (
-                <DropdownMenuItem
-                  key={entry.kind}
-                  disabled={entry.disabled}
-                  title={entry.title}
-                  onSelect={(event) => {
-                    if (entry.disabled) {
-                      event.preventDefault()
-                      return
-                    }
-                    onDropdownAction(entry.kind)
-                  }}
-                >
-                  <span className="flex min-w-0 flex-col">
-                    <span>{entry.label}</span>
-                    {entry.hint ? (
-                      <span className="truncate text-[10px] text-muted-foreground">
-                        {entry.hint}
-                      </span>
-                    ) : null}
-                  </span>
-                </DropdownMenuItem>
+                <Tooltip key={entry.kind}>
+                  <TooltipTrigger asChild>
+                    <div className="block">
+                      <DropdownMenuItem
+                        disabled={entry.disabled}
+                        title={entry.title}
+                        className="w-full"
+                        onSelect={(event) => {
+                          if (entry.disabled) {
+                            event.preventDefault()
+                            return
+                          }
+                          onDropdownAction(entry.kind)
+                        }}
+                      >
+                        <span className="flex min-w-0 flex-col">
+                          <span>{entry.label}</span>
+                          {entry.hint ? (
+                            <span className="truncate text-[10px] text-muted-foreground">
+                              {entry.hint}
+                            </span>
+                          ) : null}
+                        </span>
+                      </DropdownMenuItem>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" sideOffset={8} className="max-w-72">
+                    {entry.title}
+                  </TooltipContent>
+                </Tooltip>
               )
             )}
           </DropdownMenuContent>

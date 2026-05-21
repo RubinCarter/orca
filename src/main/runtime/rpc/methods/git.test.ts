@@ -237,8 +237,30 @@ describe('git RPC methods', () => {
       agentCmdOverrides: { cursor: 'cursor-agent' }
     })
     expect(runtime.cancelRuntimeGenerateCommitMessage).toHaveBeenCalledWith('id:wt-1')
-    expect(runtime.pushRuntimeGit).toHaveBeenCalledWith('id:wt-1', true, { remote: 'origin' })
+    expect(runtime.pushRuntimeGit).toHaveBeenCalledWith(
+      'id:wt-1',
+      true,
+      { remote: 'origin' },
+      undefined
+    )
     expect(response).toMatchObject({ ok: true, result: 'https://example.com/file#L3' })
+  })
+
+  it('forwards force-with-lease push mode to the runtime', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      pushRuntimeGit: vi.fn().mockResolvedValue({ ok: true })
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: GIT_METHODS })
+
+    await dispatcher.dispatch(
+      makeRequest('git.push', {
+        worktree: 'id:wt-1',
+        forceWithLease: true
+      })
+    )
+
+    expect(runtime.pushRuntimeGit).toHaveBeenCalledWith('id:wt-1', undefined, undefined, true)
   })
 
   it('forwards commit-message settings to the runtime', async () => {

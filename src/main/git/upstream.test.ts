@@ -25,6 +25,7 @@ describe('getUpstreamStatus', () => {
     gitExecFileAsyncMock
       .mockResolvedValueOnce({ stdout: 'origin/main\n' })
       .mockResolvedValueOnce({ stdout: '2\t3\n' })
+      .mockResolvedValueOnce({ stdout: '+ abc123 remote work\n' })
 
     const result = await getUpstreamStatus('/repo')
 
@@ -32,7 +33,29 @@ describe('getUpstreamStatus', () => {
       hasUpstream: true,
       upstreamName: 'origin/main',
       ahead: 2,
-      behind: 3
+      behind: 3,
+      behindCommitsArePatchEquivalent: false
+    })
+  })
+
+  it('marks diverged upstream commits as patch-equivalent after a rebase', async () => {
+    gitExecFileAsyncMock
+      .mockResolvedValueOnce({ stdout: 'origin/feature\n' })
+      .mockResolvedValueOnce({ stdout: '14\t3\n' })
+      .mockResolvedValueOnce({
+        stdout:
+          '= ac503deae Stabilize pull request creation flow\n' +
+          '= 7dc0fc1a6 Clean up fork PR remotes after worktree deletion\n'
+      })
+
+    const result = await getUpstreamStatus('/repo')
+
+    expect(result).toEqual({
+      hasUpstream: true,
+      upstreamName: 'origin/feature',
+      ahead: 14,
+      behind: 3,
+      behindCommitsArePatchEquivalent: true
     })
   })
 

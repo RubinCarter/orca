@@ -19,6 +19,7 @@ import { commitChangesRelay, addWorktreeOp, removeWorktreeOp } from './git-handl
 import { checkIgnoredPathsOp, detectConflictOperation, getStatusOp } from './git-handler-status-ops'
 import { resolveRelayPushTarget } from './git-handler-push-target'
 import { normalizeGitErrorMessage, isNoUpstreamError } from '../shared/git-remote-error'
+import { upstreamOnlyCommitsArePatchEquivalent } from '../shared/git-upstream-status'
 import { loadGitHistoryFromExecutor } from '../shared/git-history'
 import { buildRelayCommandEnv } from './relay-command-env'
 
@@ -312,11 +313,18 @@ export class GitHandler {
       if (!Number.isFinite(ahead) || !Number.isFinite(behind) || ahead < 0 || behind < 0) {
         throw new Error(`Unparseable git rev-list counts: ${JSON.stringify(countsStdout)}`)
       }
+      const behindCommitsArePatchEquivalent =
+        ahead > 0 && behind > 0
+          ? await this.getBehindCommitsArePatchEquivalent(worktreePath)
+          : undefined
       return {
         hasUpstream: true,
         upstreamName,
         ahead,
-        behind
+        behind,
+        ...(behindCommitsArePatchEquivalent !== undefined
+          ? { behindCommitsArePatchEquivalent }
+          : {})
       }
     } catch (error) {
       // Why: we only swallow the 'no upstream configured' error — that's an
@@ -328,6 +336,20 @@ export class GitHandler {
       // Why: match fetch/push/pull normalization so execFile preamble and local
       // paths don't leak to the renderer.
       throw new Error(normalizeGitErrorMessage(error, 'upstream'))
+    }
+  }
+
+  private async getBehindCommitsArePatchEquivalent(worktreePath: string): Promise<boolean> {
+    try {
+      const { stdout } = await this.git(
+        ['log', '--oneline', '--cherry-mark', '--right-only', 'HEAD...@{u}', '--'],
+        worktreePath
+      )
+      return upstreamOnlyCommitsArePatchEquivalent(stdout)
+    } catch {
+      // Why: this only identifies stale post-rebase upstreams. If the probe
+      // fails over SSH, keep the conservative pull-first sync path.
+      return false
     }
   }
 
@@ -354,9 +376,12 @@ export class GitHandler {
         worktreePath,
         params.pushTarget
       )
-      const args = target
-        ? ['push', '--set-upstream', target.remote, target.refspec]
-        : ['push', '--set-upstream', 'origin', 'HEAD']
+      const args = [
+        'push',
+        ...(params.forceWithLease === true ? ['--force-with-lease'] : []),
+        '--set-upstream',
+        ...(target ? [target.remote, target.refspec] : ['origin', 'HEAD'])
+      ]
       await this.git(args, worktreePath)
     } catch (error) {
       // Why: mirror the local gitPush normalization so SSH users see the same

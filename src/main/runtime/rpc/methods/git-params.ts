@@ -124,6 +124,7 @@ export const GitBulkPaths = WorktreeSelector.extend({
 
 export const GitPush = WorktreeSelector.extend({
   publish: z.boolean().optional(),
+  forceWithLease: z.boolean().optional(),
   pushTarget: z.unknown().optional()
 })
 

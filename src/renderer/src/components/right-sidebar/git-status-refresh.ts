@@ -44,6 +44,16 @@ export async function refreshGitStatusForWorktree({
   })
   if (status.upstreamStatus) {
     deps.setUpstreamStatus(worktreeId, status.upstreamStatus)
+    // Why: porcelain status has counts but cannot tell stale post-rebase
+    // upstream commits from real remote work. A diverged branch needs the
+    // richer explicit probe before the UI offers Pull/Sync.
+    if (
+      status.upstreamStatus.ahead > 0 &&
+      status.upstreamStatus.behind > 0 &&
+      status.upstreamStatus.behindCommitsArePatchEquivalent === undefined
+    ) {
+      await deps.fetchUpstreamStatus(worktreeId, worktreePath, connectionId)
+    }
     return
   }
   await deps.fetchUpstreamStatus(worktreeId, worktreePath, connectionId)

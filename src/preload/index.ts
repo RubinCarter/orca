@@ -2081,6 +2081,7 @@ const api = {
     push: (args: {
       worktreePath: string
       publish?: boolean
+      forceWithLease?: boolean
       connectionId?: string
       pushTarget?: unknown
     }): Promise<void> => ipcRenderer.invoke('git:push', args),

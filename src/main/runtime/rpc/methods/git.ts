@@ -91,7 +91,12 @@ export const GIT_METHODS: RpcMethod[] = [
     name: 'git.push',
     params: GitPush,
     handler: async (params, { runtime }) =>
-      runtime.pushRuntimeGit(params.worktree, params.publish, params.pushTarget as never)
+      runtime.pushRuntimeGit(
+        params.worktree,
+        params.publish,
+        params.pushTarget as never,
+        params.forceWithLease
+      )
   }),
   defineMethod({
     name: 'git.branchDiff',

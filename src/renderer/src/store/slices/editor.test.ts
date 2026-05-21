@@ -1340,6 +1340,36 @@ describe('createEditorSlice remote branch actions', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
+  it('updates subscribers when explicit upstream status adds patch equivalence', () => {
+    const store = createEditorStore()
+    store.getState().setUpstreamStatus('wt-1', {
+      hasUpstream: true,
+      upstreamName: 'origin/feature',
+      ahead: 14,
+      behind: 3
+    })
+    const listener = vi.fn()
+    const unsubscribe = store.subscribe(listener)
+
+    store.getState().setUpstreamStatus('wt-1', {
+      hasUpstream: true,
+      upstreamName: 'origin/feature',
+      ahead: 14,
+      behind: 3,
+      behindCommitsArePatchEquivalent: true
+    })
+    unsubscribe()
+
+    expect(listener).toHaveBeenCalled()
+    expect(store.getState().remoteStatusesByWorktree['wt-1']).toEqual({
+      hasUpstream: true,
+      upstreamName: 'origin/feature',
+      ahead: 14,
+      behind: 3,
+      behindCommitsArePatchEquivalent: true
+    })
+  })
+
   it('runs pull and refreshes status + upstream on success', async () => {
     const store = createEditorStore()
     store.getState().setGitStatus('wt-1', {
@@ -1657,18 +1687,48 @@ describe('createEditorSlice remote branch actions', () => {
     // Why: guards against a no-op push round-trip after a pure fast-forward
     // pull. See syncBranch's ahead>0 guard in editor.ts.
     const store = createEditorStore()
-    gitUpstreamStatusMock.mockResolvedValueOnce({
-      hasUpstream: true,
-      upstreamName: 'origin/main',
-      ahead: 0,
-      behind: 0
-    })
+    gitUpstreamStatusMock
+      .mockResolvedValueOnce({
+        hasUpstream: true,
+        upstreamName: 'origin/main',
+        ahead: 0,
+        behind: 1
+      })
+      .mockResolvedValueOnce({
+        hasUpstream: true,
+        upstreamName: 'origin/main',
+        ahead: 0,
+        behind: 0
+      })
 
     await store.getState().syncBranch('wt-1', '/repo')
 
     expect(gitFetchMock).toHaveBeenCalled()
     expect(gitPullMock).toHaveBeenCalled()
     expect(gitPushMock).not.toHaveBeenCalled()
+    expect(toastErrorMock).not.toHaveBeenCalled()
+  })
+
+  it('force-pushes with lease instead of pulling when sync sees a stale rebased upstream', async () => {
+    const store = createEditorStore()
+    gitUpstreamStatusMock.mockResolvedValueOnce({
+      hasUpstream: true,
+      upstreamName: 'origin/feature',
+      ahead: 14,
+      behind: 3,
+      behindCommitsArePatchEquivalent: true
+    })
+
+    await store.getState().syncBranch('wt-1', '/repo')
+
+    expect(gitFetchMock).toHaveBeenCalled()
+    expect(gitPullMock).not.toHaveBeenCalled()
+    expect(gitPushMock).toHaveBeenCalledWith({
+      worktreePath: '/repo',
+      connectionId: undefined,
+      forceWithLease: true
+    })
+    expect(gitUpstreamStatusMock).toHaveBeenCalledTimes(2)
     expect(toastErrorMock).not.toHaveBeenCalled()
   })
 

@@ -1,6 +1,21 @@
 import type { GitUpstreamStatus } from '../../shared/types'
+import { upstreamOnlyCommitsArePatchEquivalent } from '../../shared/git-upstream-status'
 import { isNoUpstreamError, normalizeGitErrorMessage } from '../../shared/git-remote-error'
 import { gitExecFileAsync } from './runner'
+
+async function getBehindCommitsArePatchEquivalent(worktreePath: string): Promise<boolean> {
+  try {
+    const { stdout } = await gitExecFileAsync(
+      ['log', '--oneline', '--cherry-mark', '--right-only', 'HEAD...@{u}', '--'],
+      { cwd: worktreePath }
+    )
+    return upstreamOnlyCommitsArePatchEquivalent(stdout)
+  } catch {
+    // Why: patch-equivalence is an optimization for the rebase case. If the
+    // probe fails, keep the conservative pull-first behavior.
+    return false
+  }
+}
 
 export async function getUpstreamStatus(worktreePath: string): Promise<GitUpstreamStatus> {
   try {
@@ -35,11 +50,15 @@ export async function getUpstreamStatus(worktreePath: string): Promise<GitUpstre
       throw new Error(`Unparseable git rev-list counts: ${JSON.stringify(countsStdout)}`)
     }
 
+    const behindCommitsArePatchEquivalent =
+      ahead > 0 && behind > 0 ? await getBehindCommitsArePatchEquivalent(worktreePath) : undefined
+
     return {
       hasUpstream: true,
       upstreamName,
       ahead,
-      behind
+      behind,
+      ...(behindCommitsArePatchEquivalent !== undefined ? { behindCommitsArePatchEquivalent } : {})
     }
   } catch (error) {
     // Why: we only swallow clearly-no-upstream signals — that's an expected

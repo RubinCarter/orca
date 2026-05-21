@@ -42,7 +42,8 @@ function explicitPushTarget(target: GitPushTarget): { remote: string; refspec: s
 export async function gitPush(
   worktreePath: string,
   _publish = false,
-  pushTarget?: GitPushTarget
+  pushTarget?: GitPushTarget,
+  options: { forceWithLease?: boolean } = {}
 ): Promise<void> {
   try {
     if (pushTarget) {
@@ -61,9 +62,12 @@ export async function gitPush(
     const target = pushTarget
       ? explicitPushTarget(pushTarget)
       : await getConfiguredPushTarget(worktreePath)
-    const args = target
-      ? ['push', '--set-upstream', target.remote, target.refspec]
-      : ['push', '--set-upstream', 'origin', 'HEAD']
+    const args = [
+      'push',
+      ...(options.forceWithLease ? ['--force-with-lease'] : []),
+      '--set-upstream',
+      ...(target ? [target.remote, target.refspec] : ['origin', 'HEAD'])
+    ]
     await gitExecFileAsync(args, { cwd: worktreePath })
   } catch (error) {
     throw new Error(normalizeGitErrorMessage(error, 'push'))

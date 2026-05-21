@@ -1509,6 +1509,7 @@ export type PreloadApi = {
     push: (args: {
       worktreePath: string
       publish?: boolean
+      forceWithLease?: boolean
       connectionId?: string
       pushTarget?: GitPushTarget
     }) => Promise<void>

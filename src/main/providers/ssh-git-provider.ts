@@ -186,9 +186,15 @@ export class SshGitProvider implements IGitProvider {
   async pushBranch(
     worktreePath: string,
     publish = false,
-    pushTarget?: GitPushTarget
+    pushTarget?: GitPushTarget,
+    options: { forceWithLease?: boolean } = {}
   ): Promise<void> {
-    await this.mux.request('git.push', { worktreePath, publish, pushTarget })
+    await this.mux.request('git.push', {
+      worktreePath,
+      publish,
+      pushTarget,
+      ...(options.forceWithLease === true ? { forceWithLease: true } : {})
+    })
   }
 
   async pullBranch(worktreePath: string): Promise<void> {

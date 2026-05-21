@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: the dropdown priority table is easier to audit when the row-state cases live together. */
 import { describe, expect, it } from 'vitest'
 import { resolveDropdownItems, type DropdownActionInputs } from './source-control-dropdown-items'
 
@@ -132,6 +133,56 @@ describe('resolveDropdownItems', () => {
     expect(byKind.commit_push.title).toBe('Use Commit & Sync to pull remote changes before pushing')
     expect(byKind.sync.disabled).toBe(false)
     expect(byKind.commit_sync.disabled).toBe(false)
+  })
+
+  it('offers force-push-with-lease when remote-only commits are patch-equivalent', () => {
+    const items = resolveDropdownItems(
+      inputs({
+        stagedCount: 1,
+        hasMessage: true,
+        branchCommitsAhead: 4,
+        upstreamStatus: {
+          hasUpstream: true,
+          upstreamName: 'origin/feature',
+          ahead: 14,
+          behind: 3,
+          behindCommitsArePatchEquivalent: true
+        },
+        hostedReviewCreation: {
+          provider: 'github',
+          review: null,
+          canCreate: false,
+          blockedReason: 'needs_sync',
+          nextAction: 'sync'
+        }
+      })
+    )
+    const byKind = Object.fromEntries(
+      items.filter((e) => e.kind !== 'separator').map((e) => [e.kind, e])
+    )
+
+    expect(byKind.push.label).toBe('Force Push (4)')
+    expect(byKind.push.disabled).toBe(false)
+    expect(byKind.push.title).toBe(
+      'Remote only has older copies of local commits. Force push 4 branch commits with lease to update origin/feature.'
+    )
+    expect(byKind.commit_push.label).toBe('Commit & Force Push')
+    expect(byKind.commit_push.disabled).toBe(false)
+    expect(byKind.commit_push.title).toBe('Commit staged changes and force push with lease')
+    expect(byKind.pull.disabled).toBe(true)
+    expect(byKind.pull.title).toBe(
+      'Nothing new to pull — remote only has older copies of local commits'
+    )
+    expect(byKind.commit_sync.label).toBe('Commit & Sync')
+    expect(byKind.commit_sync.disabled).toBe(true)
+    expect(byKind.commit_sync.title).toBe(
+      'Use Commit & Force Push — remote only has older copies of local commits'
+    )
+    expect(byKind.sync.disabled).toBe(true)
+    expect(byKind.sync.title).toBe('Use Force Push — remote only has older copies of local commits')
+    expect(byKind.create_pr.hint).toBe('Force Push first')
+    expect(byKind.push_create_pr.label).toBe('Force Push before PR')
+    expect(byKind.push_create_pr.disabled).toBe(false)
   })
 
   it('omits counts from labels when ahead/behind are 0', () => {

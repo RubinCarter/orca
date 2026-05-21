@@ -273,22 +273,28 @@ export async function pullRuntimeGit(context: RuntimeGitContext): Promise<void> 
 
 export async function pushRuntimeGit(
   context: RuntimeGitContext,
-  args: { publish?: boolean; pushTarget?: GitPushTarget } = {}
+  args: { publish?: boolean; pushTarget?: GitPushTarget; forceWithLease?: boolean } = {}
 ): Promise<void> {
   const target = getActiveRuntimeTarget(context.settings)
   if (target.kind === 'local' || !context.worktreeId) {
     await window.api.git.push({
       worktreePath: context.worktreePath,
-      publish: args.publish,
-      pushTarget: args.pushTarget,
-      connectionId: context.connectionId
+      connectionId: context.connectionId,
+      ...(args.publish !== undefined ? { publish: args.publish } : {}),
+      ...(args.pushTarget !== undefined ? { pushTarget: args.pushTarget } : {}),
+      ...(args.forceWithLease !== undefined ? { forceWithLease: args.forceWithLease } : {})
     })
     return
   }
   await callRuntimeRpc(
     target,
     'git.push',
-    { worktree: context.worktreeId, publish: args.publish, pushTarget: args.pushTarget },
+    {
+      worktree: context.worktreeId,
+      ...(args.publish !== undefined ? { publish: args.publish } : {}),
+      ...(args.pushTarget !== undefined ? { pushTarget: args.pushTarget } : {}),
+      ...(args.forceWithLease !== undefined ? { forceWithLease: args.forceWithLease } : {})
+    },
     { timeoutMs: 30_000 }
   )
 }

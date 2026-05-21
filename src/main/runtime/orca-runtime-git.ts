@@ -239,7 +239,8 @@ export class RuntimeGitCommands {
   async pushRuntimeGit(
     worktreeSelector: string,
     publish?: boolean,
-    pushTarget?: GitPushTarget
+    pushTarget?: GitPushTarget,
+    forceWithLease?: boolean
   ): Promise<{ ok: true }> {
     const target = await this.host.resolveRuntimeGitTarget(worktreeSelector)
     const provider = target.connectionId ? getSshGitProvider(target.connectionId) : null
@@ -247,10 +248,14 @@ export class RuntimeGitCommands {
       if (!provider) {
         throw new Error(SSH_GIT_PROVIDER_UNAVAILABLE_MESSAGE)
       }
-      await provider.pushBranch(target.worktree.path, publish === true, pushTarget)
+      await provider.pushBranch(target.worktree.path, publish === true, pushTarget, {
+        forceWithLease: forceWithLease === true
+      })
       return { ok: true }
     }
-    await gitPush(target.worktree.path, publish === true, pushTarget)
+    await gitPush(target.worktree.path, publish === true, pushTarget, {
+      forceWithLease: forceWithLease === true
+    })
     return { ok: true }
   }
 

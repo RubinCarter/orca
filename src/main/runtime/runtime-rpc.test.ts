@@ -1016,7 +1016,7 @@ describe('OrcaRuntimeRpcServer', () => {
     expect(selectCodexAccount).toHaveBeenCalledWith(null)
     expect(readTerminal).toHaveBeenCalledWith('term-1', { cursor: undefined })
     expect(getRuntimeGitStatus).toHaveBeenCalledWith('id:wt-1')
-    expect(pushRuntimeGit).toHaveBeenCalledWith('id:wt-1', true, undefined)
+    expect(pushRuntimeGit).toHaveBeenCalledWith('id:wt-1', true, undefined, undefined)
     expect(getRuntimeGitUpstreamStatus).toHaveBeenCalledWith('id:wt-1')
     expect(bulkStageRuntimeGitPaths).toHaveBeenCalledWith('id:wt-1', ['a.ts', 'b.ts'])
     expect(bulkUnstageRuntimeGitPaths).toHaveBeenCalledWith('id:wt-1', ['c.ts'])
@@ -1099,7 +1099,7 @@ describe('OrcaRuntimeRpcServer', () => {
     )
 
     expect(replies).toContainEqual(expect.objectContaining({ id: 'req_push', ok: true }))
-    expect(pushRuntimeGit).toHaveBeenCalledWith('id:wt-1', undefined, undefined)
+    expect(pushRuntimeGit).toHaveBeenCalledWith('id:wt-1', undefined, undefined, undefined)
   })
 
   it('leaves the last published metadata in place when a runtime stops', async () => {
