@@ -252,7 +252,7 @@ const LINEAR_ITEM_LIMIT = 36
 const PR_CHECKS_EAGER_PREFETCH_LIMIT = 20
 
 const GITHUB_TASK_GRID_CLASS =
-  'min-w-[860px] grid-cols-[72px_minmax(260px,2fr)_minmax(130px,0.8fr)_100px_92px_158px]'
+  'min-w-[790px] grid-cols-[72px_minmax(320px,1fr)_84px_100px_92px_122px]'
 const GITHUB_PR_TASK_GRID_CLASS =
   'min-w-[1170px] grid-cols-[72px_minmax(260px,2fr)_minmax(130px,0.8fr)_132px_128px_132px_92px_158px]'
 const GITHUB_TASK_ROW_SURFACE_CLASS =
@@ -860,6 +860,248 @@ function ReviewChipAvatar({
     )
   }
   return <Users className="size-3 shrink-0" />
+}
+
+function GitHubAssigneeAvatar({ assignee }: { assignee: GitHubAssignableUser }): React.JSX.Element {
+  if (assignee.avatarUrl) {
+    return (
+      <img
+        src={assignee.avatarUrl}
+        alt={assignee.login}
+        loading="lazy"
+        decoding="async"
+        title={assignee.name ? `${assignee.name} (${assignee.login})` : assignee.login}
+        className="size-5 rounded-full border border-border/40 bg-muted object-cover"
+      />
+    )
+  }
+  return (
+    <span
+      title={assignee.login}
+      className="inline-flex size-5 items-center justify-center rounded-full border border-border/40 bg-muted text-[10px] font-medium text-muted-foreground"
+    >
+      {assignee.login.slice(0, 1).toUpperCase()}
+    </span>
+  )
+}
+
+function GHAssigneesCell({
+  item,
+  repo
+}: {
+  item: GitHubWorkItem
+  repo: Repo | null
+}): React.JSX.Element {
+  const patchWorkItem = useAppStore((s) => s.patchWorkItem)
+  const settings = useAppStore((s) => s.settings)
+  const [open, setOpen] = useState(false)
+  const [pendingLogin, setPendingLogin] = useState<string | null>(null)
+  const assignees = useMemo(() => item.assignees ?? [], [item.assignees])
+  const parsed = useMemo(() => parseGitHubIssueOrPRLink(item.url), [item.url])
+  const owner = parsed?.slug.owner ?? null
+  const repoName = parsed?.slug.repo ?? null
+  const seedLogins = useMemo(
+    () =>
+      assignees
+        .map((a) => a.login)
+        .sort()
+        .filter(Boolean),
+    [assignees]
+  )
+  const metadata = useRepoAssigneesBySlug(
+    open ? owner : null,
+    open ? repoName : null,
+    seedLogins,
+    settings
+  )
+
+  const toggleAssignee = useCallback(
+    async (user: GitHubAssignableUser): Promise<void> => {
+      if (item.type !== 'issue' || pendingLogin) {
+        return
+      }
+      const userLoginKey = user.login.toLowerCase()
+      const isOn = assignees.some((a) => a.login.toLowerCase() === userLoginKey)
+      const previousAssignees = assignees
+      const nextAssignees = isOn
+        ? assignees.filter((a) => a.login.toLowerCase() !== userLoginKey)
+        : [...assignees, user]
+      setPendingLogin(user.login)
+      patchWorkItem(item.id, { assignees: nextAssignees }, item.repoId)
+
+      try {
+        const updates = isOn ? { removeAssignees: [user.login] } : { addAssignees: [user.login] }
+        const target = getActiveRuntimeTarget(settings)
+        if (owner && repoName) {
+          const args = {
+            owner,
+            repo: repoName,
+            number: item.number,
+            updates
+          }
+          const res =
+            target.kind === 'environment'
+              ? await callRuntimeRpc<Awaited<ReturnType<typeof window.api.gh.updateIssueBySlug>>>(
+                  target,
+                  'github.project.updateIssueBySlug',
+                  args,
+                  { timeoutMs: 30_000 }
+                )
+              : await window.api.gh.updateIssueBySlug(args)
+          if (!res.ok) {
+            throw new Error(res.error.message)
+          }
+        } else if (repo) {
+          const res =
+            target.kind === 'environment'
+              ? await callRuntimeRpc<{ ok?: boolean; error?: string }>(
+                  target,
+                  'github.updateIssue',
+                  { repo: repo.id, number: item.number, updates },
+                  { timeoutMs: 30_000 }
+                )
+              : await window.api.gh.updateIssue({
+                  repoPath: repo.path,
+                  repoId: repo.id,
+                  number: item.number,
+                  updates
+                })
+          if (res && res.ok === false) {
+            throw new Error(res.error)
+          }
+        } else {
+          throw new Error('No GitHub repository context available for this issue.')
+        }
+      } catch (err) {
+        patchWorkItem(item.id, { assignees: previousAssignees }, item.repoId)
+        toast.error(err instanceof Error ? err.message : 'Failed to update assignees.')
+      } finally {
+        setPendingLogin(null)
+      }
+    },
+    [
+      assignees,
+      item.id,
+      item.number,
+      item.repoId,
+      item.type,
+      owner,
+      patchWorkItem,
+      pendingLogin,
+      repo,
+      repoName,
+      settings
+    ]
+  )
+
+  const triggerContent =
+    assignees.length > 0 ? (
+      <>
+        <div className="flex min-w-0 -space-x-1 overflow-hidden">
+          {assignees.slice(0, 3).map((assignee) => (
+            <GitHubAssigneeAvatar key={assignee.login} assignee={assignee} />
+          ))}
+        </div>
+        {assignees.length > 3 ? (
+          <span className="ml-1 shrink-0 text-[10px] font-medium text-muted-foreground">
+            +{assignees.length - 3}
+          </span>
+        ) : null}
+      </>
+    ) : (
+      <span className="text-xs text-muted-foreground/60">-</span>
+    )
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={
+            assignees.length
+              ? `Assigned to ${assignees.map((a) => a.login).join(', ')}`
+              : 'Assign issue'
+          }
+          aria-busy={pendingLogin !== null}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          className={cn(
+            'inline-flex h-6 max-w-full items-center gap-1 text-left transition disabled:opacity-60',
+            assignees.length > 0
+              ? 'rounded-full border border-border/40 bg-background/70 px-1.5 hover:bg-muted/60'
+              : 'w-full rounded-sm border border-transparent bg-transparent px-1 hover:bg-muted/40'
+          )}
+        >
+          {triggerContent}
+          {pendingLogin ? (
+            <LoaderCircle className="size-3 shrink-0 animate-spin text-muted-foreground" />
+          ) : assignees.length > 0 ? (
+            <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+          ) : null}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="popover-scroll-content scrollbar-sleek w-64 p-1"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {!owner || !repoName ? (
+          <div className="px-2 py-2 text-xs text-muted-foreground">Issue has no repo slug.</div>
+        ) : metadata.loading ? (
+          <div className="px-2 py-2 text-xs text-muted-foreground">Loading…</div>
+        ) : metadata.error ? (
+          <div className="px-2 py-2 text-xs text-destructive">{metadata.error}</div>
+        ) : metadata.data.length === 0 ? (
+          <div className="px-2 py-2 text-xs text-muted-foreground">No assignable users.</div>
+        ) : (
+          metadata.data.map((user) => {
+            const isOn = assignees.some((a) => a.login.toLowerCase() === user.login.toLowerCase())
+            const pending = pendingLogin === user.login
+            return (
+              <button
+                key={user.login}
+                type="button"
+                disabled={pendingLogin !== null}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted/50 disabled:opacity-60"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void toggleAssignee(user)
+                }}
+              >
+                <span
+                  className={cn(
+                    'flex size-3.5 shrink-0 items-center justify-center rounded-sm border',
+                    isOn ? 'border-primary bg-primary text-primary-foreground' : 'border-input'
+                  )}
+                >
+                  {pending ? (
+                    <LoaderCircle className="size-3 animate-spin" />
+                  ) : isOn ? (
+                    <Check className="size-3" />
+                  ) : null}
+                </span>
+                {user.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="" className="size-5 shrink-0 rounded-full" />
+                ) : (
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
+                    {user.login.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{user.login}</span>
+                  {user.name ? (
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {user.name}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            )
+          })
+        )}
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 function getChecksLabel(item: GitHubWorkItem): string {
@@ -4530,7 +4772,7 @@ export default function TaskPage(): React.JSX.Element {
                 >
                   <span className={GITHUB_TASK_STICKY_ID_HEADER_CLASS}>ID</span>
                   <span className={GITHUB_TASK_STICKY_TITLE_HEADER_CLASS}>Title / Context</span>
-                  <span>Branch</span>
+                  <span>{activeGithubTaskKind === 'issues' ? 'Assignees' : 'Branch'}</span>
                   {showPRManagementColumns ? (
                     <>
                       <span>Reviewers</span>
@@ -4778,7 +5020,7 @@ export default function TaskPage(): React.JSX.Element {
                                 </div>
                               </div>
                             ) : (
-                              <span className="truncate">workspace/default</span>
+                              <GHAssigneesCell item={item} repo={itemRepo ?? null} />
                             )}
                           </div>
 

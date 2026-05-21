@@ -331,6 +331,8 @@ export async function getAuthenticatedViewer(): Promise<GitHubViewer | null> {
 // single-repo and cross-repo items are uniform downstream.
 type MainWorkItem = Omit<GitHubWorkItem, 'repoId'>
 
+const WORK_ITEM_ISSUE_LIST_JSON_FIELDS = 'number,title,state,url,labels,updatedAt,author,assignees'
+
 const WORK_ITEM_PR_LIST_JSON_FIELDS =
   'number,title,state,url,labels,updatedAt,author,isDraft,headRefName,baseRefName,headRefOid,headRepositoryOwner,reviewRequests'
 
@@ -364,7 +366,8 @@ function mapIssueWorkItem(item: Record<string, unknown>): MainWorkItem {
         ? String((item.user as { login?: unknown }).login ?? '')
         : typeof item.author === 'object' && item.author !== null && 'login' in item.author
           ? String((item.author as { login?: unknown }).login ?? '')
-          : null
+          : null,
+    ...(item.assignees !== undefined ? { assignees: usersFromUnknown(item.assignees) } : {})
   }
 }
 
@@ -423,6 +426,7 @@ function userFromUnknown(
   if (!login) {
     return null
   }
+  const databaseId = numberFromUnknown(raw.databaseId)
   return {
     login,
     name: typeof raw.name === 'string' ? raw.name : null,
@@ -431,7 +435,9 @@ function userFromUnknown(
         ? raw.avatarUrl
         : typeof raw.avatar_url === 'string'
           ? raw.avatar_url
-          : ''
+          : databaseId !== undefined
+            ? `https://avatars.githubusercontent.com/u/${databaseId}?v=4`
+            : ''
   }
 }
 
@@ -707,10 +713,7 @@ function buildWorkItemListArgs(args: {
   before?: string
 }): string[] {
   const { kind, ownerRepo, limit, query, before } = args
-  const fields =
-    kind === 'issue'
-      ? 'number,title,state,url,labels,updatedAt,author'
-      : WORK_ITEM_PR_LIST_JSON_FIELDS
+  const fields = kind === 'issue' ? WORK_ITEM_ISSUE_LIST_JSON_FIELDS : WORK_ITEM_PR_LIST_JSON_FIELDS
   const command = kind === 'issue' ? ['issue', 'list'] : ['pr', 'list']
   const out = [...command, '--limit', String(limit), '--json', fields]
 
@@ -828,7 +831,7 @@ async function listRecentWorkItems(
                 '--state',
                 'open',
                 '--json',
-                'number,title,state,url,labels,updatedAt,author'
+                WORK_ITEM_ISSUE_LIST_JSON_FIELDS
               ],
               ghOptions
             ),
@@ -924,7 +927,7 @@ async function listRecentWorkItems(
         '--state',
         'open',
         '--json',
-        'number,title,state,url,labels,updatedAt,author'
+        WORK_ITEM_ISSUE_LIST_JSON_FIELDS
       ],
       ghOptions
     ),

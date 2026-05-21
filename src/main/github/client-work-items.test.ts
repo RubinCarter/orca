@@ -99,7 +99,14 @@ describe('listWorkItems', () => {
             url: 'https://github.com/acme/widgets/issues/12',
             labels: [],
             updatedAt: '2026-03-29T00:00:00Z',
-            author: { login: 'octocat' }
+            author: { login: 'octocat' },
+            assignees: [
+              {
+                login: 'test-assignee',
+                name: 'Test Assignee',
+                databaseId: 1
+              }
+            ]
           }
         ])
       })
@@ -120,8 +127,8 @@ describe('listWorkItems', () => {
             reviewRequests: [
               {
                 requestedReviewer: {
-                  login: 'AmethystLiang',
-                  name: 'Amethyst Liang',
+                  login: 'test-assignee',
+                  name: 'Test Assignee',
                   avatarUrl: 'https://avatars.githubusercontent.com/u/1?v=4'
                 }
               }
@@ -142,7 +149,7 @@ describe('listWorkItems', () => {
         '--limit',
         '10',
         '--json',
-        'number,title,state,url,labels,updatedAt,author',
+        'number,title,state,url,labels,updatedAt,author,assignees',
         '--repo',
         'acme/widgets',
         '--assignee',
@@ -180,7 +187,14 @@ describe('listWorkItems', () => {
         url: 'https://github.com/acme/widgets/issues/12',
         labels: [],
         updatedAt: '2026-03-29T00:00:00Z',
-        author: 'octocat'
+        author: 'octocat',
+        assignees: [
+          {
+            login: 'test-assignee',
+            name: 'Test Assignee',
+            avatarUrl: 'https://avatars.githubusercontent.com/u/1?v=4'
+          }
+        ]
       },
       {
         id: 'pr:42',
@@ -198,8 +212,8 @@ describe('listWorkItems', () => {
         prRepo: { owner: 'acme', repo: 'widgets' },
         reviewRequests: [
           {
-            login: 'AmethystLiang',
-            name: 'Amethyst Liang',
+            login: 'test-assignee',
+            name: 'Test Assignee',
             avatarUrl: 'https://avatars.githubusercontent.com/u/1?v=4'
           }
         ]
@@ -453,7 +467,7 @@ describe('listWorkItems', () => {
         '--limit',
         '10',
         '--json',
-        'number,title,state,url,labels,updatedAt,author',
+        'number,title,state,url,labels,updatedAt,author,assignees',
         '--repo',
         'acme/widgets',
         '--state',
