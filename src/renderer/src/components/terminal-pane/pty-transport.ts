@@ -144,9 +144,9 @@ export function createPtyOutputProcessor({
       }
     }
     const bellResult = bellDetector.processChunk(data, {
-      // Why: a raw BEL can make xterm/Electron play a local ding before the
-      // native notification path sees user settings. Strip only audible BELs;
-      // OSC title terminators stay in the stream so title parsing remains intact.
+      // Why: BEL is terminal attention, not visible output. When audible bells
+      // are disabled, keep bare BELs out of the terminal so this path cannot
+      // bypass Orca's sound policy. OSC terminators stay intact for titles.
       stripBells: suppressAttentionEvents || shouldSilenceTerminalBell?.() === true
     })
     const terminalData = bellResult.data
