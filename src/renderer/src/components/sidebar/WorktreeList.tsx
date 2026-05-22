@@ -2098,6 +2098,15 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                             {child.worktree.comment}
                           </div>
                         ) : null}
+                        {showInlineAgentCards ? (
+                          // Why: nested lineage children use this lightweight
+                          // renderer instead of WorktreeCard, so their inline
+                          // agent rows must be mounted here explicitly.
+                          <WorktreeCardAgents
+                            worktreeId={child.worktree.id}
+                            className="mt-1 divide-y-0"
+                          />
+                        ) : null}
                         {child.lineageChildCount > 0 && lineageToggleGroupKey ? (
                           <div className="mt-1.5 flex min-w-0 justify-start">
                             <Tooltip>
@@ -2139,15 +2148,6 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                               </TooltipContent>
                             </Tooltip>
                           </div>
-                        ) : null}
-                        {showInlineAgentCards ? (
-                          // Why: nested lineage children use this lightweight
-                          // renderer instead of WorktreeCard, so their inline
-                          // agent rows must be mounted here explicitly.
-                          <WorktreeCardAgents
-                            worktreeId={child.worktree.id}
-                            className="mt-1 divide-y-0"
-                          />
                         ) : null}
                       </div>
                     </div>
