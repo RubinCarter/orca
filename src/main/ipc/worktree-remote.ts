@@ -132,6 +132,41 @@ async function resolveCreateBranchNameSsh(
   return branchNameOverride
 }
 
+function normalizeSshGitUsername(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  const localPart = trimmed.includes('@') ? trimmed.split('@')[0] : trimmed
+  return localPart.replace(/^\d+\+/, '')
+}
+
+async function getSshGitConfigValue(
+  provider: SshGitProvider,
+  repoPath: string,
+  key: string
+): Promise<string> {
+  try {
+    const { stdout } = await provider.exec(['config', '--get', key], repoPath)
+    return stdout.trim()
+  } catch {
+    return ''
+  }
+}
+
+async function getSshGitUsername(provider: SshGitProvider, repoPath: string): Promise<string> {
+  // Why: remote hosts cannot safely rely on the local `gh` account. Prefer
+  // explicit username config, then derive from email before using display name.
+  for (const key of ['github.user', 'user.username', 'user.email', 'user.name']) {
+    const username = normalizeSshGitUsername(await getSshGitConfigValue(provider, repoPath, key))
+    if (username) {
+      return username
+    }
+  }
+  return ''
+}
+
 function normalizeLocalBranchName(branchName: string | undefined): string {
   return branchName?.replace(/^refs\/heads\//, '') ?? ''
 }
@@ -652,14 +687,10 @@ export async function createRemoteWorktree(
     ? sanitizeWorktreeDisplayName(args.displayName)
     : undefined
 
-  // Get git username from remote
-  let username = ''
-  try {
-    const { stdout } = await provider.exec(['config', 'user.name'], repo.path)
-    username = stdout.trim()
-  } catch {
-    /* no username configured */
-  }
+  const username =
+    !args.branchNameOverride && settings.branchPrefix === 'git-username'
+      ? await getSshGitUsername(provider, repo.path)
+      : ''
 
   const branchName = await resolveCreateBranchNameSsh(
     provider,

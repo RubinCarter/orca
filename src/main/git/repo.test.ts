@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { execFileSync } from 'child_process'
-import { mkdtempSync, rmSync } from 'fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
 
 import {
   getDefaultBaseRef,
   getBranchConflictKind,
+  getGitUsername,
   getRemoteCount,
   parseAndFilterSearchRefDetails,
   searchBaseRefDetails,
@@ -45,6 +46,63 @@ function createRemoteRef(mainDir: string, shortName: string, sha: string): void 
 function getHeadSha(dir: string): string {
   return git(dir, ['rev-parse', 'HEAD']).trim()
 }
+
+function installFakeGh(binDir: string, login: string): void {
+  if (process.platform === 'win32') {
+    writeFileSync(
+      path.join(binDir, 'gh.cmd'),
+      `@echo off\r\nif "%1"=="api" (\r\n  echo ${login}\r\n  exit /b 0\r\n)\r\necho Logged in to github.com account ${login}\r\necho   - Active account: true\r\n`
+    )
+    return
+  }
+
+  const ghPath = path.join(binDir, 'gh')
+  writeFileSync(
+    ghPath,
+    `#!/bin/sh
+if [ "$1" = "api" ]; then
+  echo "${login}"
+  exit 0
+fi
+cat <<'EOF'
+github.com
+  * Logged in to github.com account ${login}
+  - Active account: true
+EOF
+`
+  )
+  chmodSync(ghPath, 0o755)
+}
+
+describe('getGitUsername', () => {
+  let tmpDir: string
+  let binDir: string
+  let originalPath: string | undefined
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'orca-repo-test-'))
+    binDir = mkdtempSync(path.join(tmpdir(), 'orca-gh-test-'))
+    originalPath = process.env.PATH
+    initRepo(tmpDir)
+  })
+
+  afterEach(() => {
+    process.env.PATH = originalPath
+    rmSync(tmpDir, { recursive: true, force: true })
+    rmSync(binDir, { recursive: true, force: true })
+  })
+
+  it('prefers the GitHub CLI login over the git email local-part', () => {
+    installFakeGh(binDir, 'gh-login-wins')
+    git(tmpDir, ['config', 'user.email', 'email-local@example.com'])
+    git(tmpDir, ['config', 'user.name', 'Brennan Benson'])
+    process.env.PATH = binDir
+
+    const username = getGitUsername(tmpDir)
+
+    expect(username).toBe('gh-login-wins')
+  })
+})
 
 describe('searchBaseRefs (widened glob)', () => {
   let tmpDir: string

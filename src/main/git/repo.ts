@@ -194,10 +194,10 @@ export function getGitUsername(path: string): string {
   return normalizeUsername(
     getGitConfigValue(path, 'github.user') ||
       getGitConfigValue(path, 'user.username') ||
-      // Why: GitHub CLI login can touch network/keychain state. A repo-local
-      // email is already enough for the branch prefix and keeps repo add fast.
-      getGitConfigValue(path, 'user.email').split('@')[0] ||
+      // Why: the setting promises a GitHub username. Email is only a fallback
+      // when gh is unavailable or too slow to answer within its timeout.
       getGhLogin() ||
+      getGitConfigValue(path, 'user.email').split('@')[0] ||
       getGitConfigValue(path, 'user.name')
   )
 }
