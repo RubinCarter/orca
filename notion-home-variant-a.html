@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notion — Meet the night shift</title>
+<style>
+  :root {
+    --navy-900: #0a1638;
+    --navy-800: #0f1b40;
+    --navy-700: #142554;
+    --ink: #1f1f1f;
+    --muted: #6b7280;
+    --line: rgba(255, 255, 255, 0.12);
+    --blue: #3b82f6;
+    --blue-soft: #60a5fa;
+    --bar-bg: #f3eee5;
+    --bar-ink: #2b2b2b;
+    --white: #ffffff;
+    --shadow: 0 30px 60px rgba(2, 8, 30, 0.45);
+    --radius: 14px;
+    --radius-lg: 22px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 Inter, "Helvetica Neue", Arial, sans-serif;
+    color: var(--white);
+    background: var(--navy-900);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
+  :focus-visible { outline: 2px solid #ffd54a; outline-offset: 3px; border-radius: 6px; }
+
+  /* Variant label */
+  .variant-tag {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    z-index: 9999;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.18);
+  }
+
+  /* Announcement bar */
+  .announce {
+    background: var(--bar-bg);
+    color: var(--bar-ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 44px 8px 16px;
+    font-size: 13.5px;
+    position: relative;
+  }
+  .announce strong { font-weight: 600; }
+  .announce a.link { text-decoration: underline; text-underline-offset: 2px; }
+  .announce .arrow { display: inline-block; transform: translateX(2px); }
+  .announce .close {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    color: #555;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .announce .close:hover { background: rgba(0,0,0,0.06); color: #000; }
+
+  /* Hero shell */
+  .hero {
+    background: radial-gradient(1200px 600px at 50% -200px, #1a2a66 0%, var(--navy-900) 60%);
+    padding-bottom: 60px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Nav */
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 36px;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+  }
+  .brand-mark {
+    width: 26px;
+    height: 26px;
+    background: #fff;
+    color: #000;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 18px;
+  }
+  .nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    gap: 6px;
+  }
+  .nav .menu-item {
+    position: relative;
+  }
+  .nav .menu-btn {
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: rgba(255,255,255,0.85);
+    font-size: 14.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .nav .menu-btn:hover { background: rgba(255,255,255,0.07); color: #fff; }
+  .nav .caret {
+    width: 10px; height: 10px;
+    border-right: 1.6px solid currentColor;
+    border-bottom: 1.6px solid currentColor;
+    transform: rotate(45deg) translate(-2px,-2px);
+    margin-left: 2px;
+    opacity: 0.7;
+  }
+  .dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    min-width: 220px;
+    background: #fff;
+    color: #1f1f1f;
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.25);
+    padding: 6px;
+    display: none;
+    z-index: 50;
+  }
+  .dropdown a {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  .dropdown a:hover { background: #f4f4f4; }
+  .menu-item.open .dropdown { display: block; }
+
+  .nav-right { display: flex; align-items: center; gap: 6px; }
+  .nav-right .text-link { padding: 8px 12px; font-size: 14.5px; color: rgba(255,255,255,0.85); border-radius: 8px; }
+  .nav-right .text-link:hover { background: rgba(255,255,255,0.07); color: #fff; }
+  .nav-right .pill {
+    background: #fff;
+    color: #111;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .nav-right .pill:hover { background: #eaeaea; }
+
+  /* Hero copy */
+  .hero-copy {
+    text-align: center;
+    max-width: 880px;
+    margin: 26px auto 0;
+    padding: 0 24px;
+  }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 18px;
+  }
+  .eyebrow .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #ffb84a;
+    box-shadow: 0 0 0 4px rgba(255,184,74,0.18);
+  }
+  h1.headline {
+    font-size: clamp(40px, 7vw, 84px);
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    margin: 0 0 18px;
+    font-weight: 600;
+  }
+  h1.headline .accent {
+    background: linear-gradient(180deg, #cfe0ff 0%, #7da6ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .subcopy {
+    font-size: clamp(15px, 1.4vw, 18px);
+    line-height: 1.55;
+    color: rgba(255,255,255,0.78);
+    max-width: 620px;
+    margin: 0 auto 26px;
+  }
+  .ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 15px;
+    transition: transform 0.06s ease, background 0.15s ease;
+  }
+  .btn-primary { background: #fff; color: #111; }
+  .btn-primary:hover { background: #eaeaea; }
+  .btn-ghost { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); }
+  .btn-ghost:hover { background: rgba(255,255,255,0.18); }
+  .btn:active { transform: translateY(1px); }
+  .status-line {
+    margin-top: 14px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.6);
+    min-height: 18px;
+  }
+
+  /* Stage with mockup + path lines + badges */
+  .stage {
+    position: relative;
+    max-width: 1180px;
+    margin: 56px auto 0;
+    padding: 0 24px;
+  }
+  .paths {
+    position: absolute;
+    inset: -40px 0 -10px 0;
+    width: 100%;
+    height: calc(100% + 50px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .mock {
+    position: relative;
+    z-index: 2;
+    background: #fff;
+    color: var(--ink);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .mock-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: #f6f5f3;
+    border-bottom: 1px solid #ececec;
+  }
+  .traffic { display: inline-flex; gap: 6px; }
+  .traffic span { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+  .traffic .r { background: #ff5f56; }
+  .traffic .y { background: #ffbd2e; }
+  .traffic .g { background: #27c93f; }
+  .crumbs {
+    font-size: 12.5px;
+    color: #6b7280;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .crumbs .sep { color: #c0c0c0; }
+  .mock-body {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 360px;
+  }
+  .side {
+    background: #fafaf8;
+    border-right: 1px solid #efefee;
+    padding: 14px 12px;
+    font-size: 13.5px;
+    color: #3a3a3a;
+  }
+  .side .group { margin-bottom: 14px; }
+  .side .group-title {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #9b9b97;
+    padding: 4px 6px;
+  }
+  .side .row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 6px; border-radius: 6px;
+    cursor: pointer;
+  }
+  .side .row:hover { background: #efece4; }
+  .side .row .ic { width: 16px; text-align: center; opacity: 0.85; }
+  .side .row.active { background: #ece8dc; font-weight: 600; }
+
+  .main { padding: 22px 26px 26px; }
+  .h-eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #9b9b97;
+    margin-bottom: 8px;
+  }
+  .h-title {
+    font-size: 26px;
+    font-weight: 700;
+    margin: 0 0 14px;
+    letter-spacing: -0.01em;
+  }
+  .blocks {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .block {
+    background: #f7f6f1;
+    border: 1px solid #ececea;
+    border-radius: 12px;
+    padding: 12px 12px 14px;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    cursor: pointer;
+    outline: none;
+  }
+  .block:hover, .block:focus-visible {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 24px rgba(20,20,30,0.08);
+    background: #fff;
+  }
+  .block .emoji { font-size: 20px; }
+  .block .title { font-weight: 600; font-size: 14px; margin-top: 8px; }
+  .block .desc { font-size: 12.5px; color: #6b7280; margin-top: 4px; line-height: 1.4; }
+  .lines {
+    margin-top: 18px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .lines .ln {
+    height: 10px; border-radius: 4px;
+    background: linear-gradient(90deg, #ececea, #f6f5f3);
+  }
+  .lines .ln.s { width: 60%; }
+  .lines .ln.m { width: 80%; }
+
+  /* Floating badges */
+  .badge {
+    position: absolute;
+    z-index: 3;
+    background: rgba(255,255,255,0.96);
+    color: #111;
+    border-radius: 14px;
+    padding: 10px 12px;
+    box-shadow: 0 14px 30px rgba(2,8,30,0.35);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    backdrop-filter: blur(6px);
+    transition: transform 0.15s ease;
+  }
+  .badge:hover { transform: translateY(-2px); }
+  .badge .ic {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: #eef2ff; color: #3b82f6;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .badge.b1 { top: 10%; left: -6px; }
+  .badge.b2 { top: 38%; left: -30px; }
+  .badge.b3 { top: 12%; right: -6px; }
+  .badge.b4 { bottom: 14%; right: -30px; }
+  .badge.b5 { bottom: -10px; left: 30%; }
+
+  /* Logo strip */
+  .logos {
+    margin: 70px auto 0;
+    max-width: 1200px;
+    padding: 0 24px;
+  }
+  .logos .label {
+    text-align: center;
+    color: rgba(255,255,255,0.55);
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 22px;
+  }
+  .logo-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+    opacity: 0.85;
+  }
+  .logo {
+    color: rgba(255,255,255,0.75);
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.01em;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    filter: grayscale(100%);
+    transition: opacity 0.15s ease;
+  }
+  .logo:hover { opacity: 1; color: #fff; }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(2,6,20,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 24px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: #fff;
+    color: #111;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 460px;
+    padding: 24px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.4);
+  }
+  .modal h2 { margin: 0 0 6px; font-size: 22px; }
+  .modal p { margin: 0 0 16px; color: #4b5563; font-size: 14.5px; line-height: 1.5; }
+  .modal form { display: flex; flex-direction: column; gap: 10px; }
+  .modal input {
+    padding: 11px 12px;
+    border: 1px solid #d6d6d6;
+    border-radius: 10px;
+    font: inherit;
+    font-size: 14px;
+  }
+  .modal input:focus { outline: 2px solid #3b82f6; outline-offset: 1px; border-color: #3b82f6; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  .modal .btn-primary, .modal .btn-ghost { color: #111; }
+  .modal .btn-ghost { background: #f1f1f1; border-color: transparent; }
+
+  /* Mobile */
+  @media (max-width: 880px) {
+    .nav ul.primary, .nav-right .text-link { display: none; }
+    .stage { margin-top: 36px; }
+    .mock-body { grid-template-columns: 1fr; }
+    .side {
+      display: none;
+    }
+    .blocks { grid-template-columns: 1fr; }
+    .badge.b2 { left: -10px; }
+    .badge.b4 { right: -10px; }
+    .logo-row { gap: 14px; justify-content: center; }
+  }
+  @media (max-width: 520px) {
+    .badge { display: none; }
+    .nav { padding: 14px 18px; }
+    .announce { font-size: 12.5px; padding: 8px 36px 8px 12px; }
+    h1.headline { font-size: 44px; }
+    .ctas { width: 100%; }
+    .btn { width: 100%; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+
+<div class="variant-tag" aria-hidden="true">Variant A</div>
+
+<!-- Announcement bar -->
+<div class="announce" id="announce" role="region" aria-label="Announcement">
+  <span><strong>New:</strong> Agents are here. Hand off the busywork and let your workspace work for you.
+    <a href="#" class="link">Read the announcement <span class="arrow">→</span></a>
+  </span>
+  <button class="close" id="announce-close" aria-label="Dismiss announcement">✕</button>
+</div>
+
+<!-- Hero -->
+<header class="hero">
+  <nav class="nav" aria-label="Primary">
+    <a class="brand" href="#" aria-label="Notion home">
+      <span class="brand-mark">N</span>
+      <span>Notion</span>
+    </a>
+
+    <ul class="primary" id="primary-menu">
+      <li class="menu-item" data-menu>
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">Notion <span class="caret"></span></button>
+        <div class="dropdown" role="menu">
+          <a href="#" role="menuitem">Docs &amp; Wikis</a>
+          <a href="#" role="menuitem">Projects</a>
+          <a href="#" role="menuitem">Calendar</a>
+          <a href="#" role="menuitem">Forms</a>
+        </div>
+      </li>
+      <li class="menu-item" data-menu>
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">Mail <span class="caret"></span></button>
+        <div class="dropdown" role="menu">
+          <a href="#" role="menuitem">Inbox triage</a>
+          <a href="#" role="menuitem">Smart replies</a>
+          <a href="#" role="menuitem">Filters</a>
+        </div>
+      </li>
+      <li class="menu-item" data-menu>
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">Calendar <span class="caret"></span></button>
+        <div class="dropdown" role="menu">
+          <a href="#" role="menuitem">Scheduling</a>
+          <a href="#" role="menuitem">Availability</a>
+          <a href="#" role="menuitem">Bookings</a>
+        </div>
+      </li>
+      <li class="menu-item" data-menu>
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">AI <span class="caret"></span></button>
+        <div class="dropdown" role="menu">
+          <a href="#" role="menuitem">AI Meeting Notes</a>
+          <a href="#" role="menuitem">Research mode</a>
+          <a href="#" role="menuitem">Agents</a>
+        </div>
+      </li>
+      <li class="menu-item"><a class="menu-btn" href="#">Pricing</a></li>
+      <li class="menu-item" data-menu>
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">Resources <span class="caret"></span></button>
+        <div class="dropdown" role="menu">
+          <a href="#" role="menuitem">Templates</a>
+          <a href="#" role="menuitem">Help center</a>
+          <a href="#" role="menuitem">Customer stories</a>
+        </div>
+      </li>
+    </ul>
+
+    <div class="nav-right">
+      <a class="text-link" href="#" id="login-link">Log in</a>
+      <a class="pill" href="#" id="get-started-top">Get Notion free</a>
+    </div>
+  </nav>
+
+  <div class="hero-copy">
+    <div class="eyebrow"><span class="dot"></span> Agents now in beta</div>
+    <h1 class="headline">Meet the <span class="accent">night shift.</span></h1>
+    <p class="subcopy">
+      Agents that take work off your plate — drafting docs, organizing projects, and following up
+      while you sleep. Your workspace finally pulls its own weight.
+    </p>
+    <div class="ctas">
+      <button class="btn btn-primary" id="cta-primary" aria-describedby="status-line">Get Notion free</button>
+      <button class="btn btn-ghost" id="cta-secondary" aria-describedby="status-line">Request a demo</button>
+    </div>
+    <div class="status-line" id="status-line" role="status" aria-live="polite"></div>
+  </div>
+
+  <!-- Stage -->
+  <div class="stage" aria-hidden="false">
+    <!-- Winding blue path lines -->
+    <svg class="paths" viewBox="0 0 1200 700" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="pg" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stop-color="#7aa6ff" stop-opacity="0"/>
+          <stop offset="40%" stop-color="#7aa6ff" stop-opacity="0.9"/>
+          <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="pg2" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stop-color="#3b82f6" stop-opacity="0"/>
+          <stop offset="50%" stop-color="#9bbcff" stop-opacity="0.8"/>
+          <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="M -20,120 C 200,40 280,260 480,200 S 760,40 1000,160 S 1220,360 1240,300"
+            stroke="url(#pg)" stroke-width="2" fill="none" />
+      <path d="M -20,360 C 220,420 320,220 520,300 S 820,520 1040,400 S 1240,260 1260,310"
+            stroke="url(#pg2)" stroke-width="2" fill="none" />
+      <path d="M -20,520 C 200,560 360,420 540,500 S 800,640 1000,560"
+            stroke="url(#pg)" stroke-width="1.5" fill="none" opacity="0.6" />
+    </svg>
+
+    <!-- Floating badges -->
+    <button class="badge b1" aria-label="Open Calendar agent"><span class="ic">📅</span> Calendar agent</button>
+    <button class="badge b2" aria-label="Open Inbox triage"><span class="ic">✉️</span> Inbox triage</button>
+    <button class="badge b3" aria-label="Open Research"><span class="ic">🔍</span> Research</button>
+    <button class="badge b4" aria-label="Open Notes"><span class="ic">📝</span> AI notes</button>
+    <button class="badge b5" aria-label="Open Tasks"><span class="ic">✅</span> Tasks</button>
+
+    <!-- App window mockup -->
+    <div class="mock" role="img" aria-label="Notion app preview">
+      <div class="mock-titlebar">
+        <span class="traffic"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+        <span class="crumbs">Workspace <span class="sep">/</span> Team home <span class="sep">/</span> Tonight's agenda</span>
+      </div>
+      <div class="mock-body">
+        <aside class="side" aria-label="Sidebar">
+          <div class="group">
+            <div class="group-title">Workspace</div>
+            <div class="row active"><span class="ic">🏠</span> Team home</div>
+            <div class="row"><span class="ic">📥</span> Inbox</div>
+            <div class="row"><span class="ic">📅</span> Calendar</div>
+            <div class="row"><span class="ic">🤖</span> Agents</div>
+          </div>
+          <div class="group">
+            <div class="group-title">Projects</div>
+            <div class="row"><span class="ic">🚀</span> Launch plan</div>
+            <div class="row"><span class="ic">🧭</span> Roadmap Q3</div>
+            <div class="row"><span class="ic">📚</span> Research</div>
+          </div>
+        </aside>
+        <section class="main">
+          <div class="h-eyebrow">Tonight · Agents working</div>
+          <h2 class="h-title">Pick something to hand off</h2>
+          <div class="blocks">
+            <button class="block" data-card="brief">
+              <div class="emoji">🌙</div>
+              <div class="title">Draft tomorrow's brief</div>
+              <div class="desc">Pulls from yesterday's notes, calendar, and inbox.</div>
+            </button>
+            <button class="block" data-card="inbox">
+              <div class="emoji">✉️</div>
+              <div class="title">Sort the inbox</div>
+              <div class="desc">Triage, label, and reply where safe.</div>
+            </button>
+            <button class="block" data-card="research">
+              <div class="emoji">🔭</div>
+              <div class="title">Research the lead</div>
+              <div class="desc">Compiles a one-page recap from the web.</div>
+            </button>
+          </div>
+          <div class="lines" aria-hidden="true">
+            <div class="ln m"></div>
+            <div class="ln s"></div>
+            <div class="ln m"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logo strip -->
+  <section class="logos" aria-label="Customers">
+    <div class="label">Trusted by teams at</div>
+    <div class="logo-row">
+      <span class="logo">◎ OpenAI</span>
+      <span class="logo">▲ Vercel</span>
+      <span class="logo">◆ Figma</span>
+      <span class="logo">✦ Ramp</span>
+      <span class="logo">⬢ Linear</span>
+      <span class="logo">★ Pixar</span>
+      <span class="logo">◈ Headspace</span>
+    </div>
+  </section>
+</header>
+
+<!-- Demo modal -->
+<div class="modal-backdrop" id="demo-modal" role="dialog" aria-modal="true" aria-labelledby="demo-title">
+  <div class="modal">
+    <h2 id="demo-title">Request a demo</h2>
+    <p>Tell us where to send the invite. We'll follow up within one business day.</p>
+    <form id="demo-form">
+      <input type="text" name="name" placeholder="Full name" required />
+      <input type="email" name="email" placeholder="Work email" required />
+      <input type="text" name="company" placeholder="Company" />
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="demo-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Send request</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Announcement dismiss
+  var bar = document.getElementById('announce');
+  document.getElementById('announce-close').addEventListener('click', function () {
+    bar.style.display = 'none';
+  });
+
+  // Dropdowns: click to toggle, click-outside to close, ESC to close
+  var menus = document.querySelectorAll('.menu-item[data-menu]');
+  menus.forEach(function (item) {
+    var btn = item.querySelector('.menu-btn');
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var wasOpen = item.classList.contains('open');
+      menus.forEach(function (m) {
+        m.classList.remove('open');
+        var b = m.querySelector('.menu-btn');
+        if (b) b.setAttribute('aria-expanded', 'false');
+      });
+      if (!wasOpen) {
+        item.classList.add('open');
+        btn.setAttribute('aria-expanded', 'true');
+      }
+    });
+  });
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.menu-item')) {
+      menus.forEach(function (m) {
+        m.classList.remove('open');
+        var b = m.querySelector('.menu-btn');
+        if (b) b.setAttribute('aria-expanded', 'false');
+      });
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      menus.forEach(function (m) { m.classList.remove('open'); });
+      closeModal();
+    }
+  });
+
+  // Status line for CTAs
+  var status = document.getElementById('status-line');
+  function setStatus(msg) {
+    status.textContent = msg;
+    clearTimeout(setStatus._t);
+    setStatus._t = setTimeout(function () { status.textContent = ''; }, 4000);
+  }
+  document.getElementById('cta-primary').addEventListener('click', function () {
+    setStatus('Spinning up your free workspace…');
+  });
+  document.getElementById('get-started-top').addEventListener('click', function (e) {
+    e.preventDefault();
+    setStatus('Spinning up your free workspace…');
+  });
+  document.getElementById('login-link').addEventListener('click', function (e) {
+    e.preventDefault();
+    setStatus('Redirecting to log in…');
+  });
+
+  // Modal
+  var modal = document.getElementById('demo-modal');
+  function openModal() { modal.classList.add('open'); modal.querySelector('input').focus(); }
+  function closeModal() { modal.classList.remove('open'); }
+  document.getElementById('cta-secondary').addEventListener('click', openModal);
+  document.getElementById('demo-cancel').addEventListener('click', closeModal);
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+  document.getElementById('demo-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    closeModal();
+    setStatus('Demo request received — check your inbox.');
+  });
+
+  // App cards
+  document.querySelectorAll('.block').forEach(function (card) {
+    card.addEventListener('click', function () {
+      var kind = card.getAttribute('data-card');
+      var label = card.querySelector('.title').textContent;
+      setStatus('Agent started: ' + label);
+    });
+  });
+
+  // Floating badges
+  document.querySelectorAll('.badge').forEach(function (b) {
+    b.addEventListener('click', function () {
+      setStatus('Opened ' + b.textContent.trim());
+    });
+  });
+})();
+</script>
+</body>
+</html>

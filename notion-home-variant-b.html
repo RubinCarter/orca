@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Meet the night shift — Notion (Variant B)</title>
+<style>
+  :root {
+    --navy-900: #0b1220;
+    --navy-800: #0f172a;
+    --navy-700: #111c34;
+    --ink: #1f2937;
+    --muted: #94a3b8;
+    --line: rgba(255,255,255,0.08);
+    --blue: #2f6bff;
+    --blue-2: #5b8cff;
+    --soft: #f5f6f8;
+    --paper: #ffffff;
+    --shadow-lg: 0 30px 60px -20px rgba(2,6,23,0.45), 0 12px 24px -10px rgba(2,6,23,0.35);
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #e6ecf5;
+    background: var(--navy-900);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; cursor: pointer; }
+  :focus-visible { outline: 2px solid #9cc0ff; outline-offset: 2px; border-radius: 6px; }
+
+  /* Variant label */
+  .variant-tag {
+    position: fixed; right: 12px; bottom: 12px; z-index: 90;
+    background: #ffffff; color: #0b1220;
+    border-radius: 999px; padding: 6px 10px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    border: 1px solid rgba(0,0,0,0.06);
+  }
+
+  /* Announcement */
+  .announce {
+    background: linear-gradient(90deg, #0a1124 0%, #131e3d 50%, #0a1124 100%);
+    color: #dde6f7;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    padding: 10px 16px; position: relative;
+  }
+  .announce strong { color: #fff; font-weight: 600; }
+  .announce a.link { color: #9cc0ff; border-bottom: 1px solid rgba(156,192,255,0.4); padding-bottom: 1px; }
+  .announce .close {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    background: transparent; color: #cfd8ee; border: 0; padding: 6px 8px; border-radius: 6px;
+  }
+  .announce .close:hover { background: rgba(255,255,255,0.06); }
+
+  /* Nav */
+  .nav-wrap { position: sticky; top: 0; z-index: 60; background: rgba(11,18,32,0.7); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .nav {
+    max-width: 1240px; margin: 0 auto; padding: 14px 24px;
+    display: flex; align-items: center; gap: 22px;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; color: #fff; }
+  .brand-mark {
+    width: 26px; height: 26px; border-radius: 6px; background: #fff; color: #0b1220;
+    display: grid; place-items: center; font-weight: 900; font-size: 16px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+  }
+  .nav-links { display: flex; gap: 4px; margin-left: 12px; flex: 1; }
+  .nav-links button {
+    background: transparent; border: 0; color: #cfd8ee; padding: 8px 12px;
+    border-radius: 8px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .nav-links button:hover { background: rgba(255,255,255,0.06); color: #fff; }
+  .nav-links .caret { font-size: 10px; opacity: 0.7; }
+  .nav-actions { display: flex; align-items: center; gap: 6px; }
+  .nav-actions .ghost {
+    background: transparent; border: 0; color: #cfd8ee; padding: 8px 12px; border-radius: 8px; font-size: 14px;
+  }
+  .nav-actions .ghost:hover { background: rgba(255,255,255,0.06); color: #fff; }
+  .nav-actions .primary {
+    background: #fff; color: #0b1220; border: 0; padding: 8px 14px; border-radius: 8px;
+    font-weight: 600; font-size: 14px;
+  }
+  .nav-actions .primary:hover { background: #e8edf6; }
+
+  /* Dropdown */
+  .menu {
+    position: absolute; top: calc(100% + 8px); left: 0; min-width: 220px;
+    background: #11182a; border: 1px solid var(--line); border-radius: 12px; padding: 8px;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.45); display: none; z-index: 70;
+  }
+  .menu[data-open="true"] { display: block; }
+  .menu a, .menu button.item {
+    display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px;
+    color: #dde6f7; font-size: 14px; background: transparent; border: 0;
+  }
+  .menu a:hover, .menu button.item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+  .nav-item { position: relative; }
+
+  /* Hero */
+  .hero {
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(800px 380px at 80% -10%, rgba(91,140,255,0.18), transparent 60%),
+      radial-gradient(600px 320px at 10% 10%, rgba(47,107,255,0.12), transparent 60%),
+      linear-gradient(180deg, #0b1220 0%, #0a1224 100%);
+    padding: 56px 24px 24px;
+  }
+  .hero-inner { max-width: 1180px; margin: 0 auto; text-align: center; position: relative; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    color: #9cc0ff; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    background: rgba(91,140,255,0.1); border: 1px solid rgba(156,192,255,0.25);
+    padding: 6px 10px; border-radius: 999px;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: #9cc0ff; box-shadow: 0 0 12px #9cc0ff; }
+  h1.headline {
+    font-size: clamp(40px, 6vw, 80px);
+    line-height: 1.02; letter-spacing: -0.03em;
+    margin: 18px auto 14px; font-weight: 700; color: #fff; max-width: 16ch;
+  }
+  h1.headline .accent {
+    background: linear-gradient(90deg, #cfdcff 0%, #ffffff 50%, #9cc0ff 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .subcopy {
+    font-size: clamp(15px, 1.4vw, 18px); color: #b8c4dc;
+    max-width: 64ch; margin: 0 auto 24px;
+  }
+  .ctas { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 36px; }
+  .btn { border-radius: 10px; padding: 12px 18px; font-size: 14px; font-weight: 600; border: 0; }
+  .btn-primary { background: #fff; color: #0b1220; }
+  .btn-primary:hover { background: #e8edf6; transform: translateY(-1px); }
+  .btn-secondary { background: rgba(255,255,255,0.06); color: #fff; border: 1px solid rgba(255,255,255,0.18); }
+  .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+  .btn:active { transform: translateY(0); }
+
+  /* Stage with mockup + badges + connectors */
+  .stage {
+    position: relative;
+    margin: 0 auto; max-width: 1100px;
+    padding: 40px 0 24px;
+  }
+  .connectors { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .connectors path { fill: none; stroke: url(#wire); stroke-width: 2; stroke-linecap: round; }
+  .connectors .dash { stroke-dasharray: 4 6; opacity: 0.55; }
+
+  /* Mockup window */
+  .mockup {
+    position: relative; z-index: 2;
+    background: var(--paper); color: var(--ink);
+    border-radius: 14px; box-shadow: var(--shadow-lg);
+    overflow: hidden; border: 1px solid rgba(0,0,0,0.06);
+    max-width: 880px; margin: 0 auto;
+  }
+  .mock-titlebar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-bottom: 1px solid #eef0f4; background: #fafbfc;
+  }
+  .traffic { display: flex; gap: 6px; }
+  .traffic span { width: 10px; height: 10px; border-radius: 50%; }
+  .traffic .r { background: #ff5f56; } .traffic .y { background: #ffbd2e; } .traffic .g { background: #27c93f; }
+  .mock-url {
+    flex: 1; background: #fff; border: 1px solid #eaecef; border-radius: 6px;
+    font-size: 12px; color: #6b7280; padding: 5px 10px; text-align: center;
+  }
+  .mock-body { display: grid; grid-template-columns: 200px 1fr; min-height: 360px; }
+  .mock-side {
+    background: #fafbfc; border-right: 1px solid #eef0f4;
+    padding: 14px 12px; font-size: 13px; color: #4b5563;
+  }
+  .mock-side .group { font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.08em; margin: 14px 6px 6px; }
+  .mock-side .row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px; cursor: pointer;
+  }
+  .mock-side .row:hover { background: #eef2f7; }
+  .mock-side .row.active { background: #e8efff; color: #1e3a8a; }
+  .mock-side .ic { width: 16px; text-align: center; }
+
+  .mock-content { padding: 18px 22px; }
+  .mock-h {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  }
+  .mock-emoji { font-size: 22px; }
+  .mock-title { font-size: 22px; font-weight: 700; color: #111827; letter-spacing: -0.01em; }
+  .mock-meta { font-size: 12px; color: #6b7280; margin-bottom: 14px; }
+  .mock-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px;
+  }
+  .mock-card {
+    background: #f7f9fc; border: 1px solid #eef0f4; border-radius: 10px; padding: 10px;
+    cursor: pointer; transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+  }
+  .mock-card:hover { transform: translateY(-2px); border-color: #c9d6f5; box-shadow: 0 6px 14px rgba(15,23,42,0.06); }
+  .mock-card .label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; }
+  .mock-card .value { font-size: 18px; font-weight: 700; color: #111827; margin-top: 4px; }
+  .mock-card .trend { font-size: 11px; color: #16a34a; margin-top: 2px; }
+
+  .mock-list { border: 1px solid #eef0f4; border-radius: 10px; overflow: hidden; }
+  .mock-list .item {
+    display: grid; grid-template-columns: 22px 1fr auto auto; gap: 10px;
+    align-items: center; padding: 9px 12px; font-size: 13px;
+    border-bottom: 1px solid #f1f3f7; cursor: pointer;
+  }
+  .mock-list .item:last-child { border-bottom: 0; }
+  .mock-list .item:hover { background: #f6f9ff; }
+  .mock-list .check {
+    width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid #c7cfdb; display: inline-block;
+  }
+  .mock-list .item[data-done="true"] .check { background: #2f6bff; border-color: #2f6bff; position: relative; }
+  .mock-list .item[data-done="true"] .check::after {
+    content: ""; position: absolute; left: 3px; top: 1px; width: 4px; height: 8px;
+    border-right: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(45deg);
+  }
+  .mock-list .item[data-done="true"] .name { color: #9aa3b2; text-decoration: line-through; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #eef2f7; color: #475569; }
+  .pill.blue { background: #e6efff; color: #1d4ed8; }
+  .pill.amber { background: #fff3d6; color: #92400e; }
+  .pill.green { background: #dcfce7; color: #166534; }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #94a3b8, #475569); color:#fff; font-size: 10px; display: grid; place-items: center; font-weight: 700; }
+
+  /* Badges */
+  .badge {
+    position: absolute; z-index: 3;
+    background: #fff; color: #0b1220;
+    border: 1px solid rgba(0,0,0,0.05);
+    border-radius: 12px; padding: 8px 12px;
+    font-size: 12px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 14px 30px -10px rgba(2,6,23,0.45), 0 4px 8px rgba(2,6,23,0.25);
+    transform: translate(-50%, -50%);
+    animation: float 6s ease-in-out infinite;
+    cursor: default;
+  }
+  .badge:hover { transform: translate(-50%, calc(-50% - 3px)); }
+  .badge .ic { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 13px; color: #fff; }
+  .badge .sub { color: #6b7280; font-weight: 500; font-size: 11px; }
+  .badge.dark { background: #0f172a; color: #fff; border-color: rgba(255,255,255,0.08); }
+  .badge.dark .sub { color: #9aa7c2; }
+
+  .b1 { top: 8%; left: 12%; animation-delay: 0s; }
+  .b2 { top: 22%; left: 92%; animation-delay: -1.5s; }
+  .b3 { top: 64%; left: 6%; animation-delay: -2.2s; }
+  .b4 { top: 80%; left: 88%; animation-delay: -3s; }
+  .b5 { top: 92%; left: 38%; animation-delay: -4s; }
+
+  @keyframes float {
+    0%, 100% { transform: translate(-50%, -50%); }
+    50% { transform: translate(-50%, calc(-50% - 6px)); }
+  }
+
+  /* Logo strip */
+  .logos {
+    background: #0a1224; border-top: 1px solid var(--line);
+    padding: 36px 24px;
+  }
+  .logos-inner {
+    max-width: 1180px; margin: 0 auto; text-align: center;
+  }
+  .logos-title { color: #8aa0c6; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 18px; }
+  .logos-row {
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 36px;
+    color: #c4cee2; opacity: 0.85;
+    font-weight: 700; letter-spacing: 0.02em;
+  }
+  .logo {
+    font-size: 18px; display: inline-flex; align-items: center; gap: 6px;
+    filter: grayscale(1) brightness(1.4); opacity: 0.85;
+  }
+  .logo:hover { opacity: 1; }
+  .logo .glyph { display: inline-grid; place-items: center; width: 22px; height: 22px; }
+
+  /* Modal */
+  .backdrop {
+    position: fixed; inset: 0; background: rgba(2,6,23,0.6); display: none;
+    align-items: center; justify-content: center; z-index: 100;
+  }
+  .backdrop[data-open="true"] { display: flex; }
+  .modal {
+    background: #fff; color: #0b1220; border-radius: 14px;
+    width: min(440px, 92vw); padding: 22px; box-shadow: var(--shadow-lg);
+  }
+  .modal h3 { margin: 0 0 6px; font-size: 18px; }
+  .modal p { margin: 0 0 14px; color: #475569; font-size: 14px; }
+  .modal .field { display: flex; gap: 8px; }
+  .modal input {
+    flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #e5e7eb; font-size: 14px;
+  }
+  .modal input:focus { border-color: #2f6bff; outline: 2px solid #c7d8ff; }
+  .modal .row-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .modal .btn-primary { background: #0b1220; color: #fff; }
+  .modal .btn-primary:hover { background: #1f2a44; }
+  .modal .btn-ghost { background: transparent; color: #475569; border: 1px solid #e5e7eb; }
+
+  /* Toast */
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 80px);
+    background: #0b1220; color: #fff; padding: 10px 14px; border-radius: 10px;
+    font-size: 13px; box-shadow: 0 16px 40px rgba(0,0,0,0.4); opacity: 0;
+    transition: transform 240ms ease, opacity 240ms ease; z-index: 110; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* Responsive */
+  @media (max-width: 880px) {
+    .nav-links { display: none; }
+    .mock-body { grid-template-columns: 1fr; }
+    .mock-side { display: none; }
+    .mock-grid { grid-template-columns: 1fr 1fr; }
+    .badge { font-size: 11px; padding: 6px 10px; }
+    .b1 { top: -2%; left: 22%; }
+    .b2 { top: 8%; left: 82%; }
+    .b3 { top: 62%; left: 12%; }
+    .b4 { top: 86%; left: 80%; }
+    .b5 { top: 100%; left: 50%; }
+  }
+  @media (max-width: 520px) {
+    .hero { padding: 36px 14px 14px; }
+    .ctas { flex-direction: column; align-items: stretch; }
+    .ctas .btn { width: 100%; }
+    .mock-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="variant-tag" aria-label="Variant label">VARIANT B</div>
+
+  <!-- Announcement -->
+  <div class="announce" id="announce" role="region" aria-label="Announcement">
+    <span>✨</span>
+    <span><strong>New:</strong> Meet Notion 3.1 — connected agents that work overnight. <a href="#" class="link">See what's new →</a></span>
+    <button class="close" id="announceClose" aria-label="Dismiss announcement">✕</button>
+  </div>
+
+  <!-- Nav -->
+  <div class="nav-wrap">
+    <nav class="nav" aria-label="Primary">
+      <a href="#" class="brand"><span class="brand-mark">N</span> Notion</a>
+      <div class="nav-links" id="navLinks">
+        <div class="nav-item">
+          <button data-menu="product">Product <span class="caret">▼</span></button>
+          <div class="menu" id="menu-product" role="menu">
+            <a href="#" role="menuitem">Docs</a>
+            <a href="#" role="menuitem">Wiki</a>
+            <a href="#" role="menuitem">Projects</a>
+            <a href="#" role="menuitem">Calendar</a>
+            <a href="#" role="menuitem">AI</a>
+          </div>
+        </div>
+        <div class="nav-item">
+          <button data-menu="solutions">Solutions <span class="caret">▼</span></button>
+          <div class="menu" id="menu-solutions" role="menu">
+            <a href="#" role="menuitem">Engineering</a>
+            <a href="#" role="menuitem">Design</a>
+            <a href="#" role="menuitem">Marketing</a>
+            <a href="#" role="menuitem">Operations</a>
+          </div>
+        </div>
+        <div class="nav-item">
+          <button data-menu="resources">Resources <span class="caret">▼</span></button>
+          <div class="menu" id="menu-resources" role="menu">
+            <a href="#" role="menuitem">Help center</a>
+            <a href="#" role="menuitem">Templates</a>
+            <a href="#" role="menuitem">Guides</a>
+            <a href="#" role="menuitem">Community</a>
+          </div>
+        </div>
+        <div class="nav-item">
+          <button data-menu="pricing">Pricing</button>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <button class="ghost" id="signIn">Sign in</button>
+        <button class="primary" id="getNotionBtn">Get Notion free</button>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-inner">
+      <span class="eyebrow"><span class="dot"></span> Now with overnight agents</span>
+      <h1 class="headline">Meet the <span class="accent">night shift.</span></h1>
+      <p class="subcopy">
+        While your team sleeps, Notion agents draft updates, sort inboxes, and prep tomorrow's plan — all inside the same workspace your docs, projects, and meetings already live in.
+      </p>
+      <div class="ctas">
+        <button class="btn btn-primary" id="ctaPrimary">Get Notion free</button>
+        <button class="btn btn-secondary" id="ctaSecondary">Request a demo →</button>
+      </div>
+
+      <!-- Stage -->
+      <div class="stage" id="stage">
+        <!-- SVG connectors -->
+        <svg class="connectors" viewBox="0 0 1100 640" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="wire" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#6ea0ff" stop-opacity="0.0" />
+              <stop offset="40%" stop-color="#6ea0ff" stop-opacity="0.85" />
+              <stop offset="100%" stop-color="#2f6bff" stop-opacity="0.9" />
+            </linearGradient>
+          </defs>
+          <!-- winding paths from badges into mockup -->
+          <path d="M120,80 C260,40 320,260 540,260" />
+          <path d="M1010,140 C880,180 760,220 620,260" />
+          <path class="dash" d="M80,420 C260,420 360,360 520,360" />
+          <path class="dash" d="M980,520 C820,520 700,420 600,380" />
+          <path d="M420,610 C460,540 520,480 540,420" />
+        </svg>
+
+        <!-- Mockup -->
+        <div class="mockup" role="group" aria-label="Notion workspace preview">
+          <div class="mock-titlebar">
+            <div class="traffic" aria-hidden="true"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+            <div class="mock-url">notion.so / night-shift / overview</div>
+          </div>
+          <div class="mock-body">
+            <aside class="mock-side" aria-label="Sidebar">
+              <div class="group">Workspace</div>
+              <div class="row" data-page="overview"><span class="ic">🏠</span> Overview</div>
+              <div class="row active" data-page="night-shift"><span class="ic">🌙</span> Night shift</div>
+              <div class="row" data-page="inbox"><span class="ic">📥</span> Inbox</div>
+              <div class="row" data-page="projects"><span class="ic">🗂️</span> Projects</div>
+              <div class="row" data-page="calendar"><span class="ic">🗓️</span> Calendar</div>
+              <div class="group">Agents</div>
+              <div class="row" data-page="standup"><span class="ic">🧭</span> Standup writer</div>
+              <div class="row" data-page="triage"><span class="ic">📨</span> Inbox triage</div>
+              <div class="row" data-page="research"><span class="ic">🔎</span> Research scout</div>
+            </aside>
+            <main class="mock-content">
+              <div class="mock-h">
+                <span class="mock-emoji">🌙</span>
+                <span class="mock-title" id="mockTitle">Night shift</span>
+              </div>
+              <div class="mock-meta">Updated by Agent · 3 minutes ago · 12 tasks queued</div>
+
+              <div class="mock-grid">
+                <div class="mock-card" data-card="drafts">
+                  <div class="label">Drafts ready</div>
+                  <div class="value">14</div>
+                  <div class="trend">+4 since midnight</div>
+                </div>
+                <div class="mock-card" data-card="inbox">
+                  <div class="label">Inbox triaged</div>
+                  <div class="value">128</div>
+                  <div class="trend">98% sorted</div>
+                </div>
+                <div class="mock-card" data-card="briefs">
+                  <div class="label">Morning briefs</div>
+                  <div class="value">6</div>
+                  <div class="trend">Due 8:00 AM</div>
+                </div>
+              </div>
+
+              <div class="mock-list" id="taskList" aria-label="Overnight task list">
+                <div class="item" data-done="true">
+                  <span class="check" aria-hidden="true"></span>
+                  <span class="name">Summarize yesterday's standup</span>
+                  <span class="pill green">Done</span>
+                  <span class="avatar" title="Agent">AI</span>
+                </div>
+                <div class="item" data-done="true">
+                  <span class="check" aria-hidden="true"></span>
+                  <span class="name">Draft Q3 roadmap update</span>
+                  <span class="pill blue">Doc</span>
+                  <span class="avatar" title="Agent">AI</span>
+                </div>
+                <div class="item" data-done="false">
+                  <span class="check" aria-hidden="true"></span>
+                  <span class="name">Flag overdue tickets in Projects</span>
+                  <span class="pill amber">Running</span>
+                  <span class="avatar" title="Agent">AI</span>
+                </div>
+                <div class="item" data-done="false">
+                  <span class="check" aria-hidden="true"></span>
+                  <span class="name">Compile weekly customer feedback</span>
+                  <span class="pill">Queued</span>
+                  <span class="avatar" title="Agent">AI</span>
+                </div>
+              </div>
+            </main>
+          </div>
+        </div>
+
+        <!-- Floating badges -->
+        <div class="badge b1" tabindex="0" data-tip="Slack messages summarized">
+          <span class="ic" style="background:#4a154b">💬</span>
+          <span><div>Slack digest</div><div class="sub">17 threads · 3 actions</div></span>
+        </div>
+        <div class="badge b2 dark" tabindex="0" data-tip="GitHub PRs reviewed">
+          <span class="ic" style="background:#1f2937">🐙</span>
+          <span><div>PRs reviewed</div><div class="sub">9 awaiting you</div></span>
+        </div>
+        <div class="badge b3" tabindex="0" data-tip="Calendar prepared">
+          <span class="ic" style="background:#0b76ff">🗓️</span>
+          <span><div>Tomorrow's plan</div><div class="sub">5 meetings prepped</div></span>
+        </div>
+        <div class="badge b4" tabindex="0" data-tip="Research scout completed">
+          <span class="ic" style="background:#16a34a">🔎</span>
+          <span><div>Research scout</div><div class="sub">12 sources cited</div></span>
+        </div>
+        <div class="badge b5 dark" tabindex="0" data-tip="Notion AI agent">
+          <span class="ic" style="background:linear-gradient(135deg,#5b8cff,#2f6bff)">✨</span>
+          <span><div>Notion agent</div><div class="sub">on duty · 03:14 AM</div></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Logos strip -->
+  <section class="logos">
+    <div class="logos-inner">
+      <div class="logos-title">Trusted by teams at</div>
+      <div class="logos-row" aria-label="Customer logos">
+        <span class="logo"><span class="glyph">◎</span> OpenAI</span>
+        <span class="logo"><span class="glyph">▲</span> Vercel</span>
+        <span class="logo"><span class="glyph">◇</span> Figma</span>
+        <span class="logo"><span class="glyph">●</span> Loom</span>
+        <span class="logo"><span class="glyph">✦</span> Ramp</span>
+        <span class="logo"><span class="glyph">⌬</span> Match</span>
+        <span class="logo"><span class="glyph">◧</span> Toyota</span>
+        <span class="logo"><span class="glyph">◐</span> Headspace</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Modal -->
+  <div class="backdrop" id="backdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h3 id="modalTitle">Get Notion free</h3>
+      <p>Drop your work email — we'll send a one-click signup link.</p>
+      <div class="field">
+        <input id="emailInput" type="email" placeholder="you@company.com" autocomplete="email" />
+        <button class="btn btn-primary" id="modalSubmit">Continue</button>
+      </div>
+      <div class="row-actions">
+        <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">Saved</div>
+
+<script>
+  // Announcement close
+  const announce = document.getElementById('announce');
+  document.getElementById('announceClose').addEventListener('click', () => {
+    announce.style.display = 'none';
+  });
+
+  // Dropdown menus
+  const navLinks = document.getElementById('navLinks');
+  const menus = {
+    product: document.getElementById('menu-product'),
+    solutions: document.getElementById('menu-solutions'),
+    resources: document.getElementById('menu-resources'),
+  };
+  function closeAllMenus(except) {
+    Object.entries(menus).forEach(([k, el]) => {
+      if (k !== except) el.dataset.open = 'false';
+    });
+  }
+  navLinks.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-menu]');
+    if (!btn) return;
+    const key = btn.dataset.menu;
+    if (key === 'pricing') { showToast('Pricing coming up'); closeAllMenus(); return; }
+    const m = menus[key];
+    const open = m.dataset.open === 'true';
+    closeAllMenus(open ? null : key);
+    m.dataset.open = open ? 'false' : 'true';
+    e.stopPropagation();
+  });
+  document.addEventListener('click', () => closeAllMenus());
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeAllMenus(); closeModal(); } });
+
+  // Toast
+  const toast = document.getElementById('toast');
+  let toastT;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastT);
+    toastT = setTimeout(() => toast.classList.remove('show'), 1800);
+  }
+
+  // Modal
+  const backdrop = document.getElementById('backdrop');
+  const emailInput = document.getElementById('emailInput');
+  function openModal() {
+    backdrop.dataset.open = 'true';
+    backdrop.setAttribute('aria-hidden', 'false');
+    setTimeout(() => emailInput.focus(), 30);
+  }
+  function closeModal() {
+    backdrop.dataset.open = 'false';
+    backdrop.setAttribute('aria-hidden', 'true');
+  }
+  document.getElementById('ctaPrimary').addEventListener('click', openModal);
+  document.getElementById('getNotionBtn').addEventListener('click', openModal);
+  document.getElementById('ctaSecondary').addEventListener('click', () => showToast('Demo request noted ✨'));
+  document.getElementById('signIn').addEventListener('click', () => showToast('Sign-in is just a demo here'));
+  document.getElementById('modalCancel').addEventListener('click', closeModal);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModal(); });
+  document.getElementById('modalSubmit').addEventListener('click', () => {
+    const v = emailInput.value.trim();
+    if (!v || !v.includes('@')) { emailInput.focus(); showToast('Enter a valid email'); return; }
+    closeModal();
+    emailInput.value = '';
+    showToast("You're on the list — check your inbox 📬");
+  });
+
+  // Mockup interactions
+  const mockTitle = document.getElementById('mockTitle');
+  const titles = {
+    overview: 'Overview',
+    'night-shift': 'Night shift',
+    inbox: 'Inbox',
+    projects: 'Projects',
+    calendar: 'Calendar',
+    standup: 'Standup writer',
+    triage: 'Inbox triage',
+    research: 'Research scout',
+  };
+  document.querySelectorAll('.mock-side .row').forEach((row) => {
+    row.addEventListener('click', () => {
+      document.querySelectorAll('.mock-side .row').forEach((r) => r.classList.remove('active'));
+      row.classList.add('active');
+      const k = row.dataset.page;
+      mockTitle.textContent = titles[k] || 'Workspace';
+    });
+  });
+
+  document.querySelectorAll('.mock-card').forEach((c) => {
+    c.addEventListener('click', () => showToast('Opened ' + c.querySelector('.label').textContent.toLowerCase()));
+  });
+
+  document.querySelectorAll('#taskList .item').forEach((item) => {
+    item.addEventListener('click', () => {
+      const done = item.dataset.done === 'true';
+      item.dataset.done = done ? 'false' : 'true';
+      const pill = item.querySelector('.pill');
+      if (!done) { pill.textContent = 'Done'; pill.className = 'pill green'; }
+      else { pill.textContent = 'Queued'; pill.className = 'pill'; }
+    });
+  });
+
+  // Badge tooltips via toast
+  document.querySelectorAll('.badge').forEach((b) => {
+    b.addEventListener('click', () => showToast(b.dataset.tip));
+    b.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showToast(b.dataset.tip); } });
+  });
+</script>
+</body>
+</html>
