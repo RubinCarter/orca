@@ -11,6 +11,18 @@ type SparseWorktreeCreateError = Error & {
   cleanupFailed?: boolean
 }
 
+const disposableWorktreeMetadataPathspecs = [
+  '.DS_Store',
+  ':(glob)**/.DS_Store',
+  'Thumbs.db',
+  ':(glob)**/Thumbs.db',
+  'Desktop.ini',
+  ':(glob)**/Desktop.ini'
+]
+
+const disposableWorktreeMetadataStatusPattern =
+  /(?:^|\s|[\\/])(?:\.DS_Store|Thumbs\.db|Desktop\.ini)"?$/i
+
 function getErrorCode(error: unknown): string | undefined {
   return typeof error === 'object' && error !== null && 'code' in error
     ? String((error as { code?: unknown }).code)
@@ -420,16 +432,47 @@ export async function assertWorktreeCleanForRemoval(
     return
   }
 
-  const { stdout } = await gitExecFileAsync(['status', '--porcelain', '--untracked-files=all'], {
+  let { stdout } = await gitExecFileAsync(['status', '--porcelain', '--untracked-files=all'], {
     cwd: worktreePath
   })
   if (!stdout.trim()) {
     return
   }
 
+  if (hasOnlyDisposableWorktreeMetadata(stdout)) {
+    // Why: Finder/Explorer metadata can make a user-clean worktree require
+    // force-delete. Remove only untracked disposable files, then re-check.
+    await gitExecFileAsync(['clean', '-f', '-q', '--', ...disposableWorktreeMetadataPathspecs], {
+      cwd: worktreePath
+    })
+    const statusAfterCleanup = await gitExecFileAsync(
+      ['status', '--porcelain', '--untracked-files=all'],
+      {
+        cwd: worktreePath
+      }
+    )
+    stdout = statusAfterCleanup.stdout
+    if (!stdout.trim()) {
+      return
+    }
+  }
+
   const error = new Error('Worktree has uncommitted or untracked changes.')
   ;(error as Error & { stdout?: string }).stdout = stdout
   throw error
+}
+
+function hasOnlyDisposableWorktreeMetadata(statusOutput: string): boolean {
+  const statusLines = statusOutput.split(/\r?\n/).filter((line) => line.trim())
+  return (
+    statusLines.length > 0 &&
+    statusLines.every((line) => {
+      if (!line.startsWith('?? ')) {
+        return false
+      }
+      return disposableWorktreeMetadataStatusPattern.test(line.slice(3).trim())
+    })
+  )
 }
 
 function translateWorktreePath(worktreePath: string, repoPath: string): string {
