@@ -256,13 +256,12 @@
 .mobile-page-root .mp-cta-row {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 14px;
   margin-top: auto;
   padding-top: 16px;
-  /* Why: the intro CTA should land exactly where the step-flow primary
-     button appears, so users can click through without moving the pointer. */
-  padding-right: var(--mp-flow-card-inset);
+  /* Why: the intro CTA is part of the hero copy, so it should start-align
+     with the headline and lead instead of matching the later flow footer. */
   padding-bottom: var(--mp-flow-card-inset);
 }
 
