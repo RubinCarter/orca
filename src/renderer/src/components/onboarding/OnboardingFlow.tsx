@@ -244,7 +244,10 @@ export default function OnboardingFlow({
             // actions stay anchored across every onboarding page.
             isInlineTourRunning
               ? 'mt-7 overflow-hidden'
-              : 'scrollbar-sleek mt-10 overflow-y-auto pr-1'
+              : cn(
+                  'scrollbar-sleek overflow-y-auto pr-1',
+                  currentStep.id === 'agentSetup' ? 'mt-6' : 'mt-10'
+                )
           )}
         >
           {currentStep.id === 'agent' && (
