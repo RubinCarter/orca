@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import type * as NodeFs from 'node:fs'
 import type * as NodeOs from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 const { getPathMock, homedirMock } = vi.hoisted(() => ({
   getPathMock: vi.fn<(name: string) => string>(),
@@ -51,10 +51,7 @@ vi.mock('node:os', async () => {
   }
 })
 
-import {
-  syncSystemCodexResourcesIntoManagedHome,
-  syncSystemCodexSessionsIntoManagedHome
-} from './codex-home-paths'
+import { syncSystemCodexResourcesIntoManagedHome } from './codex-home-paths'
 
 let fakeHomeDir: string
 let userDataDir: string
@@ -219,90 +216,5 @@ describe('syncSystemCodexResourcesIntoManagedHome', () => {
 
     expect(lstatSync(runtimeProfilePath).isSymbolicLink()).toBe(false)
     expect(readFileSync(runtimeProfilePath, 'utf-8')).toBe('second\n')
-  })
-})
-
-describe('syncSystemCodexSessionsIntoManagedHome', () => {
-  it('bridges system Codex session jsonl files into the managed runtime home', () => {
-    const systemSessionPath = join(
-      getSystemCodexHomePath(),
-      'sessions',
-      '2026',
-      '05',
-      '26',
-      'rollout-old.jsonl'
-    )
-    mkdirSync(dirname(systemSessionPath), { recursive: true })
-    writeFileSync(systemSessionPath, '{"type":"session_meta","id":"old"}\n', 'utf-8')
-    writeFileSync(
-      join(getSystemCodexHomePath(), 'sessions', '2026', '05', '26', 'scratch.txt'),
-      'not a session\n',
-      'utf-8'
-    )
-    writeFileSync(join(getSystemCodexHomePath(), 'hooks.json'), '{"hooks":{}}\n', 'utf-8')
-    writeFileSync(join(getSystemCodexHomePath(), 'config.toml'), 'model = "system"\n', 'utf-8')
-    writeFileSync(join(getSystemCodexHomePath(), 'auth.json'), '{"account":"system"}\n', 'utf-8')
-    writeFileSync(join(getSystemCodexHomePath(), 'state_5.sqlite'), 'sqlite\n', 'utf-8')
-
-    syncSystemCodexSessionsIntoManagedHome()
-
-    const runtimeSessionPath = join(
-      getRuntimeCodexHomePath(),
-      'sessions',
-      '2026',
-      '05',
-      '26',
-      'rollout-old.jsonl'
-    )
-    expect(readFileSync(runtimeSessionPath, 'utf-8')).toBe('{"type":"session_meta","id":"old"}\n')
-    expectSymbolicLinkTargetIfLinked(runtimeSessionPath, systemSessionPath)
-    expect(
-      existsSync(join(getRuntimeCodexHomePath(), 'sessions', '2026', '05', '26', 'scratch.txt'))
-    ).toBe(false)
-    expect(existsSync(join(getRuntimeCodexHomePath(), 'hooks.json'))).toBe(false)
-    expect(existsSync(join(getRuntimeCodexHomePath(), 'config.toml'))).toBe(false)
-    expect(existsSync(join(getRuntimeCodexHomePath(), 'auth.json'))).toBe(false)
-    expect(existsSync(join(getRuntimeCodexHomePath(), 'state_5.sqlite'))).toBe(false)
-  })
-
-  it('does not overwrite runtime-owned session files', () => {
-    const relativeSessionPath = join('sessions', '2026', '05', '26', 'rollout-conflict.jsonl')
-    const systemSessionPath = join(getSystemCodexHomePath(), relativeSessionPath)
-    const runtimeSessionPath = join(getRuntimeCodexHomePath(), relativeSessionPath)
-    mkdirSync(dirname(systemSessionPath), { recursive: true })
-    mkdirSync(dirname(runtimeSessionPath), { recursive: true })
-    writeFileSync(systemSessionPath, '{"id":"system"}\n', 'utf-8')
-    writeFileSync(runtimeSessionPath, '{"id":"runtime"}\n', 'utf-8')
-
-    syncSystemCodexSessionsIntoManagedHome()
-
-    expect(readFileSync(runtimeSessionPath, 'utf-8')).toBe('{"id":"runtime"}\n')
-  })
-
-  it('falls back when session file symlinks are unavailable', () => {
-    fsMockState.failSymlink = true
-    const systemSessionPath = join(
-      getSystemCodexHomePath(),
-      'sessions',
-      '2026',
-      '05',
-      '26',
-      'rollout-fallback.jsonl'
-    )
-    mkdirSync(dirname(systemSessionPath), { recursive: true })
-    writeFileSync(systemSessionPath, '{"id":"fallback"}\n', 'utf-8')
-
-    syncSystemCodexSessionsIntoManagedHome()
-
-    const runtimeSessionPath = join(
-      getRuntimeCodexHomePath(),
-      'sessions',
-      '2026',
-      '05',
-      '26',
-      'rollout-fallback.jsonl'
-    )
-    expect(lstatSync(runtimeSessionPath).isSymbolicLink()).toBe(false)
-    expect(readFileSync(runtimeSessionPath, 'utf-8')).toBe('{"id":"fallback"}\n')
   })
 })

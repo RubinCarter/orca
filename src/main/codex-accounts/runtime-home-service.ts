@@ -20,9 +20,9 @@ import { writeFileAtomically } from './fs-utils'
 import {
   getOrcaManagedCodexHomePath,
   getSystemCodexHomePath,
-  syncSystemCodexSessionsIntoManagedHome,
   syncSystemCodexResourcesIntoManagedHome
 } from '../codex/codex-home-paths'
+import { syncSystemCodexSessionsIntoManagedHome } from '../codex/codex-session-bridge'
 import { syncSystemConfigIntoManagedCodexHome } from '../codex/codex-config-mirror'
 
 type CodexAuthIdentity = {

@@ -1,11 +1,8 @@
 import {
-  copyFileSync,
   cpSync,
   existsSync,
-  linkSync,
   lstatSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
   readlinkSync,
   rmdirSync,
@@ -15,7 +12,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join } from 'node:path'
 
 const CODEX_SYSTEM_RESOURCE_ENTRIES = [
   'skills',
@@ -57,105 +54,6 @@ export function syncSystemCodexResourcesIntoManagedHome(): void {
   for (const entryName of CODEX_SYSTEM_RESOURCE_ENTRIES) {
     linkSystemCodexResource(systemHomePath, managedHomePath, entryName)
   }
-}
-
-export function syncSystemCodexSessionsIntoManagedHome(): void {
-  const systemSessionsRoot = join(getSystemCodexHomePath(), 'sessions')
-  if (!existsSync(systemSessionsRoot)) {
-    return
-  }
-
-  const managedSessionsRoot = join(getOrcaManagedCodexHomePath(), 'sessions')
-  for (const systemSessionFilePath of listCodexSessionJsonlFiles(systemSessionsRoot)) {
-    const relativePath = relative(systemSessionsRoot, systemSessionFilePath)
-    const managedSessionFilePath = join(managedSessionsRoot, relativePath)
-    if (existsSync(managedSessionFilePath)) {
-      refreshCopiedSystemCodexSessionFile(
-        systemSessionFilePath,
-        managedSessionFilePath,
-        relativePath
-      )
-      continue
-    }
-    mkdirSync(dirname(managedSessionFilePath), { recursive: true })
-    linkOrCopySystemCodexSessionFile(systemSessionFilePath, managedSessionFilePath, relativePath)
-  }
-}
-
-function listCodexSessionJsonlFiles(rootPath: string): string[] {
-  const files: string[] = []
-  try {
-    for (const entry of readdirSync(rootPath, { withFileTypes: true })) {
-      const childPath = join(rootPath, entry.name)
-      if (entry.isDirectory()) {
-        files.push(...listCodexSessionJsonlFiles(childPath))
-        continue
-      }
-      if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-        files.push(childPath)
-      }
-    }
-  } catch (error) {
-    console.warn('[codex-home] Failed to list system Codex sessions:', error)
-  }
-  return files.sort()
-}
-
-function linkOrCopySystemCodexSessionFile(
-  sourcePath: string,
-  targetPath: string,
-  relativePath: string
-): void {
-  try {
-    // Why: old sessions must stay resumable under Orca's runtime CODEX_HOME
-    // without copying hooks/config/auth or rewriting Codex's SQLite state.
-    symlinkSync(sourcePath, targetPath, process.platform === 'win32' ? 'file' : undefined)
-    clearCopiedSessionMarker(relativePath)
-  } catch (symlinkError) {
-    try {
-      linkSync(sourcePath, targetPath)
-      clearCopiedSessionMarker(relativePath)
-    } catch {
-      try {
-        copyFileSync(sourcePath, targetPath)
-        markCopiedSession(relativePath, sourcePath)
-      } catch {
-        console.warn(
-          '[codex-home] Failed to bridge system Codex session:',
-          sourcePath,
-          symlinkError
-        )
-      }
-    }
-  }
-}
-
-function refreshCopiedSystemCodexSessionFile(
-  sourcePath: string,
-  targetPath: string,
-  relativePath: string
-): void {
-  if (readCopiedSessionSourcePath(relativePath) !== sourcePath) {
-    return
-  }
-  try {
-    if (lstatSync(targetPath).isSymbolicLink()) {
-      clearCopiedSessionMarker(relativePath)
-      return
-    }
-    copyFileSync(sourcePath, targetPath)
-  } catch (error) {
-    console.warn('[codex-home] Failed to refresh copied system Codex session:', sourcePath, error)
-  }
-}
-
-export function isManagedCodexSessionCopyBridge(sessionFilePath: string): boolean {
-  const managedSessionsRoot = join(getOrcaManagedCodexHomePath(), 'sessions')
-  const relativePath = relative(managedSessionsRoot, sessionFilePath)
-  if (relativePath.startsWith('..')) {
-    return false
-  }
-  return readCopiedSessionSourcePath(relativePath) !== null
 }
 
 function linkSystemCodexResource(
