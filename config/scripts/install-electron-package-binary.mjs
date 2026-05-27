@@ -29,22 +29,29 @@ const extract = electronRequire('extract-zip')
 const platformPath = getElectronPlatformPath()
 const MAX_DOWNLOAD_REDIRECTS = 5
 
-if (electronPackageLoads()) {
-  process.exit(0)
-}
-
-// Why: PR tests run under system Node after native modules are rebuilt for
-// Node. Install only Electron's npm package binary here; do not run the full
-// Electron native-module rebuild path, which would undo the Node ABI rebuild.
-console.log('[electron-package] Electron package binary is missing; running Electron install.')
-await installElectronPackageBinary()
-
-repairElectronPathFile()
-
-if (!electronPackageLoads()) {
-  logElectronInstallDiagnostics()
-  console.error('[electron-package] Electron package is still unavailable after install.')
+main().catch((error) => {
+  console.error(error)
   process.exit(1)
+})
+
+async function main() {
+  if (electronPackageLoads()) {
+    return
+  }
+
+  // Why: PR tests run under system Node after native modules are rebuilt for
+  // Node. Install only Electron's npm package binary here; do not run the full
+  // Electron native-module rebuild path, which would undo the Node ABI rebuild.
+  console.log('[electron-package] Electron package binary is missing; running Electron install.')
+  await installElectronPackageBinary()
+
+  repairElectronPathFile()
+
+  if (!electronPackageLoads()) {
+    logElectronInstallDiagnostics()
+    console.error('[electron-package] Electron package is still unavailable after install.')
+    process.exit(1)
+  }
 }
 
 function electronPackageLoads() {
