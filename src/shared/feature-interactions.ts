@@ -11,7 +11,8 @@ export type FeatureInteractionId =
   | 'workspace-creation'
   | 'agent-browser-use'
   | 'agent-orchestration'
-  | 'ai-commit-pr'
+  | 'ai-commit-generation'
+  | 'ai-pr-generation'
   | 'claude-account-switching'
   | 'computer-use'
   | 'codex-account-switching'
@@ -98,8 +99,12 @@ export const FEATURE_INTERACTIONS = [
     interaction: 'Agent Orchestration setup enabled or used'
   },
   {
-    id: 'ai-commit-pr',
-    interaction: 'AI commit message or pull request generation enabled or used'
+    id: 'ai-commit-generation',
+    interaction: 'AI commit message generation enabled or used'
+  },
+  {
+    id: 'ai-pr-generation',
+    interaction: 'AI pull request generation used'
   },
   {
     id: 'claude-account-switching',

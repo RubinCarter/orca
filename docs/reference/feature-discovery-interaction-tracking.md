@@ -24,7 +24,8 @@ Do not upload this state as broad analytics. Product analytics should continue t
 | Feature | Interaction ID | Record when | Education use |
 | --- | --- | --- | --- |
 | Review notes to agent | `review-notes` | A diff or markdown review note is added, or review notes are marked sent to an agent. | Suppress or target a future review-notes tour/tip about adding line notes and sending focused feedback back to an agent. |
-| Ship with AI | `ai-commit-pr` | AI commit/PR generation is enabled or a commit message / PR draft is generated. | Suppress future education about AI commit/PR generation. No contextual tour is planned for this branch. |
+| AI commit generation | `ai-commit-generation` | AI commit-message generation is enabled or an AI commit message is generated. | Suppress future education about AI commit generation. No contextual tour is planned for this branch. |
+| AI PR generation | `ai-pr-generation` | AI pull-request title/body/draft fields are generated. | Suppress future education about AI PR generation. No contextual tour is planned for this branch. |
 | Floating Workspace | `floating-workspace` | The floating workspace opens, is enabled, or is configured. | Suppress future tips about the global terminal/browser/markdown workspace. No contextual tour is planned for this branch. |
 | Quick Commands | `quick-commands` | A terminal quick command is created or edited. | Suppress future tips about saved terminal commands. No contextual tour is planned for this branch. |
 | Computer Use | `computer-use` | Computer Use is selected in onboarding, a permission setup is opened, or the skill setup terminal opens. | Suppress future tips once the user has started setup. No contextual tour is planned until there is a better non-settings entry point. |

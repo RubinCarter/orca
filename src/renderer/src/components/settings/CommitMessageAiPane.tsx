@@ -470,7 +470,7 @@ export function CommitMessageAiPane({
       ...selectedModelPatch,
       selectedThinkingByModel: nextSelectedThinkingByModel
     })
-    useAppStore.getState().recordFeatureInteraction('ai-commit-pr')
+    useAppStore.getState().recordFeatureInteraction('ai-commit-generation')
   }
 
   const onAgentChange = (newAgentId: string): void => {

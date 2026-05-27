@@ -263,7 +263,7 @@ export function useCreatePullRequestDialogFields({
       setTitle(result.fields.title)
       setBody(result.fields.body)
       setDraft(result.fields.draft)
-      useAppStore.getState().recordFeatureInteraction('ai-commit-pr')
+      useAppStore.getState().recordFeatureInteraction('ai-pr-generation')
       setGenerateError(null)
     } catch (error) {
       if (generationRequestIdRef.current !== requestId) {
