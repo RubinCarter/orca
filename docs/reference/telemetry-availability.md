@@ -39,7 +39,7 @@ D1+/D3+/D7+ retention means the user fired `app_opened` at least once after 24/7
 - `source = 'unknown'` is not a real product surface. It means the caller omitted a source or the value failed schema validation.
 - `workspace_created` means create-worktree IPC succeeded. It is not a general "usable workspace exists" or "workspace revealed" marker.
 - `agent_started` means PTY spawn succeeded with agent telemetry attached. It is not first-repo activation and does not prove the user sent a prompt.
-- `agent_prompt_sent` means Orca submitted a non-draft prompt/message through an agent launch or post-ready agent input path. It excludes agent auto-start, bare shells, and draft prefill.
+- `agent_prompt_sent` means a live agent hook observed an explicit non-empty user prompt. It excludes hydrated/replayed status, agent auto-start, bare shells, draft prefill, and hookless sessions; missing rows mean no hook-confirmed interaction was observed, not proof the user never typed.
 - Workspace-outcome joins are native Electron coverage unless the query explicitly proves remote/web instrumentation. Remote runtime and web paths can bypass native repo/worktree telemetry, so do not interpret missing workspace outcome rows as product drop-off for SSH, remote, or web users.
 
 ## Rollouts

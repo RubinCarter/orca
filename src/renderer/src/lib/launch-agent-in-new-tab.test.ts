@@ -89,7 +89,7 @@ describe('launchAgentInNewTab', () => {
     )
   })
 
-  it('tracks one prompt-sent event for argv prompt launches', async () => {
+  it('does not track prompt-sent for argv prompt launches', async () => {
     const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
 
     launchAgentInNewTab({
@@ -99,12 +99,7 @@ describe('launchAgentInNewTab', () => {
       launchSource: 'onboarding'
     })
 
-    expect(mockTrack).toHaveBeenCalledTimes(1)
-    expect(mockTrack).toHaveBeenCalledWith('agent_prompt_sent', {
-      agent_kind: 'codex',
-      launch_source: 'onboarding',
-      request_kind: 'new'
-    })
+    expect(mockTrack).not.toHaveBeenCalledWith('agent_prompt_sent', expect.anything())
   })
 
   it('does not track prompt-sent for draft launches', async () => {
@@ -152,12 +147,7 @@ describe('launchAgentInNewTab', () => {
       prompt: 'large generated prompt',
       agentType: 'command-code'
     })
-    expect(mockTrack).toHaveBeenCalledTimes(1)
-    expect(mockTrack).toHaveBeenCalledWith('agent_prompt_sent', {
-      agent_kind: 'command-code',
-      launch_source: 'tab_bar_quick_launch',
-      request_kind: 'new'
-    })
+    expect(mockTrack).not.toHaveBeenCalledWith('agent_prompt_sent', expect.anything())
   })
 
   it('does not track prompt-sent when submit-after-ready delivery fails', async () => {

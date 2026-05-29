@@ -112,11 +112,11 @@ describe('agent_started schema', () => {
 })
 
 describe('agent_prompt_sent schema', () => {
-  it('accepts a bounded prompt-send payload with cohort context', () => {
+  it('accepts a hook-confirmed prompt-send payload with cohort context', () => {
     const parsed = eventSchemas.agent_prompt_sent.safeParse({
       agent_kind: 'codex',
-      launch_source: 'onboarding',
-      request_kind: 'new',
+      launch_source: 'unknown',
+      request_kind: 'followup',
       nth_repo_added: 1
     })
     expect(parsed.success).toBe(true)
@@ -125,8 +125,8 @@ describe('agent_prompt_sent schema', () => {
   it('rejects prompt text via .strict()', () => {
     const parsed = eventSchemas.agent_prompt_sent.safeParse({
       agent_kind: 'claude-code',
-      launch_source: 'new_workspace_composer',
-      request_kind: 'new',
+      launch_source: 'unknown',
+      request_kind: 'followup',
       prompt: 'please inspect /Users/alice/private-repo'
     })
     expect(parsed.success).toBe(false)

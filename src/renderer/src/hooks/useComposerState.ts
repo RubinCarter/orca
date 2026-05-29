@@ -19,8 +19,6 @@ import { filterEnabledTuiAgents, isTuiAgentEnabled } from '../../../shared/tui-a
 import { tuiAgentToAgentKind } from '@/lib/telemetry'
 import { isGitRepoKind } from '../../../shared/repo-kind'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
-import type { EventProps } from '../../../shared/telemetry-events'
-import { trackFoldedStartupPromptSent } from '@/lib/agent-prompt-sent-telemetry'
 import type {
   GitHubWorkItem,
   GitPushTarget,
@@ -1872,8 +1870,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         launch_source: telemetrySource === 'onboarding' ? 'onboarding' : 'new_workspace_composer',
         request_kind: 'new'
       }
-      const composerPromptTelemetry: EventProps<'agent_prompt_sent'> = composerTelemetry
-      const activation = activateAndRevealWorktree(worktree.id, {
+      activateAndRevealWorktree(worktree.id, {
         sidebarRevealBehavior: 'auto',
         setup: result.setup,
         issueCommand,
@@ -1896,16 +1893,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
           : {})
       })
       if (startupPlan) {
-        trackFoldedStartupPromptSent({
-          prompt: submitStartupPrompt,
-          startupPlan,
-          promptTelemetry: composerPromptTelemetry,
-          startupQueued: activation !== false && activation.primaryTabId !== null
-        })
         void ensureAgentStartupInTerminal({
           worktreeId: worktree.id,
-          startup: startupPlan,
-          promptTelemetry: composerPromptTelemetry
+          startup: startupPlan
         })
       }
       setSidebarOpen(true)
@@ -2148,8 +2138,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
                   telemetrySource === 'onboarding' ? 'onboarding' : 'new_workspace_composer',
                 request_kind: 'new'
               }
-        const quickPromptTelemetry: EventProps<'agent_prompt_sent'> | null = quickTelemetry
-        const activation = activateAndRevealWorktree(worktree.id, {
+        activateAndRevealWorktree(worktree.id, {
           sidebarRevealBehavior: 'auto',
           setup: result.setup,
           ...(startupPlan
@@ -2171,16 +2160,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
             : {})
         })
         if (startupPlan) {
-          trackFoldedStartupPromptSent({
-            prompt: quickPrompt,
-            startupPlan,
-            promptTelemetry: quickPromptTelemetry,
-            startupQueued: activation !== false && activation.primaryTabId !== null
-          })
           void ensureAgentStartupInTerminal({
             worktreeId: worktree.id,
-            startup: startupPlan,
-            ...(quickPromptTelemetry ? { promptTelemetry: quickPromptTelemetry } : {})
+            startup: startupPlan
           })
         }
         setSidebarOpen(true)

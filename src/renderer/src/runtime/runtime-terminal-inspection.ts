@@ -110,6 +110,9 @@ export async function sendRuntimePtyInputVerified(
     const accepted = await window.api.pty.writeAccepted(ptyId, data)
     if (!accepted) {
       window.api.pty.write(ptyId, data)
+      // Why: SSH/local fallback writes are fire-and-forget. Callers use this
+      // boolean to continue UX flow, while hook telemetry confirms real turns.
+      return true
     }
     return accepted
   }

@@ -12,7 +12,7 @@ import { pasteDraftWhenAgentReady } from '@/lib/agent-paste-draft'
 import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
 import { makePaneKey } from '../../../shared/stable-pane-id'
 import type { TuiAgent } from '../../../shared/types'
-import type { EventProps, LaunchSource } from '../../../shared/telemetry-events'
+import type { LaunchSource } from '../../../shared/telemetry-events'
 
 export type LaunchAgentInNewTabArgs = {
   agent: TuiAgent
@@ -93,12 +93,6 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
   const trimmedPrompt = prompt?.trim() ?? ''
   const hasPrompt = trimmedPrompt.length > 0
   const isFollowupPath = TUI_AGENT_CONFIG[agent].promptInjectionMode === 'stdin-after-start'
-  const promptTelemetry: EventProps<'agent_prompt_sent'> = {
-    agent_kind: tuiAgentToAgentKind(agent),
-    launch_source: launchSource ?? 'tab_bar_quick_launch',
-    request_kind: 'new'
-  }
-
   // Why: argv/flag agents fold the prompt into the launch command and
   // auto-submit — keeping behavior consistent with the composer/tab-bar `+`
   // mental model, where the prompt is "the first turn the user sent".
@@ -194,15 +188,6 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       request_kind: 'new'
     }
   })
-  if (
-    hasPrompt &&
-    promptDelivery === 'auto-submit' &&
-    startupPlan.followupPrompt === null &&
-    pasteDraftAfterLaunch === null
-  ) {
-    track('agent_prompt_sent', promptTelemetry)
-  }
-
   // Why: schedule the bracketed-paste-after-ready follow-up immediately after
   // the startup command is queued. Fire-and-forget so callers keep their
   // synchronous `{ tabId, startupPlan }` signature. The helper short-circuits
@@ -247,9 +232,6 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       }
     }).then((delivered) => {
       if (delivered) {
-        if (submitPastedPrompt) {
-          track('agent_prompt_sent', promptTelemetry)
-        }
         if (agent === 'command-code' && submitPastedPrompt) {
           // Why: Command Code has no prompt-submit hook; when Orca submits a
           // generated prompt after readiness, seed working at delivery time.

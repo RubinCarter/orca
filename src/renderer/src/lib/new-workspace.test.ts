@@ -168,7 +168,7 @@ describe('isGitLabIssueUrl', () => {
   })
 })
 
-describe('ensureAgentStartupInTerminal prompt telemetry', () => {
+describe('ensureAgentStartupInTerminal prompt delivery', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     store.settings = {}
@@ -183,7 +183,7 @@ describe('ensureAgentStartupInTerminal prompt telemetry', () => {
     mockPasteDraftWhenAgentReady.mockResolvedValue(true)
   })
 
-  it('tracks after a follow-up prompt is accepted by the terminal runtime', async () => {
+  it('sends a follow-up prompt through the terminal runtime without renderer telemetry', async () => {
     await ensureAgentStartupInTerminal({
       worktreeId: 'wt-1',
       startup: {
@@ -191,20 +191,11 @@ describe('ensureAgentStartupInTerminal prompt telemetry', () => {
         launchCommand: 'aider',
         expectedProcess: 'aider',
         followupPrompt: 'fix the spinner'
-      },
-      promptTelemetry: {
-        agent_kind: 'aider',
-        launch_source: 'new_workspace_composer',
-        request_kind: 'new'
       }
     })
 
     expect(mockSendRuntimePtyInputVerified).toHaveBeenCalledWith({}, 'pty-1', 'fix the spinner\r')
-    expect(mockTrack).toHaveBeenCalledWith('agent_prompt_sent', {
-      agent_kind: 'aider',
-      launch_source: 'new_workspace_composer',
-      request_kind: 'new'
-    })
+    expect(mockTrack).not.toHaveBeenCalledWith('agent_prompt_sent', expect.anything())
   })
 
   it('does not track when follow-up prompt delivery is rejected by the terminal runtime', async () => {
@@ -217,11 +208,6 @@ describe('ensureAgentStartupInTerminal prompt telemetry', () => {
         launchCommand: 'aider',
         expectedProcess: 'aider',
         followupPrompt: 'fix the spinner'
-      },
-      promptTelemetry: {
-        agent_kind: 'aider',
-        launch_source: 'new_workspace_composer',
-        request_kind: 'new'
       }
     })
 
@@ -239,11 +225,6 @@ describe('ensureAgentStartupInTerminal prompt telemetry', () => {
           launchCommand: 'aider',
           expectedProcess: 'aider',
           followupPrompt: 'fix the spinner'
-        },
-        promptTelemetry: {
-          agent_kind: 'aider',
-          launch_source: 'new_workspace_composer',
-          request_kind: 'new'
         }
       })
     ).resolves.toBeUndefined()
@@ -260,11 +241,6 @@ describe('ensureAgentStartupInTerminal prompt telemetry', () => {
         expectedProcess: 'claude',
         followupPrompt: null,
         draftPrompt: 'review this before sending'
-      },
-      promptTelemetry: {
-        agent_kind: 'claude-code',
-        launch_source: 'new_workspace_composer',
-        request_kind: 'new'
       }
     })
 

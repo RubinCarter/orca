@@ -4,10 +4,8 @@ import {
   inspectRuntimeTerminalProcess,
   sendRuntimePtyInputVerified
 } from '@/runtime/runtime-terminal-inspection'
-import { track } from '@/lib/telemetry'
 import type { AgentStartupPlan } from '@/lib/tui-agent-startup'
 import { isShellProcess } from '@/lib/tui-agent-startup'
-import type { EventProps } from '../../../shared/telemetry-events'
 import type { OrcaHooks, TaskViewPresetId } from '../../../shared/types'
 import { resolveHookCommandSourcePolicy } from '../../../shared/hook-command-source-policy'
 import { isExpectedAgentProcess } from '../../../shared/agent-process-recognition'
@@ -210,9 +208,8 @@ export function getWorkspaceSeedName(args: {
 export async function ensureAgentStartupInTerminal(args: {
   worktreeId: string
   startup: AgentStartupPlan
-  promptTelemetry?: EventProps<'agent_prompt_sent'>
 }): Promise<void> {
-  const { worktreeId, startup, promptTelemetry } = args
+  const { worktreeId, startup } = args
   const draftPrompt = startup.draftPrompt ?? null
   if (startup.followupPrompt === null && draftPrompt === null) {
     return
@@ -247,12 +244,7 @@ export async function ensureAgentStartupInTerminal(args: {
   // session and submitted. Wait until the agent owns the PTY before writing.
   if (startup.followupPrompt) {
     await waitForAgentForeground(ptyId, startup.expectedProcess)
-    const sent = await sendFollowupPrompt(ptyId, startup.followupPrompt)
-    if (sent) {
-      if (promptTelemetry) {
-        track('agent_prompt_sent', promptTelemetry)
-      }
-    }
+    await sendFollowupPrompt(ptyId, startup.followupPrompt)
   }
 
   // Why: draftPrompt uses bracketed-paste so the URL lands atomically in the

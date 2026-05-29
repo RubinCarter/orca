@@ -143,12 +143,12 @@ describe('runtime terminal owner routing', () => {
     expect(localWrite).not.toHaveBeenCalled()
   })
 
-  it('falls back to fire-and-forget writes when local acceptance cannot be verified', async () => {
+  it('reports success after fallback fire-and-forget writes when local acceptance cannot be verified', async () => {
     localWriteAccepted.mockResolvedValue(false)
 
     await expect(
       sendRuntimePtyInputVerified({ activeRuntimeEnvironmentId: null }, 'local-pty', 'x')
-    ).resolves.toBe(false)
+    ).resolves.toBe(true)
 
     expect(localWriteAccepted).toHaveBeenCalledWith('local-pty', 'x')
     expect(localWrite).toHaveBeenCalledWith('local-pty', 'x')

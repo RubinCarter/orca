@@ -34,8 +34,8 @@ describe('validate', () => {
   it('accepts a well-formed agent_prompt_sent payload', () => {
     const result = validate('agent_prompt_sent', {
       agent_kind: 'claude-code',
-      launch_source: 'new_workspace_composer',
-      request_kind: 'new',
+      launch_source: 'unknown',
+      request_kind: 'followup',
       nth_repo_added: 1
     })
     expect(result.ok).toBe(true)
