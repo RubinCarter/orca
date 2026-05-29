@@ -4286,6 +4286,13 @@ function GHEditSection({
   const [assigneePopoverOpen, setAssigneePopoverOpen] = useState(false)
   const [localAssignees, setLocalAssignees] = useState<string[]>(assignees)
   const hasEditedAssigneesRef = useRef(false)
+  const assigneesItemIdRef = useRef(item.id)
+  if (assigneesItemIdRef.current !== item.id) {
+    assigneesItemIdRef.current = item.id
+    // Why: item switches must clear the optimistic-edit guard before the
+    // assignee sync Effect runs, or the new item's assignees can render stale.
+    hasEditedAssigneesRef.current = false
+  }
   const patchWorkItem = useAppStore((s) => s.patchWorkItem)
   const patchProjectRowContent = useAppStore((s) => s.patchProjectRowContent)
   const { isPending, run } = useImmediateMutation()
@@ -4331,11 +4338,6 @@ function GHEditSection({
     }
     setLocalAssignees(assignees)
   }, [item.id, assignees])
-
-  // Reset the dirty flag when we switch to a different item.
-  useEffect(() => {
-    hasEditedAssigneesRef.current = false
-  }, [item.id])
 
   const handleStateChange = useCallback(
     (newState: 'open' | 'closed') => {
