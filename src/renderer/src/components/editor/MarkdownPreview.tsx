@@ -83,6 +83,7 @@ import {
   sortMarkdownReviewNotes,
   type MarkdownReviewNote
 } from '@/lib/markdown-review-notes'
+import { copyMarkdownReviewNotesForAgent } from '@/lib/markdown-review-note-copy'
 import { NotesSendMenu, type NotesSendMenuScope } from './NotesSendMenu'
 import { findWorktreeById } from '@/store/slices/worktree-helpers'
 import { dirname } from '@/lib/path'
@@ -557,7 +558,9 @@ export default function MarkdownPreview({
   }, [frontMatter])
   const [activeAnnotationBlockKey, setActiveAnnotationBlockKey] = useState<string | null>(null)
   const [reviewNotesCopied, setReviewNotesCopied] = useState(false)
+  const [copiedReviewNoteId, setCopiedReviewNoteId] = useState<string | null>(null)
   const reviewNotesCopiedResetTimerRef = useRef<number | null>(null)
+  const copiedReviewNoteResetTimerRef = useRef<number | null>(null)
   // Why: clipboard IPC can resolve after the preview unmounts; skip copied
   // feedback instead of starting a reset timer on a stale preview.
   const reviewNotesCopyMountedRef = useRef(false)
@@ -567,10 +570,6 @@ export default function MarkdownPreview({
   const markdownReviewNotes = useMemo(
     () => sortMarkdownReviewNotes(markdownComments as MarkdownReviewNote[]),
     [markdownComments]
-  )
-  const markdownReviewPrompt = useMemo(
-    () => formatMarkdownReviewNotes(markdownReviewNotes, renderedContent),
-    [markdownReviewNotes, renderedContent]
   )
   const unsentMarkdownReviewNotes = useMemo(
     () => markdownReviewNotes.filter((note) => !note.sentAt),
@@ -703,13 +702,21 @@ export default function MarkdownPreview({
     }
   }, [])
 
+  const clearCopiedReviewNoteResetTimer = useCallback((): void => {
+    if (copiedReviewNoteResetTimerRef.current !== null) {
+      window.clearTimeout(copiedReviewNoteResetTimerRef.current)
+      copiedReviewNoteResetTimerRef.current = null
+    }
+  }, [])
+
   const cleanupPreviewSurfaceTimers = useCallback((): void => {
     // Why: reveal/copy timers are event-owned, but the final cancellation
     // belongs to the preview surface unmount.
     cancelMarkdownPreviewEditorRevealFrames(pendingEditorRevealFrameIdsRef)
     clearMarkdownPreviewTimeout(attentionReviewCommentTimeoutRef)
     clearReviewNotesCopiedResetTimer()
-  }, [clearReviewNotesCopiedResetTimer])
+    clearCopiedReviewNoteResetTimer()
+  }, [clearCopiedReviewNoteResetTimer, clearReviewNotesCopiedResetTimer])
 
   const setRootRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -848,8 +855,12 @@ export default function MarkdownPreview({
       return
     }
     try {
-      await window.api.ui.writeClipboardText(markdownReviewPrompt)
-      if (!reviewNotesCopyMountedRef.current) {
+      const copied = await copyMarkdownReviewNotesForAgent({
+        notes: markdownReviewNotes,
+        content: renderedContent,
+        writeClipboardText: window.api.ui.writeClipboardText
+      })
+      if (!copied || !reviewNotesCopyMountedRef.current) {
         return
       }
       clearReviewNotesCopiedResetTimer()
@@ -861,7 +872,31 @@ export default function MarkdownPreview({
     } catch {
       // Best-effort clipboard action; failures usually mean the window is not focused.
     }
-  }, [clearReviewNotesCopiedResetTimer, markdownReviewNotes.length, markdownReviewPrompt])
+  }, [clearReviewNotesCopiedResetTimer, markdownReviewNotes, renderedContent])
+
+  const handleCopyMarkdownReviewNote = useCallback(
+    async (note: MarkdownReviewNote): Promise<void> => {
+      try {
+        const copied = await copyMarkdownReviewNotesForAgent({
+          notes: [note],
+          content: renderedContent,
+          writeClipboardText: window.api.ui.writeClipboardText
+        })
+        if (!copied || !reviewNotesCopyMountedRef.current) {
+          return
+        }
+        clearCopiedReviewNoteResetTimer()
+        setCopiedReviewNoteId(note.id)
+        copiedReviewNoteResetTimerRef.current = window.setTimeout(() => {
+          copiedReviewNoteResetTimerRef.current = null
+          setCopiedReviewNoteId(null)
+        }, 1600)
+      } catch {
+        // Best-effort clipboard action; failures usually mean the window is not focused.
+      }
+    },
+    [clearCopiedReviewNoteResetTimer, renderedContent]
+  )
 
   const pulseRenderedMarkdownReviewNote = useCallback((commentId: string): void => {
     if (attentionReviewCommentTimeoutRef.current !== null) {
@@ -1029,16 +1064,39 @@ export default function MarkdownPreview({
                   onDelete={() => void deleteDiffComment(sourceWorktree.id, comment.id)}
                   onSubmitEdit={(body) => updateDiffComment(sourceWorktree.id, comment.id, body)}
                   headerActions={
-                    <MarkdownSingleNoteSendMenu
-                      worktreeId={sourceWorktree.id}
-                      filePath={filePath}
-                      content={renderedContent}
-                      note={comment as MarkdownReviewNote}
-                      modeSlot="preview-inline"
-                      onDelivered={(notes) =>
-                        void clearDeliveredDiffComments(sourceWorktree.id, notes)
-                      }
-                    />
+                    <>
+                      <button
+                        type="button"
+                        className="orca-diff-comment-pill-btn"
+                        title={
+                          copiedReviewNoteId === comment.id ? 'Copied note' : 'Copy note for agent'
+                        }
+                        aria-label={
+                          copiedReviewNoteId === comment.id ? 'Copied note' : 'Copy note for agent'
+                        }
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          void handleCopyMarkdownReviewNote(comment as MarkdownReviewNote)
+                        }}
+                      >
+                        {copiedReviewNoteId === comment.id ? (
+                          <Check className="size-3" />
+                        ) : (
+                          <Copy className="size-3" />
+                        )}
+                      </button>
+                      <MarkdownSingleNoteSendMenu
+                        worktreeId={sourceWorktree.id}
+                        filePath={filePath}
+                        content={renderedContent}
+                        note={comment as MarkdownReviewNote}
+                        modeSlot="preview-inline"
+                        onDelivered={(notes) =>
+                          void clearDeliveredDiffComments(sourceWorktree.id, notes)
+                        }
+                      />
+                    </>
                   }
                 />
               </div>
@@ -1053,9 +1111,11 @@ export default function MarkdownPreview({
       attentionReviewCommentId,
       addDiffComment,
       clearDeliveredDiffComments,
+      copiedReviewNoteId,
       deleteDiffComment,
       filePath,
       getMarkdownCommentsForRange,
+      handleCopyMarkdownReviewNote,
       markdownAnnotationsEnabled,
       content,
       renderedContent,
@@ -1755,7 +1815,7 @@ function MarkdownSingleNoteSendMenu({
         }
       ]}
       targetModeLabel="This note"
-      triggerClassName="markdown-review-icon-button"
+      triggerClassName="orca-diff-comment-pill-btn"
       disabledTooltip="Note already sent"
       onDelivered={onDelivered}
     />
