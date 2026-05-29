@@ -473,9 +473,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   // Why: read the latest note inside handleBaseBranchPrSelect without adding
   // `note` to its deps (which would rebuild the callback on every keystroke).
   const noteRef = useRef<string>(note)
-  useEffect(() => {
-    noteRef.current = note
-  }, [note])
+  noteRef.current = note
   const composerRef = useRef<HTMLDivElement | null>(null)
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const nameInputRef = useRef<HTMLInputElement | null>(null)
