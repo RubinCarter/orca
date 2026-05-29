@@ -2153,7 +2153,8 @@ describe('Store', () => {
       activeBrowserTabIdByWorktree: {},
       activeFileIdByWorktree: {},
       activeTabTypeByWorktree: {},
-      browserUrlHistory: []
+      browserUrlHistory: [],
+      defaultTerminalTabsAppliedByWorktreeId: {}
     }
     writeDataFile({
       schemaVersion: 1,
