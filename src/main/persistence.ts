@@ -115,6 +115,7 @@ import {
   projectSourceControlAiToLegacyCommitMessageAi,
   sourceControlAiSettingsFromLegacy
 } from '../shared/source-control-ai'
+import { normalizeDisabledTuiAgents } from '../shared/tui-agent-selection'
 
 function encrypt(plaintext: string): string {
   if (!plaintext || !safeStorage.isEncryptionAvailable()) {
@@ -1297,6 +1298,13 @@ export class Store {
   private writeGeneration = 0
   private gitUsernameCache = new Map<string, string>()
   private loadNeedsSave = false
+  private settingsChangeListeners = new Set<
+    (
+      updates: Partial<GlobalSettings>,
+      settings: GlobalSettings,
+      originWebContentsId?: number
+    ) => void
+  >()
 
   constructor() {
     const loaded = this.load()
@@ -1602,6 +1610,7 @@ export class Store {
             terminalShortcutPolicy: normalizeTerminalShortcutPolicy(
               parsed.settings?.terminalShortcutPolicy
             ),
+            disabledTuiAgents: normalizeDisabledTuiAgents(parsed.settings?.disabledTuiAgents),
             openInApplications: normalizeOpenInApplications(parsed.settings?.openInApplications),
             notifications: normalizeNotificationSettings(parsed.settings?.notifications),
             sourceControlAi: migratedSourceControlAi,
@@ -2659,8 +2668,36 @@ export class Store {
     return this.state.settings
   }
 
-  updateSettings(updates: Partial<GlobalSettings>): GlobalSettings {
+  onSettingsChanged(
+    listener: (
+      updates: Partial<GlobalSettings>,
+      settings: GlobalSettings,
+      originWebContentsId?: number
+    ) => void
+  ): () => void {
+    this.settingsChangeListeners.add(listener)
+    return () => {
+      this.settingsChangeListeners.delete(listener)
+    }
+  }
+
+  private notifySettingsChanged(
+    updates: Partial<GlobalSettings>,
+    originWebContentsId?: number
+  ): void {
+    for (const listener of this.settingsChangeListeners) {
+      listener(updates, this.state.settings, originWebContentsId)
+    }
+  }
+
+  updateSettings(
+    updates: Partial<GlobalSettings>,
+    options: { notifyListeners?: boolean; originWebContentsId?: number } = {}
+  ): GlobalSettings {
     const sanitizedUpdates = { ...updates }
+    if ('disabledTuiAgents' in updates) {
+      sanitizedUpdates.disabledTuiAgents = normalizeDisabledTuiAgents(updates.disabledTuiAgents)
+    }
     if ('terminalQuickCommands' in updates) {
       sanitizedUpdates.terminalQuickCommands = normalizeTerminalQuickCommands(
         updates.terminalQuickCommands
@@ -2721,6 +2758,7 @@ export class Store {
         sanitizedUpdates.commitMessageAi
       )
     }
+    const previousSettings = this.state.settings
     this.state.settings = {
       ...this.state.settings,
       ...sanitizedUpdates,
@@ -2731,6 +2769,15 @@ export class Store {
       ...(mergedTelemetry !== undefined ? { telemetry: mergedTelemetry } : {})
     }
     this.scheduleSave()
+    const changedUpdates = {} as Partial<GlobalSettings> & Record<string, unknown>
+    for (const key of Object.keys(sanitizedUpdates) as (keyof GlobalSettings)[]) {
+      if (!Object.is(previousSettings[key], this.state.settings[key])) {
+        changedUpdates[String(key)] = this.state.settings[key]
+      }
+    }
+    if (options.notifyListeners === true && Object.keys(changedUpdates).length > 0) {
+      this.notifySettingsChanged(changedUpdates, options.originWebContentsId)
+    }
     return this.state.settings
   }
 
