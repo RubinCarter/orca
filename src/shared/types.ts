@@ -1402,6 +1402,19 @@ export type CreateWorktreeResult = {
   localBaseRefRefresh?: LocalBaseRefRefreshResult
 }
 
+export type PreservedWorktreeBranch = {
+  branchName: string
+  head?: string
+}
+
+export type RemoveWorktreeResult = {
+  preservedBranch?: PreservedWorktreeBranch
+}
+
+export type ForceDeleteWorktreeBranchResult = {
+  deleted: true
+}
+
 export type LocalBaseRefRefreshResult = {
   status: 'updated' | 'skipped_dirty_worktree' | 'skipped_not_fast_forward' | 'skipped_error'
   baseRef: string
