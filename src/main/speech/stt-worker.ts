@@ -1,6 +1,7 @@
 /* oxlint-disable typescript-eslint/no-explicit-any -- sherpa-onnx native addon has no type definitions */
 import { parentPort, workerData } from 'worker_threads'
 import { readdirSync } from 'fs'
+import { join } from 'path'
 import { resampleToRate } from './stt-audio-resample'
 
 type WorkerMessage =
@@ -47,7 +48,7 @@ function resolveFile(files: string[], role: string, modelDir: string, ext = '.on
   if (!match) {
     throw new Error(`No *${role}*${ext} found in model files: ${files.join(', ')}`)
   }
-  return `${modelDir}/${match}`
+  return join(modelDir, match)
 }
 
 function resolveTokens(files: string[], modelDir: string): string {
@@ -55,7 +56,7 @@ function resolveTokens(files: string[], modelDir: string): string {
   if (!match) {
     throw new Error(`No *tokens.txt found in model files: ${files.join(', ')}`)
   }
-  return `${modelDir}/${match}`
+  return join(modelDir, match)
 }
 
 // Why: BPE models need a vocab file for hotwords token matching. The file
@@ -65,7 +66,7 @@ function discoverBpeVocab(modelDir: string): string | undefined {
   try {
     const entries = readdirSync(modelDir)
     const vocabFile = entries.find((f) => f.endsWith('.vocab'))
-    return vocabFile ? `${modelDir}/${vocabFile}` : undefined
+    return vocabFile ? join(modelDir, vocabFile) : undefined
   } catch {
     return undefined
   }

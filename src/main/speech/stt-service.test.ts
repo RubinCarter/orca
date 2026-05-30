@@ -1,3 +1,5 @@
+/* eslint-disable max-lines -- Why: stop lifecycle race tests need one hoisted
+worker mock so concurrent events share the same mocked Worker module. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { MockWorker, getCreatedWorkerCount, getLastWorker, resetWorkers } = vi.hoisted(() => {
@@ -8,6 +10,8 @@ const { MockWorker, getCreatedWorkerCount, getLastWorker, resetWorkers } = vi.ho
     terminated = false
     emitStoppedOnStop = true
     emitReadyOnInit = HoistedMockWorker.emitReadyOnInit
+    emitExitOnTerminate = true
+    terminatePromise: Promise<void> | null = null
     messages: WorkerMessage[] = []
     private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
 
@@ -59,8 +63,10 @@ const { MockWorker, getCreatedWorkerCount, getLastWorker, resetWorkers } = vi.ho
 
     terminate(): Promise<void> {
       this.terminated = true
-      this.emit('exit', 0)
-      return Promise.resolve()
+      if (this.emitExitOnTerminate) {
+        this.emit('exit', 0)
+      }
+      return this.terminatePromise ?? Promise.resolve()
     }
   }
 
@@ -274,6 +280,95 @@ describe('SttService', () => {
     }
   })
 
+  it('settles stop when the worker exits during stop and does not reuse it', async () => {
+    const service = new SttService({
+      getModelState: vi.fn().mockResolvedValue({ id: 'model-a', status: 'ready' }),
+      getModelDir: vi.fn().mockReturnValue('/tmp/model-a')
+    } as never)
+    const events: unknown[] = []
+
+    await service.startDictation('model-a', (event) => events.push(event), undefined, 'desktop')
+    const firstWorker = getLastWorker()
+    expect(firstWorker).toBeDefined()
+    firstWorker!.emitStoppedOnStop = false
+
+    const stopPromise = service.stopDictation('desktop')
+    firstWorker!.emit('exit', 1)
+    await stopPromise
+
+    expect(events).toContainEqual({ type: 'stopped' })
+
+    await service.startDictation('model-a', vi.fn(), undefined, 'desktop')
+
+    expect(getCreatedWorkerCount()).toBe(2)
+    expect(getLastWorker()).not.toBe(firstWorker)
+  })
+
+  it('settles stop when the worker errors during stop and shares the outcome with follow-up stop', async () => {
+    const service = new SttService({
+      getModelState: vi.fn().mockResolvedValue({ id: 'model-a', status: 'ready' }),
+      getModelDir: vi.fn().mockReturnValue('/tmp/model-a')
+    } as never)
+    const events: unknown[] = []
+
+    await service.startDictation(
+      'model-a',
+      (event) => {
+        events.push(event)
+        if (event.type === 'error') {
+          void service.stopDictation('desktop')
+        }
+      },
+      undefined,
+      'desktop'
+    )
+    const worker = getLastWorker()
+    expect(worker).toBeDefined()
+    worker!.emitStoppedOnStop = false
+
+    const stopPromise = service.stopDictation('desktop')
+    worker!.emit('error', new Error('native failure'))
+    await stopPromise
+
+    expect(worker!.messages.filter((message) => message.type === 'stop')).toHaveLength(1)
+    expect(events).toContainEqual({ type: 'error', error: 'Error: native failure' })
+    expect(events).toContainEqual({ type: 'stopped' })
+  })
+
+  it('shares one stop message across concurrent stop callers', async () => {
+    const service = new SttService({
+      getModelState: vi.fn().mockResolvedValue({ id: 'model-a', status: 'ready' }),
+      getModelDir: vi.fn().mockReturnValue('/tmp/model-a')
+    } as never)
+
+    await service.startDictation('model-a', vi.fn(), undefined, 'desktop')
+    const worker = getLastWorker()
+    expect(worker).toBeDefined()
+    worker!.emitStoppedOnStop = false
+
+    const firstStop = service.stopDictation('desktop')
+    const secondStop = service.stopDictation('desktop')
+    expect(worker!.messages.filter((message) => message.type === 'stop')).toHaveLength(1)
+
+    worker!.emit('message', { type: 'stopped' })
+    await Promise.all([firstStop, secondStop])
+  })
+
+  it('does not emit synthetic stopped when the worker reports stopped', async () => {
+    const service = new SttService({
+      getModelState: vi.fn().mockResolvedValue({ id: 'model-a', status: 'ready' }),
+      getModelDir: vi.fn().mockReturnValue('/tmp/model-a')
+    } as never)
+    const events: unknown[] = []
+
+    await service.startDictation('model-a', (event) => events.push(event), undefined, 'desktop')
+    await service.stopDictation('desktop')
+
+    expect(events.filter((event) => (event as { type?: string }).type === 'stopped')).toHaveLength(
+      1
+    )
+  })
+
   it('does not retain or reuse a worker that timed out while stopping', async () => {
     vi.useFakeTimers()
     try {
@@ -301,5 +396,60 @@ describe('SttService', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('does not wait for worker termination to resolve a timed-out stop', async () => {
+    vi.useFakeTimers()
+    try {
+      const service = new SttService({
+        getModelState: vi.fn().mockResolvedValue({ id: 'model-a', status: 'ready' }),
+        getModelDir: vi.fn().mockReturnValue('/tmp/model-a')
+      } as never)
+
+      await service.startDictation('model-a', vi.fn(), undefined, 'desktop')
+      const worker = getLastWorker()
+      expect(worker).toBeDefined()
+      worker!.emitStoppedOnStop = false
+      worker!.emitExitOnTerminate = false
+      worker!.terminatePromise = new Promise(() => {})
+
+      const stopPromise = service.stopDictation('desktop').then(() => 'resolved')
+      await vi.advanceTimersByTimeAsync(60_000)
+      const outcome = await Promise.race([stopPromise, Promise.resolve('pending')])
+
+      expect(outcome).toBe('resolved')
+      expect(worker!.terminated).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects idle warm reuse when the model is no longer ready', async () => {
+    let modelStatus = 'ready'
+    const getModelState = vi.fn().mockImplementation(async () => ({
+      id: 'model-a',
+      status: modelStatus
+    }))
+    const service = new SttService({
+      getModelState,
+      getModelDir: vi.fn().mockReturnValue('/tmp/model-a')
+    } as never)
+
+    await service.startDictation('model-a', vi.fn(), undefined, 'desktop')
+    const firstWorker = getLastWorker()
+    expect(firstWorker).toBeDefined()
+    await service.stopDictation('desktop')
+
+    modelStatus = 'missing'
+    await expect(service.startDictation('model-a', vi.fn(), undefined, 'desktop')).rejects.toThrow(
+      'Model not ready: missing'
+    )
+    expect(firstWorker!.terminated).toBe(true)
+
+    modelStatus = 'ready'
+    await service.startDictation('model-a', vi.fn(), undefined, 'desktop')
+
+    expect(getCreatedWorkerCount()).toBe(2)
+    expect(getLastWorker()).not.toBe(firstWorker)
   })
 })

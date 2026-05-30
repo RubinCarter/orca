@@ -19,6 +19,14 @@ export type SttEvent =
 
 export type SttEventSink = (event: SttEvent) => void
 
+type StopInFlight = {
+  worker: Worker
+  owner: string
+  promise: Promise<void>
+}
+
+type StopOutcome = 'stopped' | 'error' | 'exit' | 'timeout'
+
 export class SttService {
   private worker: Worker | null = null
   private modelManager: ModelManager
@@ -30,6 +38,7 @@ export class SttService {
   private canceledOwners = new Set<string>()
   private eventSink: SttEventSink | null = null
   private idleTeardownTimer: NodeJS.Timeout | null = null
+  private stopInFlight: StopInFlight | null = null
 
   constructor(modelManager: ModelManager) {
     this.modelManager = modelManager
@@ -74,19 +83,36 @@ export class SttService {
     hotwordsFilePath?: string,
     owner = 'desktop'
   ): Promise<void> {
+    const reusableWorker = this.worker
     if (
-      this.worker &&
+      reusableWorker &&
       this.activeModelId === modelId &&
-      this.activeHotwordsFilePath === hotwordsFilePath
+      this.activeHotwordsFilePath === hotwordsFilePath &&
+      this.stopInFlight?.worker !== reusableWorker
     ) {
-      this.eventSink = sink
-      sink({ type: 'ready' })
-      return
+      const worker = reusableWorker
+      if (!this.activeOwner) {
+        const modelState = await this.modelManager.getModelState(modelId)
+        if (modelState.status !== 'ready') {
+          await this.teardownWorker(worker)
+          throw new Error(`Model not ready: ${modelState.status}`)
+        }
+      }
+      if (
+        this.worker === worker &&
+        this.activeModelId === modelId &&
+        this.activeHotwordsFilePath === hotwordsFilePath
+      ) {
+        this.eventSink = sink
+        sink({ type: 'ready' })
+        return
+      }
     }
 
     if (this.worker) {
+      const existingWorker = this.worker
       await this.stopDictation(owner, { cancelStarting: false })
-      await this.teardownIdleWorker()
+      await this.teardownWorker(existingWorker)
     }
 
     const manifest = getCatalogModel(modelId)
@@ -161,12 +187,14 @@ export class SttService {
     })
 
     worker.on('message', (msg: SttEvent) => {
-      this.eventSink?.(msg)
+      if (this.worker === worker) {
+        this.eventSink?.(msg)
+      }
     })
 
     worker.on('error', (err) => {
-      this.eventSink?.({ type: 'error', error: String(err) })
       if (this.worker === worker) {
+        this.eventSink?.({ type: 'error', error: String(err) })
         this.worker = null
         this.activeModelId = null
         this.activeHotwordsFilePath = undefined
@@ -240,11 +268,29 @@ export class SttService {
     }
 
     const worker = this.worker
-    worker.postMessage({ type: 'stop' })
+    if (this.stopInFlight?.worker === worker) {
+      if (this.stopInFlight.owner !== owner) {
+        throw new Error('dictation_owner_mismatch')
+      }
+      return this.stopInFlight.promise
+    }
 
-    let forcedTeardown = false
-    await new Promise<void>((resolve) => {
+    const capturedSink = this.eventSink
+    let stopPromise!: Promise<void>
+    stopPromise = this.createStopPromise(worker, capturedSink).finally(() => {
+      if (this.stopInFlight?.worker === worker && this.stopInFlight.promise === stopPromise) {
+        this.stopInFlight = null
+      }
+    })
+    this.stopInFlight = { worker, owner, promise: stopPromise }
+    worker.postMessage({ type: 'stop' })
+    await stopPromise
+  }
+
+  private createStopPromise(worker: Worker, capturedSink: SttEventSink | null): Promise<void> {
+    return new Promise<void>((resolve) => {
       let settled = false
+      let receivedStopped = false
       let timeout: ReturnType<typeof setTimeout> | null = null
 
       const cleanup = (): void => {
@@ -253,52 +299,67 @@ export class SttService {
           timeout = null
         }
         worker.off('message', onStopped)
+        worker.off('error', onError)
+        worker.off('exit', onExit)
       }
 
-      const finish = (): void => {
+      const finish = (outcome: StopOutcome): void => {
         if (settled) {
           return
         }
         settled = true
         cleanup()
+        if (outcome === 'stopped') {
+          if (this.worker === worker) {
+            this.activeOwner = null
+            this.eventSink = null
+            this.scheduleIdleTeardown()
+          }
+          resolve()
+          return
+        }
+
+        if (!receivedStopped) {
+          capturedSink?.({ type: 'stopped' })
+        }
+        worker.removeAllListeners()
+        if (outcome !== 'exit') {
+          void worker.terminate().catch(() => undefined)
+        }
+        if (this.worker === worker) {
+          this.worker = null
+          this.activeModelId = null
+          this.activeHotwordsFilePath = undefined
+          this.activeOwner = null
+          this.eventSink = null
+        }
         resolve()
       }
 
       const onStopped = (msg: { type: string; text?: string; error?: string }) => {
         if (msg.type === 'stopped') {
-          finish()
+          receivedStopped = true
+          finish('stopped')
         }
+      }
+
+      const onError = (): void => {
+        finish('error')
+      }
+
+      const onExit = (): void => {
+        finish('exit')
       }
 
       timeout = setTimeout(() => {
-        if (settled) {
-          return
-        }
-        settled = true
-        forcedTeardown = true
-        cleanup()
-        // Why: a worker that cannot finish dictation is no longer reusable; do
-        // not keep it in the warm-worker slot or retain its message listeners.
-        worker.removeAllListeners()
-        void worker.terminate().finally(resolve)
+        finish('timeout')
       }, STOP_DICTATION_TIMEOUT_MS)
+      timeout.unref?.()
 
       worker.on('message', onStopped)
+      worker.on('error', onError)
+      worker.on('exit', onExit)
     })
-
-    if (this.worker === worker) {
-      if (forcedTeardown) {
-        this.worker = null
-        this.activeModelId = null
-        this.activeHotwordsFilePath = undefined
-        this.activeOwner = null
-        this.eventSink = null
-      } else {
-        this.activeOwner = null
-        this.eventSink = null
-        this.scheduleIdleTeardown()
-      }
-    }
   }
 
   isActive(): boolean {
@@ -340,13 +401,26 @@ export class SttService {
       return
     }
     const worker = this.worker
-    worker.postMessage({ type: 'teardown' })
+    await this.teardownWorker(worker)
+  }
+
+  private async teardownWorker(worker: Worker): Promise<void> {
+    this.clearIdleTeardownTimer()
+    if (this.stopInFlight?.worker === worker) {
+      await this.stopInFlight.promise
+    }
+    try {
+      worker.postMessage({ type: 'teardown' })
+    } catch {
+      // The worker may already have exited on a forced stop path.
+    }
     worker.removeAllListeners()
     await worker.terminate().catch(() => undefined)
     if (this.worker === worker) {
       this.worker = null
       this.activeModelId = null
       this.activeHotwordsFilePath = undefined
+      this.activeOwner = null
       this.eventSink = null
     }
   }

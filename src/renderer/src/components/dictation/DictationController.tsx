@@ -10,6 +10,11 @@ import {
 } from './dictation-insertion-target'
 import { getShortcutPlatform } from '@/lib/shortcut-platform'
 import { formatFinalTranscriptSegment } from './dictation-final-segments'
+import {
+  captureDictationHoldGesture,
+  shouldStopDictationHold,
+  type DictationHoldGesture
+} from './dictation-hold-release'
 import { waitForStoppedSession } from './dictation-stopped-sessions'
 import { keybindingMatchesAction } from '../../../../shared/keybindings'
 
@@ -31,7 +36,7 @@ export function DictationController() {
   const dictationStateRef = useRef(dictationState)
   dictationStateRef.current = dictationState
   const dictationRunRef = useRef(0)
-  const holdGestureActiveRef = useRef(false)
+  const holdGestureRef = useRef<DictationHoldGesture | null>(null)
   const insertionTargetRef = useRef<DictationInsertionTarget | null>(null)
   const activeSessionIdRef = useRef<string | null>(null)
   const stoppedSessionIdsRef = useRef(new Set<string>())
@@ -280,30 +285,31 @@ export function DictationController() {
         }
         e.preventDefault()
         e.stopPropagation()
-        holdGestureActiveRef.current = true
+        holdGestureRef.current = captureDictationHoldGesture(e, holdGestureRef.current)
         if (dictationStateRef.current === 'idle') {
           void startDictation()
         }
       }
     }
 
-    const handleKeyUp = (): void => {
-      if (!holdGestureActiveRef.current) {
+    const handleKeyUp = (e: KeyboardEvent): void => {
+      const gesture = holdGestureRef.current
+      if (!gesture || !shouldStopDictationHold(gesture, e)) {
         return
       }
       if (dictationStateRef.current === 'idle' || dictationStateRef.current === 'stopping') {
-        holdGestureActiveRef.current = false
+        holdGestureRef.current = null
         return
       }
-      holdGestureActiveRef.current = false
+      holdGestureRef.current = null
       void stopDictation()
     }
 
     const handleBlur = (): void => {
-      if (!holdGestureActiveRef.current) {
+      if (!holdGestureRef.current) {
         return
       }
-      holdGestureActiveRef.current = false
+      holdGestureRef.current = null
       if (dictationStateRef.current !== 'idle' && dictationStateRef.current !== 'stopping') {
         insertionTargetRef.current = null
         intentionalTargetCancellationRef.current = true
