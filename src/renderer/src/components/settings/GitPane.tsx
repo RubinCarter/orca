@@ -36,6 +36,12 @@ export function GitPane({
         keywords={['branch naming', 'git username', 'custom']}
         className="space-y-3"
       >
+        <div className="space-y-0.5">
+          <Label>Branch Prefix</Label>
+          <p className="text-xs text-muted-foreground">
+            Choose whether branch names use your Git username, a custom prefix, or no prefix.
+          </p>
+        </div>
         <div className="flex w-fit gap-1 rounded-md border border-border/50 p-1">
           {(['git-username', 'custom', 'none'] as const).map((option) => (
             <button
