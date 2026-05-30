@@ -172,6 +172,18 @@ Host staging stage *.example.com
     ])
   })
 
+  it('parses generated configs with very large multi-alias Host lines', () => {
+    const aliases = Array.from({ length: 125_000 }, (_, index) => `host-${index}`)
+    const hosts = parseSshConfig(`
+Host ${aliases.join(' ')}
+  HostName shared.example.com
+`)
+
+    expect(hosts).toHaveLength(aliases.length)
+    expect(hosts[0]).toEqual({ host: 'host-0', hostname: 'shared.example.com' })
+    expect(hosts.at(-1)).toEqual({ host: 'host-124999', hostname: 'shared.example.com' })
+  })
+
   it('applies identity agent settings to every concrete alias on a multi-pattern Host line', () => {
     const config = `
 Host staging stage

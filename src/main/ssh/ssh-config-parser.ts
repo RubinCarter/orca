@@ -44,7 +44,7 @@ export function parseSshConfig(content: string): SshConfigHost[] {
 
     if (key === 'host') {
       if (current.length > 0) {
-        hosts.push(...current)
+        appendSshConfigHosts(hosts, current)
       }
 
       const patterns = splitHostPatterns(value)
@@ -62,7 +62,7 @@ export function parseSshConfig(content: string): SshConfigHost[] {
 
     if (key === 'match') {
       if (current.length > 0) {
-        hosts.push(...current)
+        appendSshConfigHosts(hosts, current)
       }
       current = []
       continue
@@ -122,9 +122,17 @@ export function parseSshConfig(content: string): SshConfigHost[] {
   }
 
   if (current.length > 0) {
-    hosts.push(...current)
+    appendSshConfigHosts(hosts, current)
   }
   return hosts
+}
+
+function appendSshConfigHosts(target: SshConfigHost[], entries: SshConfigHost[]): void {
+  // Why: generated SSH configs can contain very large Host alias lists; spreading
+  // those entries into push() can exceed V8's argument limit.
+  for (const entry of entries) {
+    target.push(entry)
+  }
 }
 
 function splitHostPatterns(input: string): string[] {
