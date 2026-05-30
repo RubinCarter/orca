@@ -1470,14 +1470,16 @@ export default function ChecksPanel(): React.JSX.Element {
         worktreeId: activeWorktreeId,
         prompt,
         promptDelivery: 'submit-after-ready',
-        launchSource: 'task_page'
+        launchSource: 'task_page',
+        onPromptDelivered: () => {
+          toast.success('Started an AI agent for the broken checks.')
+        }
       })
       if (!result) {
         toast.error('Could not build the agent launch command.')
         return
       }
       focusTerminalTabSurface(result.tabId)
-      toast.success('Started an AI agent for the broken checks.')
     } finally {
       setIsFixingChecksWithAI(false)
     }
