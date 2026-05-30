@@ -69,6 +69,7 @@ import {
   getSelectedDeletableWorkspaceIds,
   getVisibleDeletableWorkspaceIds,
   getWorkspaceSpaceGitStatusRefreshCandidates,
+  getWorkspaceSpaceMaxSize,
   isWorkspaceSpaceRowReadyToDelete,
   sortWorkspaceSpaceRows,
   type WorkspaceSpaceSortDirection,
@@ -831,7 +832,7 @@ function BreakdownList({
     )
   }
 
-  const maxChildSize = Math.max(...worktree.topLevelItems.map((item) => item.sizeBytes), 0)
+  const maxChildSize = getWorkspaceSpaceMaxSize(worktree.topLevelItems)
   const topLevelItemCount = worktree.topLevelItems.length + worktree.omittedTopLevelItemCount
   return (
     <div className="min-h-72 rounded-lg border border-border/70 bg-background/35">
@@ -1276,7 +1277,7 @@ export function WorkspaceSpaceManagerPanel(): React.JSX.Element {
   const zoomedWorktree =
     sourceRows.find((row) => row.worktreeId === treemapZoomWorktreeId && row.status === 'ok') ??
     null
-  const maxSize = Math.max(...rows.map((row) => row.sizeBytes), 0)
+  const maxSize = getWorkspaceSpaceMaxSize(rows)
   const selectedDeletableIds = useMemo(
     () => getSelectedDeletableWorkspaceIds(rows, selectedIds, isWorktreeUnavailableForDelete),
     [isWorktreeUnavailableForDelete, rows, selectedIds]

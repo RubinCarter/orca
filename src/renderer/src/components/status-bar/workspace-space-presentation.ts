@@ -193,6 +193,18 @@ export function filterWorkspaceSpaceRows(
   })
 }
 
+export function getWorkspaceSpaceMaxSize(
+  items: readonly Pick<WorkspaceSpaceWorktree, 'sizeBytes'>[]
+): number {
+  let maxSize = 0
+  for (const item of items) {
+    if (item.sizeBytes > maxSize) {
+      maxSize = item.sizeBytes
+    }
+  }
+  return maxSize
+}
+
 export function isWorkspaceSpaceRowReadyToDelete(
   worktree: WorkspaceSpaceWorktree,
   readiness: WorkspaceSpaceDeleteReadiness | undefined
