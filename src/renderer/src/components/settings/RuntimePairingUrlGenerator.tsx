@@ -112,17 +112,14 @@ export function RuntimePairingUrlGenerator({
   const [isGeneratingPairing, setIsGeneratingPairing] = useState(false)
   const networkInterfaceLoadIdRef = useRef(0)
   const accessGrantLoadIdRef = useRef(0)
+  const copiedTargetResetTimerRef = useRef<number | null>(null)
 
-  useEffect(() => {
-    if (copiedTarget === null) {
-      return
+  const clearCopiedTargetResetTimer = useCallback((): void => {
+    if (copiedTargetResetTimerRef.current !== null) {
+      window.clearTimeout(copiedTargetResetTimerRef.current)
+      copiedTargetResetTimerRef.current = null
     }
-    const target = copiedTarget
-    const timeout = window.setTimeout(() => {
-      setCopiedTarget((current) => (current === target ? null : current))
-    }, 1400)
-    return () => window.clearTimeout(timeout)
-  }, [copiedTarget])
+  }, [])
 
   const loadRuntimeAccessGrants = useCallback(
     async (options: { showToastOnError?: boolean } = {}): Promise<void> => {
@@ -249,7 +246,12 @@ export function RuntimePairingUrlGenerator({
   const copyGeneratedUrl = async (target: 'web' | 'pairing', value: string): Promise<void> => {
     try {
       await window.api.ui.writeClipboardText(value)
+      clearCopiedTargetResetTimer()
       setCopiedTarget(target)
+      copiedTargetResetTimerRef.current = window.setTimeout(() => {
+        copiedTargetResetTimerRef.current = null
+        setCopiedTarget((current) => (current === target ? null : current))
+      }, 1400)
       toast.success(target === 'web' ? 'Copied web client URL.' : 'Copied pairing URL.')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to copy URL.')
