@@ -6732,30 +6732,59 @@ export class OrcaRuntimeService {
       return []
     }
 
-    return inspectSetupScriptImportCandidates(async (relativePath) => {
-      const filePath = joinWorktreeRelativePath(repo.path, relativePath)
-      if (repo.connectionId) {
-        const fsProvider = getSshFilesystemProvider(repo.connectionId)
-        if (!fsProvider) {
-          return null
+    return inspectSetupScriptImportCandidates(
+      async (relativePath) => {
+        const filePath = joinWorktreeRelativePath(repo.path, relativePath)
+        if (repo.connectionId) {
+          const fsProvider = getSshFilesystemProvider(repo.connectionId)
+          if (!fsProvider) {
+            return null
+          }
+          try {
+            const result = await fsProvider.readFile(filePath)
+            return result.isBinary ? null : result.content
+          } catch {
+            return null
+          }
         }
-        try {
-          const result = await fsProvider.readFile(filePath)
-          return result.isBinary ? null : result.content
-        } catch {
-          return null
-        }
-      }
 
-      try {
-        return await readFile(filePath, 'utf-8')
-      } catch (error) {
-        if (!isENOENT(error)) {
-          console.warn('[runtime] Failed to inspect setup script import candidate:', error)
+        try {
+          return await readFile(filePath, 'utf-8')
+        } catch (error) {
+          if (!isENOENT(error)) {
+            console.warn('[runtime] Failed to inspect setup script import candidate:', error)
+          }
+          return null
         }
-        return null
+      },
+      {
+        fileExists: async (relativePath) => {
+          const filePath = joinWorktreeRelativePath(repo.path, relativePath)
+          if (repo.connectionId) {
+            const fsProvider = getSshFilesystemProvider(repo.connectionId)
+            if (!fsProvider) {
+              return false
+            }
+            try {
+              const fileStat = await fsProvider.stat(filePath)
+              return fileStat.type !== 'directory'
+            } catch {
+              return false
+            }
+          }
+
+          try {
+            const fileStat = await stat(filePath)
+            return !fileStat.isDirectory()
+          } catch (error) {
+            if (!isENOENT(error)) {
+              console.warn('[runtime] Failed to stat setup script import candidate:', error)
+            }
+            return false
+          }
+        }
       }
-    })
+    )
   }
 
   async readRepoIssueCommand(repoSelector: string) {
