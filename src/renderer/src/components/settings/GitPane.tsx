@@ -133,7 +133,7 @@ export function GitPane({
       </SearchableSetting>
     ) : null,
     matchesSettingsSearch(searchQuery, {
-      title: 'Auto-Rename Branch From Work',
+      title: 'Auto-Rename Branch',
       description: 'Rename the auto-generated branch based on the work once an agent starts.',
       keywords: [
         'branch',

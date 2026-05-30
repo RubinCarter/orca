@@ -265,7 +265,7 @@ export function AutoRenameBranchFromWorkSetting({
 
   return (
     <SearchableSetting
-      title="Auto-Rename Branch From Work"
+      title="Auto-Rename Branch"
       description="Rename the auto-generated branch based on the work once an agent starts."
       keywords={[
         'branch',
@@ -283,7 +283,7 @@ export function AutoRenameBranchFromWorkSetting({
     >
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-0.5">
-          <Label>Auto-Rename Branch From Work</Label>
+          <Label>Auto-Rename Branch</Label>
           <p className="text-xs text-muted-foreground">
             When an agent starts working in a new workspace, Orca renames its auto-generated branch
             (e.g. <code>Nautilus</code>) to a short name summarizing the task. Only branches Orca
@@ -318,7 +318,7 @@ export function AutoRenameBranchFromWorkSetting({
             size="sm"
             className="-ml-2 h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
           >
-            Branch rename options
+            Advanced
             <ChevronDown
               className={cn('size-3.5 transition-transform', optionsOpen && 'rotate-180')}
             />
