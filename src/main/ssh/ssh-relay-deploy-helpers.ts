@@ -247,45 +247,50 @@ export async function execCommand(conn: SshConnection, command: string): Promise
     let stderr = ''
     let settled = false
 
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true
-        channel.close()
-        reject(new Error(`Command "${command}" timed out after ${EXEC_TIMEOUT_MS / 1000}s`))
-      }
-    }, EXEC_TIMEOUT_MS)
-
-    const fail = (err: Error): void => {
+    const cleanup = (): void => {
+      clearTimeout(timeout)
+      channel.off('error', fail)
+      channel.stderr.off('error', fail)
+      channel.off('data', onStdoutData)
+      channel.stderr.off('data', onStderrData)
+      channel.off('close', onClose)
+    }
+    const settle = (fn: typeof resolve | typeof reject, val: string | Error): void => {
       if (settled) {
         return
       }
       settled = true
-      clearTimeout(timeout)
-      reject(err)
+      cleanup()
+      fn(val as never)
     }
+    const fail = (err: Error): void => {
+      settle(reject, err)
+    }
+    const onStdoutData = (data: Buffer): void => {
+      stdout += data.toString('utf-8')
+    }
+    const onStderrData = (data: Buffer): void => {
+      stderr += data.toString('utf-8')
+    }
+    const onClose = (code: number): void => {
+      if (code !== 0) {
+        settle(reject, new Error(`Command "${command}" failed (exit ${code}): ${stderr.trim()}`))
+      } else {
+        settle(resolve, stdout)
+      }
+    }
+    const timeout = setTimeout(() => {
+      channel.close()
+      settle(reject, new Error(`Command "${command}" timed out after ${EXEC_TIMEOUT_MS / 1000}s`))
+    }, EXEC_TIMEOUT_MS)
 
     // Why: remote reboot tears down exec channels with stream errors. Without
     // scoped listeners, Node treats those as uncaught exceptions.
     channel.on('error', fail)
     channel.stderr.on('error', fail)
-    channel.on('data', (data: Buffer) => {
-      stdout += data.toString('utf-8')
-    })
-    channel.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString('utf-8')
-    })
-    channel.on('close', (code: number) => {
-      if (settled) {
-        return
-      }
-      settled = true
-      clearTimeout(timeout)
-      if (code !== 0) {
-        reject(new Error(`Command "${command}" failed (exit ${code}): ${stderr.trim()}`))
-      } else {
-        resolve(stdout)
-      }
-    })
+    channel.on('data', onStdoutData)
+    channel.stderr.on('data', onStderrData)
+    channel.on('close', onClose)
   })
 }
 

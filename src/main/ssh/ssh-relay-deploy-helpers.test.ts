@@ -166,5 +166,35 @@ describe('execCommand', () => {
     await Promise.resolve()
     expect(() => channel.emit('error', new Error('remote host rebooted'))).not.toThrow()
     await expect(commandPromise).rejects.toThrow('remote host rebooted')
+    expect(channel.listenerCount('error')).toBe(0)
+    expect(channel.listenerCount('data')).toBe(0)
+    expect(channel.listenerCount('close')).toBe(0)
+    expect(channel.stderr.listenerCount('error')).toBe(0)
+    expect(channel.stderr.listenerCount('data')).toBe(0)
+  })
+
+  it('cleans command channel listeners when a command times out', async () => {
+    vi.useFakeTimers()
+    try {
+      const channel = createMockChannel()
+      const conn = {
+        exec: vi.fn().mockResolvedValue(channel)
+      }
+      const commandPromise = execCommand(conn as never, 'sleep 60')
+
+      await Promise.resolve()
+      const rejection = expect(commandPromise).rejects.toThrow('timed out')
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      await rejection
+      expect(channel.close).toHaveBeenCalledOnce()
+      expect(channel.listenerCount('error')).toBe(0)
+      expect(channel.listenerCount('data')).toBe(0)
+      expect(channel.listenerCount('close')).toBe(0)
+      expect(channel.stderr.listenerCount('error')).toBe(0)
+      expect(channel.stderr.listenerCount('data')).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
