@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { AutomationDraft } from './AutomationEditorDialog'
 import {
-  AUTOMATION_CRON_QUICK_STARTS,
   AutomationCustomCronPanel,
   getCronFieldValues,
   getCronScheduleStatusLabel
@@ -36,15 +35,6 @@ describe('AutomationSchedulePicker', () => {
     expect(AUTOMATION_SCHEDULE_PRESET_OPTIONS).toContainEqual(['custom', 'Custom cron'])
   })
 
-  it('includes quick starts that are valid cron schedules', () => {
-    expect(AUTOMATION_CRON_QUICK_STARTS.length).toBeGreaterThan(0)
-    expect(
-      AUTOMATION_CRON_QUICK_STARTS.every((preset) =>
-        isValidAutomationCronSchedule(preset.expression)
-      )
-    ).toBe(true)
-  })
-
   it('seeds custom cron from the current simple schedule', () => {
     expect(getSchedulePresetDraft(BASE_DRAFT, 'custom')).toMatchObject({
       preset: 'custom',
@@ -65,7 +55,7 @@ describe('AutomationSchedulePicker', () => {
   it('summarizes custom cron validity for the inline status row', () => {
     expect(getCronScheduleStatusLabel('', isValidAutomationCronSchedule)).toEqual({
       kind: 'empty',
-      label: 'Choose a quick start or enter a five-field cron.'
+      label: 'Enter a five-field cron.'
     })
     expect(getCronScheduleStatusLabel('not cron', isValidAutomationCronSchedule)).toEqual({
       kind: 'invalid',
@@ -81,19 +71,18 @@ describe('AutomationSchedulePicker', () => {
     expect(getCronFieldValues('0 9')).toEqual(['0', '9', '...', '...', '...'])
   })
 
-  it('renders quick starts beside the cron expression field', () => {
+  it('renders the cron expression field without quick starts', () => {
     const markup = renderToStaticMarkup(
       React.createElement(AutomationCustomCronPanel, {
         draft: { ...BASE_DRAFT, preset: 'custom', customSchedule: '0 9 * * 1-5' },
         customScheduleInvalid: false,
         validateAdvancedSchedule: isValidAutomationCronSchedule,
-        onUseSimpleSchedule: () => undefined,
         onDraftChange: () => undefined
       })
     )
 
-    expect(markup).toContain('Quick starts')
-    expect(markup).toContain('Every 15 min')
+    expect(markup).not.toContain('Quick starts')
+    expect(markup).not.toContain('Every 15 min')
     expect(markup).toContain('Cron expression')
     expect(markup).toContain('Minute')
     expect(markup).toContain('Weekday')

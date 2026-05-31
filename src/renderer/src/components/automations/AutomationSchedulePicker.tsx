@@ -14,7 +14,6 @@ import type { AutomationSchedulePreset } from '../../../../shared/automations-ty
 import {
   buildAutomationCronSchedule,
   buildAutomationRrule,
-  classifyAutomationCronSchedule,
   formatAutomationSchedule,
   isValidAutomationSchedule
 } from '../../../../shared/automation-schedules'
@@ -102,35 +101,6 @@ function getDraftScheduleLabel(draft: AutomationDraft): string {
   )
 }
 
-function getSimpleScheduleDraft(
-  current: AutomationDraft
-): Pick<AutomationDraft, 'preset' | 'time' | 'dayOfWeek'> {
-  const classification = classifyAutomationCronSchedule(current.customSchedule)
-  if (classification.kind === 'hourly') {
-    const { hour } = parseTime(current.time)
-    return {
-      preset: 'hourly',
-      time: formatTimeInput(hour, classification.minute),
-      dayOfWeek: current.dayOfWeek
-    }
-  }
-  if (classification.kind === 'daily' || classification.kind === 'weekdays') {
-    return {
-      preset: classification.kind,
-      time: formatTimeInput(classification.hour, classification.minute),
-      dayOfWeek: current.dayOfWeek
-    }
-  }
-  if (classification.kind === 'weekly') {
-    return {
-      preset: 'weekly',
-      time: formatTimeInput(classification.hour, classification.minute),
-      dayOfWeek: String(classification.dayOfWeek)
-    }
-  }
-  return { preset: 'weekdays', time: current.time, dayOfWeek: current.dayOfWeek || '1' }
-}
-
 function buildCustomScheduleSeed(draft: AutomationDraft): string {
   const existing = draft.customSchedule.trim()
   if (existing) {
@@ -198,47 +168,40 @@ export function AutomationSchedulePicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[min(var(--radix-popover-trigger-width),calc(100vw-2rem))] min-w-[min(22rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] p-3"
+        className="popover-scroll-content scrollbar-sleek max-h-[var(--radix-popover-content-available-height)] w-[min(var(--radix-popover-trigger-width),calc(100vw-2rem))] min-w-[min(22rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-y-auto p-3"
       >
         <div className="grid gap-3">
+          <Field label="Cadence">
+            <Select
+              value={draft.preset}
+              onValueChange={(preset) =>
+                onDraftChange((current) => ({
+                  ...current,
+                  ...getSchedulePresetDraft(current, preset as AutomationSchedulePreset)
+                }))
+              }
+            >
+              <SelectTrigger className={cn('w-full min-w-0', FIELD_CONTROL_CLASS)}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AUTOMATION_SCHEDULE_PRESET_OPTIONS.map(([value, presetLabel]) => (
+                  <SelectItem key={value} value={value}>
+                    {presetLabel}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
           {draft.preset === 'custom' ? (
             <AutomationCustomCronPanel
               draft={draft}
               customScheduleInvalid={customScheduleInvalid}
               validateAdvancedSchedule={validateAdvancedSchedule}
               onDraftChange={onDraftChange}
-              onUseSimpleSchedule={() =>
-                onDraftChange((current) => ({
-                  ...current,
-                  ...getSimpleScheduleDraft(current),
-                  scheduleWarning: null
-                }))
-              }
             />
           ) : (
             <>
-              <Field label="Cadence">
-                <Select
-                  value={draft.preset}
-                  onValueChange={(preset) =>
-                    onDraftChange((current) => ({
-                      ...current,
-                      ...getSchedulePresetDraft(current, preset as AutomationSchedulePreset)
-                    }))
-                  }
-                >
-                  <SelectTrigger className={cn('w-full min-w-0', FIELD_CONTROL_CLASS)}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AUTOMATION_SCHEDULE_PRESET_OPTIONS.map(([value, presetLabel]) => (
-                      <SelectItem key={value} value={value}>
-                        {presetLabel}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
               {draft.preset === 'weekly' ? (
                 <Field label="Day">
                   <Select

@@ -1,6 +1,5 @@
 import React from 'react'
-import { CheckCircle2, CircleAlert, RotateCcw } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { CheckCircle2, CircleAlert } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { formatAutomationSchedule } from '../../../../shared/automation-schedules'
@@ -8,13 +7,6 @@ import type { AutomationDraft } from './AutomationEditorDialog'
 import { Field } from './automation-page-parts'
 
 const FIELD_CONTROL_CLASS = 'border-input bg-input/30 shadow-xs dark:bg-input/30'
-
-export const AUTOMATION_CRON_QUICK_STARTS = [
-  { label: 'Every 15 min', expression: '*/15 * * * *' },
-  { label: 'Hourly workday', expression: '0 9-17 * * 1-5' },
-  { label: 'Weekdays 9 AM', expression: '0 9 * * 1-5' },
-  { label: 'Monthly audit', expression: '0 9 1 * *' }
-] as const
 
 export const AUTOMATION_CRON_FIELD_LABELS = ['Minute', 'Hour', 'Day', 'Month', 'Weekday'] as const
 
@@ -24,7 +16,7 @@ export function getCronScheduleStatusLabel(
 ): { kind: 'empty' | 'invalid' | 'valid'; label: string } {
   const trimmed = schedule.trim()
   if (!trimmed) {
-    return { kind: 'empty', label: 'Choose a quick start or enter a five-field cron.' }
+    return { kind: 'empty', label: 'Enter a five-field cron.' }
   }
   if (!validateSchedule(trimmed)) {
     return { kind: 'invalid', label: 'Enter a valid five-field cron before saving.' }
@@ -42,13 +34,11 @@ export function AutomationCustomCronPanel({
   draft,
   customScheduleInvalid,
   validateAdvancedSchedule,
-  onUseSimpleSchedule,
   onDraftChange
 }: {
   draft: AutomationDraft
   customScheduleInvalid: boolean
   validateAdvancedSchedule: (schedule: string) => boolean
-  onUseSimpleSchedule: () => void
   onDraftChange: (updater: (current: AutomationDraft) => AutomationDraft) => void
 }): React.JSX.Element {
   const customScheduleStatus = getCronScheduleStatusLabel(
@@ -59,44 +49,6 @@ export function AutomationCustomCronPanel({
 
   return (
     <div className="grid gap-3">
-      <div className="rounded-md border border-border/70 bg-muted/25 p-2.5">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="text-xs font-medium">Quick starts</div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            className="h-6 px-1.5 text-muted-foreground hover:text-foreground"
-            onClick={onUseSimpleSchedule}
-          >
-            <RotateCcw className="size-3.5" />
-            Simple
-          </Button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {AUTOMATION_CRON_QUICK_STARTS.map((preset) => (
-            <Button
-              key={preset.expression}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-auto min-h-11 flex-col items-start gap-0.5 px-2 py-1.5 text-left"
-              onClick={() =>
-                onDraftChange((current) => ({
-                  ...current,
-                  customSchedule: preset.expression,
-                  scheduleWarning: null
-                }))
-              }
-            >
-              <span className="text-xs font-medium">{preset.label}</span>
-              <span className="font-mono text-[11px] text-muted-foreground">
-                {preset.expression}
-              </span>
-            </Button>
-          ))}
-        </div>
-      </div>
       <Field label="Cron expression">
         <Input
           value={draft.customSchedule}
