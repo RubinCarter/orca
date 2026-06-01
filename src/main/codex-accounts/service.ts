@@ -156,7 +156,6 @@ export class CodexAccountService {
       this.safeSyncCanonicalConfigToManagedHomes()
       this.runtimeHome.clearLastWrittenAuthJson(account.id)
       this.runtimeHome.syncForCurrentSelection()
-      this.runtimeHome.refreshCurrentLaunchHome(targetSelection)
 
       // Why: the new account becomes active, so the previous active account is
       // now inactive and its last-known usage should be cached for the switcher.
@@ -201,7 +200,6 @@ export class CodexAccountService {
     this.safeSyncCanonicalConfigToManagedHomes()
     this.runtimeHome.clearLastWrittenAuthJson(accountId)
     this.runtimeHome.syncForCurrentSelection(getCodexSelectionTargetForAccount(account))
-    this.runtimeHome.refreshCurrentLaunchHome(getCodexSelectionTargetForAccount(account))
 
     // Why: re-auth can change which actual Codex identity the managed home
     // points at. Force a fresh read immediately so the status bar cannot keep
@@ -230,9 +228,7 @@ export class CodexAccountService {
       activeCodexManagedAccountIdsByRuntime: nextSelection
     })
     this.runtimeHome.syncForCurrentSelection()
-    this.runtimeHome.refreshCurrentLaunchHome(getCodexSelectionTargetForAccount(account))
 
-    this.runtimeHome.removeLaunchHomeForAccount?.(account)
     this.safeRemoveManagedHome(account.managedHomePath)
     // Why: a removed account can no longer appear in the switcher dropdown,
     // so purge its cached usage to avoid stale entries.
@@ -279,7 +275,6 @@ export class CodexAccountService {
     })
     this.safeSyncCanonicalConfigToManagedHomes()
     this.runtimeHome.syncForCurrentSelection(effectiveTarget)
-    this.runtimeHome.refreshCurrentLaunchHome(effectiveTarget)
 
     await this.rateLimits.refreshForCodexAccountChange(outgoingAccountId, effectiveTarget)
     return this.getSnapshot()

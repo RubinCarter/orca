@@ -175,8 +175,6 @@ function makeDisposable() {
 }
 
 describe('registerPtyHandlers', () => {
-  const testCodexHomePath =
-    process.platform === 'win32' ? 'C:\\tmp\\orca-codex-home' : '/tmp/orca-codex-home'
   const handlers = new Map<string, (_event: unknown, args: unknown) => unknown>()
   const mainWindow = {
     isDestroyed: () => false,
@@ -531,9 +529,9 @@ describe('registerPtyHandlers', () => {
     })
 
     it('injects the selected Codex home into Orca terminal PTYs', async () => {
-      const env = await spawnAndGetEnv(undefined, undefined, () => testCodexHomePath)
-      expect(env.CODEX_HOME).toBe(testCodexHomePath)
-      expect(env.ORCA_CODEX_HOME).toBe(testCodexHomePath)
+      const env = await spawnAndGetEnv(undefined, undefined, () => '/tmp/orca-codex-home')
+      expect(env.CODEX_HOME).toBe('/tmp/orca-codex-home')
+      expect(env.ORCA_CODEX_HOME).toBe('/tmp/orca-codex-home')
     })
 
     it('injects the OpenCode hook env into Orca terminal PTYs', async () => {
@@ -868,10 +866,10 @@ describe('registerPtyHandlers', () => {
       const env = await spawnAndGetEnv(
         undefined,
         { CODEX_HOME: '/tmp/system-codex-home' },
-        () => testCodexHomePath
+        () => '/tmp/orca-codex-home'
       )
-      expect(env.CODEX_HOME).toBe(testCodexHomePath)
-      expect(env.ORCA_CODEX_HOME).toBe(testCodexHomePath)
+      expect(env.CODEX_HOME).toBe('/tmp/orca-codex-home')
+      expect(env.ORCA_CODEX_HOME).toBe('/tmp/orca-codex-home')
     })
 
     it('injects explicit proxy settings into local PTY env', async () => {
@@ -1077,9 +1075,9 @@ describe('registerPtyHandlers', () => {
       })
 
       it('injects the selected Codex home on the daemon path', async () => {
-        const env = await daemonSpawnAndGetEnv({}, () => testCodexHomePath)
-        expect(env.CODEX_HOME).toBe(testCodexHomePath)
-        expect(env.ORCA_CODEX_HOME).toBe(testCodexHomePath)
+        const env = await daemonSpawnAndGetEnv({}, () => '/tmp/orca-codex-home')
+        expect(env.CODEX_HOME).toBe('/tmp/orca-codex-home')
+        expect(env.ORCA_CODEX_HOME).toBe('/tmp/orca-codex-home')
       })
 
       it('injects explicit proxy settings on the daemon path', async () => {
@@ -2708,50 +2706,6 @@ describe('registerPtyHandlers', () => {
       expect(spawnMock).toHaveBeenCalledWith('wsl.exe', expect.any(Array), expect.any(Object))
       expect(spawnOptions.env.CODEX_HOME).toBeUndefined()
       expect(spawnOptions.env.ORCA_CODEX_HOME).toBeUndefined()
-    })
-
-    it('converts selected WSL active Codex homes to Linux paths for wsl.exe shells', () => {
-      const originalPlatform = process.platform
-      Object.defineProperty(process, 'platform', {
-        configurable: true,
-        value: 'win32'
-      })
-      process.env.COMSPEC = 'C:\\Windows\\system32\\cmd.exe'
-      isPwshAvailableMock.mockReturnValue(false)
-
-      try {
-        registerPtyHandlers(
-          mainWindow as never,
-          undefined,
-          () =>
-            '\\\\wsl.localhost\\Ubuntu\\home\\test\\.local\\share\\orca\\codex-runtime-home\\active\\wsl\\home',
-          () =>
-            ({
-              terminalWindowsShell: 'powershell.exe',
-              terminalWindowsPowerShellImplementation: 'powershell.exe'
-            }) as never
-        )
-        handlers.get('pty:spawn')!(null, {
-          cols: 80,
-          rows: 24,
-          shellOverride: 'wsl.exe'
-        })
-
-        const spawnOptions = spawnMock.mock.calls.at(-1)?.[2] as { env: Record<string, string> }
-        expect(spawnOptions.env.CODEX_HOME).toBe(
-          '/home/test/.local/share/orca/codex-runtime-home/active/wsl/home'
-        )
-        expect(spawnOptions.env.ORCA_CODEX_HOME).toBe(
-          '/home/test/.local/share/orca/codex-runtime-home/active/wsl/home'
-        )
-        expect(spawnOptions.env.WSLENV).toContain('CODEX_HOME')
-        expect(spawnOptions.env.WSLENV).toContain('ORCA_CODEX_HOME')
-      } finally {
-        Object.defineProperty(process, 'platform', {
-          configurable: true,
-          value: originalPlatform
-        })
-      }
     })
   })
 

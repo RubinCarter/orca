@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Why: getStatus + install + remove all share the managed-command and trust-key derivation. Splitting would hide that the three operations must agree on group index, event label, and command bytes. */
-import { existsSync, readFileSync, realpathSync, unlinkSync } from 'fs'
+import { existsSync, readFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import type { SFTPWrapper } from 'ssh2'
 import type { AgentHookInstallState, AgentHookInstallStatus } from '../../shared/agent-hook-types'
@@ -25,14 +25,12 @@ import {
 } from '../agent-hooks/installer-utils-remote'
 import {
   computeTrustKey,
-  computeTrustKeyWithSourcePath,
   computeTrustedHash,
   escapeTomlString,
   getCodexCanonicalTrustPath,
   parseTrustKey,
   readHookTrustEntries,
   removeHookTrustEntries,
-  upsertHookTrustBlocks,
   upsertHookTrustEntriesInContent,
   upsertHookTrustEntries,
   writeConfigAtomically,
@@ -63,10 +61,6 @@ function getConfigPath(): string {
 
 function getCodexConfigTomlPath(): string {
   return join(getOrcaManagedCodexHomePath(), 'config.toml')
-}
-
-function getLaunchHomeCodexConfigTomlPath(launchHomePath: string): string {
-  return join(launchHomePath, 'config.toml')
 }
 
 // Why: Codex's hash key uses the snake_case event label (see
@@ -475,107 +469,6 @@ function applyMirroredRuntimeUserHookTrustStates(
   if (updated !== existing) {
     writeConfigAtomically(tomlPath, updated)
   }
-}
-
-function applyHookTrustStatesByKey(
-  tomlPath: string,
-  entries: readonly { key: string; enabled: boolean }[]
-): void {
-  if (entries.length === 0 || !existsSync(tomlPath)) {
-    return
-  }
-
-  const existing = readFileSync(tomlPath, 'utf-8')
-  let updated = existing
-  for (const { key, enabled } of entries) {
-    const escapedKey = escapeRegex(escapeTomlString(key))
-    const pattern = new RegExp(
-      `(\\[hooks\\.state\\."${escapedKey}"\\]\\r?\\n(?:[ \\t]*enabled[ \\t]*=[ \\t]*)(true|false))`
-    )
-    if (pattern.test(updated)) {
-      updated = updated.replace(pattern, (_match, prefix: string) => {
-        return `${prefix.slice(0, prefix.lastIndexOf('=') + 1)} ${enabled}`
-      })
-      continue
-    }
-    const headerPattern = new RegExp(`(\\[hooks\\.state\\."${escapedKey}"\\]\\r?\\n)`)
-    updated = updated.replace(headerPattern, `$1enabled = ${enabled}\n`)
-  }
-  if (updated !== existing) {
-    writeConfigAtomically(tomlPath, updated)
-  }
-}
-
-function getLaunchHomeHookTrustSourcePath(launchHomePath: string): string {
-  try {
-    // Why: Codex 0.135 canonicalizes CODEX_HOME, then keys hooks by the
-    // CODEX_HOME-relative hooks.json path without resolving that file symlink.
-    return join(realpathSync.native(launchHomePath), 'hooks.json')
-  } catch {
-    return join(launchHomePath, 'hooks.json')
-  }
-}
-
-export function trustCodexLaunchHomeHooks(launchHomePath: string): void {
-  const runtimeConfigPath = getConfigPath()
-  const runtimeTomlPath = getCodexConfigTomlPath()
-  const launchHooksPath = join(launchHomePath, 'hooks.json')
-  const launchTrustSourcePath = getLaunchHomeHookTrustSourcePath(launchHomePath)
-  const tomlPath = getLaunchHomeCodexConfigTomlPath(launchHomePath)
-  const config = readHooksJson(launchHooksPath)
-  if (!config?.hooks) {
-    return
-  }
-
-  // Why: account launch homes isolate auth.json, but hook trust is shared
-  // runtime config. A launch config.toml can be a stale mutable copy, while
-  // Codex keys trust by the selected launch home's hooks.json path.
-  const trustEntries = readHookTrustEntries(runtimeTomlPath)
-  const launchTrustBlocks: { key: string; trustedHash: string }[] = []
-  const launchTrustStates: { key: string; enabled: boolean }[] = []
-  for (const [eventName, definitions] of Object.entries(config.hooks)) {
-    if (!Array.isArray(definitions)) {
-      continue
-    }
-    definitions.forEach((definition, groupIndex) => {
-      const hooks = Array.isArray(definition.hooks) ? definition.hooks : []
-      hooks.forEach((hook, handlerIndex) => {
-        const runtimeEntry = createHookTrustEntry(
-          runtimeConfigPath,
-          eventName,
-          groupIndex,
-          handlerIndex,
-          definition,
-          hook
-        )
-        if (!runtimeEntry) {
-          return
-        }
-        const runtimeState = trustEntries.get(computeTrustKey(runtimeEntry))
-        const trustedHash = computeTrustedHash(runtimeEntry)
-        if (runtimeState?.trustedHash !== trustedHash) {
-          return
-        }
-        // Why: stale Windows launch-home copies can already contain duplicate
-        // runtime-home keys; upserting them here self-heals the copied TOML
-        // before Codex parses it.
-        const runtimeKey = computeTrustKey(runtimeEntry)
-        launchTrustBlocks.push({ key: runtimeKey, trustedHash })
-        const launchKey = computeTrustKeyWithSourcePath(runtimeEntry, launchTrustSourcePath)
-        launchTrustBlocks.push({ key: launchKey, trustedHash })
-        if (runtimeState.enabled !== undefined) {
-          launchTrustStates.push({ key: runtimeKey, enabled: runtimeState.enabled })
-          launchTrustStates.push({ key: launchKey, enabled: runtimeState.enabled })
-        }
-      })
-    })
-  }
-
-  if (launchTrustBlocks.length === 0) {
-    return
-  }
-  upsertHookTrustBlocks(tomlPath, launchTrustBlocks)
-  applyHookTrustStatesByKey(tomlPath, launchTrustStates)
 }
 
 function dedupeHookDefinitions(definitions: readonly HookDefinition[]): HookDefinition[] {

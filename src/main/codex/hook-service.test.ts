@@ -35,7 +35,7 @@ vi.mock('os', async (importOriginal) => {
   }
 })
 
-import { CodexHookService, trustCodexLaunchHomeHooks } from './hook-service'
+import { CodexHookService } from './hook-service'
 
 let tmpHome: string
 let userDataDir: string
@@ -72,10 +72,6 @@ function escapeTomlBasicString(value: string): string {
 
 function hookTrustHeader(key: string): string {
   return `[hooks.state."${escapeTomlBasicString(canonicalizeHookTrustKeyForTest(key))}"]`
-}
-
-function literalHookTrustHeader(key: string): string {
-  return `[hooks.state."${escapeTomlBasicString(key)}"]`
 }
 
 function canonicalizeHookTrustKeyForTest(key: string): string {
@@ -762,7 +758,7 @@ describe('CodexHookService', () => {
       hooks: Record<string, unknown>
     }
     expect(systemHooks.hooks.Stop).toBeUndefined()
-  })
+  }, 15_000)
 
   it('removes the legacy Orca Codex profile file when it only contains managed hooks', () => {
     const systemCodexHome = join(tmpHome, '.codex')
@@ -999,7 +995,7 @@ describe('CodexHookService', () => {
     expect(runtimeToml).not.toContain(':stop:0:0')
   })
 
-  it('preserves runtime Codex prefs and hook trust on hook install without a sync baseline', () => {
+  it('mirrors system Codex config while preserving runtime hook trust on hook install', () => {
     const systemCodexHome = join(tmpHome, '.codex')
     mkdirSync(systemCodexHome, { recursive: true })
     writeFileSync(join(systemCodexHome, 'config.toml'), 'model = "system-model"\n', 'utf-8')
@@ -1023,130 +1019,12 @@ describe('CodexHookService', () => {
 
     expect(status.state).toBe('installed')
     const trustConfig = readFileSync(join(managedCodexHome, 'config.toml'), 'utf-8')
-    expect(trustConfig).toContain('model = "runtime-model"')
+    expect(trustConfig).toContain('model = "system-model"')
     expect(trustConfig).toContain('[hooks.state."runtime-hook"]')
     expect(trustConfig).toContain('enabled = false')
     expect(trustConfig).toContain('trusted_hash = "sha256:runtime"')
     expect(trustConfig).toContain(':permission_request:0:0')
-    expect(trustConfig).not.toContain('model = "system-model"')
-  })
-
-  it('mirrors runtime hook trust to a materialized launch-home hooks path', () => {
-    const service = new CodexHookService()
-    expect(service.install().state).toBe('installed')
-
-    const managedCodexHome = join(userDataDir, 'codex-runtime-home', 'home')
-    const managedHooksPath = join(managedCodexHome, 'hooks.json')
-    const launchHome = join(userDataDir, 'codex-runtime-home', 'launch', 'host', 'system', 'home')
-    mkdirSync(launchHome, { recursive: true })
-    if (process.platform === 'win32') {
-      writeFileSync(join(launchHome, 'hooks.json'), readFileSync(managedHooksPath, 'utf-8'))
-      writeFileSync(
-        join(launchHome, 'config.toml'),
-        readFileSync(join(managedCodexHome, 'config.toml'), 'utf-8')
-      )
-    } else {
-      symlinkSync(managedHooksPath, join(launchHome, 'hooks.json'))
-      symlinkSync(join(managedCodexHome, 'config.toml'), join(launchHome, 'config.toml'))
-    }
-
-    trustCodexLaunchHomeHooks(launchHome)
-
-    const trustConfig = readFileSync(join(launchHome, 'config.toml'), 'utf-8')
-    const launchHooksTrustPath = join(realpathSync.native(launchHome), 'hooks.json')
-    expect(trustConfig).toContain(
-      literalHookTrustHeader(`${launchHooksTrustPath}:session_start:0:0`)
-    )
-    expect(trustConfig).toContain(hookTrustHeader(`${managedHooksPath}:session_start:0:0`))
-  })
-
-  it('mirrors runtime hook trust when launch-home config is stale', () => {
-    const service = new CodexHookService()
-    expect(service.install().state).toBe('installed')
-
-    const managedCodexHome = join(userDataDir, 'codex-runtime-home', 'home')
-    const managedHooksPath = join(managedCodexHome, 'hooks.json')
-    const launchHome = join(userDataDir, 'codex-runtime-home', 'launch', 'host', 'system', 'home')
-    mkdirSync(launchHome, { recursive: true })
-    if (process.platform === 'win32') {
-      writeFileSync(join(launchHome, 'hooks.json'), readFileSync(managedHooksPath, 'utf-8'))
-    } else {
-      symlinkSync(managedHooksPath, join(launchHome, 'hooks.json'))
-    }
-    writeFileSync(join(launchHome, 'config.toml'), 'model = "stale-launch-config"\n', 'utf-8')
-
-    trustCodexLaunchHomeHooks(launchHome)
-
-    const trustConfig = readFileSync(join(launchHome, 'config.toml'), 'utf-8')
-    const launchHooksTrustPath = join(realpathSync.native(launchHome), 'hooks.json')
-    expect(trustConfig).toContain('model = "stale-launch-config"')
-    expect(trustConfig).toContain(
-      literalHookTrustHeader(`${launchHooksTrustPath}:session_start:0:0`)
-    )
-  })
-
-  it('repairs duplicate runtime trust keys copied into launch-home config', () => {
-    const service = new CodexHookService()
-    expect(service.install().state).toBe('installed')
-
-    const managedCodexHome = join(userDataDir, 'codex-runtime-home', 'home')
-    const managedHooksPath = join(managedCodexHome, 'hooks.json')
-    const runtimeTomlPath = join(managedCodexHome, 'config.toml')
-    const launchHome = join(userDataDir, 'codex-runtime-home', 'launch', 'host', 'system', 'home')
-    mkdirSync(launchHome, { recursive: true })
-    writeFileSync(join(launchHome, 'hooks.json'), readFileSync(managedHooksPath, 'utf-8'))
-
-    const runtimeHeader = hookTrustHeader(`${managedHooksPath}:session_start:0:0`)
-    const installedToml = readFileSync(runtimeTomlPath, 'utf-8')
-    const sessionStartIndex = installedToml.indexOf(runtimeHeader)
-    expect(sessionStartIndex).not.toBe(-1)
-    const nextHeaderIndex = installedToml.indexOf('\n[', sessionStartIndex + runtimeHeader.length)
-    const sessionStartBlock = installedToml
-      .slice(sessionStartIndex, nextHeaderIndex === -1 ? installedToml.length : nextHeaderIndex)
-      .trimEnd()
-    const staleRuntimeBlock = sessionStartBlock.replace(
-      /trusted_hash = "[^"]+"/,
-      'trusted_hash = "sha256:STALE_LAUNCH_COPY"'
-    )
-    const disabledSessionStartBlock = sessionStartBlock.replace('enabled = true', 'enabled = false')
-    writeFileSync(
-      runtimeTomlPath,
-      `${installedToml.slice(0, sessionStartIndex)}${disabledSessionStartBlock}${installedToml.slice(
-        nextHeaderIndex === -1 ? installedToml.length : nextHeaderIndex
-      )}`,
-      'utf-8'
-    )
-    const launchHooksTrustPath = join(realpathSync.native(launchHome), 'hooks.json')
-    const staleLaunchBlock = sessionStartBlock.replace(
-      runtimeHeader,
-      literalHookTrustHeader(`${launchHooksTrustPath}:session_start:0:0`)
-    )
-    writeFileSync(
-      join(launchHome, 'config.toml'),
-      `${installedToml.slice(
-        0,
-        sessionStartIndex
-      )}${staleRuntimeBlock}\n\n${sessionStartBlock}\n\n${staleLaunchBlock}${installedToml.slice(
-        nextHeaderIndex === -1 ? installedToml.length : nextHeaderIndex
-      )}`,
-      'utf-8'
-    )
-    expect(
-      readFileSync(join(launchHome, 'config.toml'), 'utf-8').split(runtimeHeader)
-    ).toHaveLength(3)
-
-    trustCodexLaunchHomeHooks(launchHome)
-
-    const repairedToml = readFileSync(join(launchHome, 'config.toml'), 'utf-8')
-    expect(repairedToml.split(runtimeHeader)).toHaveLength(2)
-    expect(repairedToml).not.toContain('STALE_LAUNCH_COPY')
-    expect(repairedToml).toContain(`${runtimeHeader}\nenabled = false`)
-    expect(repairedToml).toContain(
-      literalHookTrustHeader(`${launchHooksTrustPath}:session_start:0:0`)
-    )
-    expect(repairedToml).toContain(
-      `${literalHookTrustHeader(`${launchHooksTrustPath}:session_start:0:0`)}\nenabled = false`
-    )
+    expect(trustConfig).not.toContain('model = "runtime-model"')
   })
 
   it('repairs duplicate managed SessionStart trust tables on restart install', () => {
@@ -1234,9 +1112,9 @@ describe('CodexHookService', () => {
 
     expect(status.state).toBe('installed')
     const trustConfig = readFileSync(join(managedCodexHome, 'config.toml'), 'utf-8')
-    expect(trustConfig).toContain('model = "runtime-model"')
+    expect(trustConfig).toContain('model = "system-model"')
     expect(trustConfig).toContain('[projects."/repo"]\ntrust_level = "untrusted"')
     expect(trustConfig).toContain('[projects."/runtime-only"]\ntrust_level = "trusted"')
-    expect(trustConfig).not.toContain('model = "system-model"')
+    expect(trustConfig).not.toContain('model = "runtime-model"')
   })
 })

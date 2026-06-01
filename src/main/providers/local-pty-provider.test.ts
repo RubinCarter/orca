@@ -69,19 +69,13 @@ describe('LocalPtyProvider', () => {
   }
   let exitCb: ((info: { exitCode: number }) => void) | undefined
   let origShell: string | undefined
-  let origCodexHome: string | undefined
-  let origOrcaCodexHome: string | undefined
   let origPlatform: PropertyDescriptor | undefined
 
   beforeEach(() => {
     origPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { configurable: true, value: 'linux' })
     origShell = process.env.SHELL
-    origCodexHome = process.env.CODEX_HOME
-    origOrcaCodexHome = process.env.ORCA_CODEX_HOME
     process.env.SHELL = '/bin/zsh'
-    delete process.env.CODEX_HOME
-    delete process.env.ORCA_CODEX_HOME
 
     existsSyncMock.mockReturnValue(true)
     statSyncMock.mockReturnValue({ isDirectory: () => true, mode: 0o755 })
@@ -116,16 +110,6 @@ describe('LocalPtyProvider', () => {
       delete process.env.SHELL
     } else {
       process.env.SHELL = origShell
-    }
-    if (origCodexHome === undefined) {
-      delete process.env.CODEX_HOME
-    } else {
-      process.env.CODEX_HOME = origCodexHome
-    }
-    if (origOrcaCodexHome === undefined) {
-      delete process.env.ORCA_CODEX_HOME
-    } else {
-      process.env.ORCA_CODEX_HOME = origOrcaCodexHome
     }
   })
 
@@ -318,6 +302,10 @@ describe('LocalPtyProvider', () => {
 
     it('marks Orca terminal handle for WSL import when buildSpawnEnv opts in', async () => {
       Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+      const savedCodexHome = process.env.CODEX_HOME
+      const savedOrcaCodexHome = process.env.ORCA_CODEX_HOME
+      delete process.env.CODEX_HOME
+      delete process.env.ORCA_CODEX_HOME
       provider.configure({
         buildSpawnEnv: (_id, env, ctx) => {
           env.ORCA_TERMINAL_HANDLE = 'term_wsl'
@@ -328,11 +316,24 @@ describe('LocalPtyProvider', () => {
         }
       })
 
-      await provider.spawn({
-        cols: 80,
-        rows: 24,
-        cwd: '\\\\wsl.localhost\\Ubuntu\\home\\jin\\repo'
-      })
+      try {
+        await provider.spawn({
+          cols: 80,
+          rows: 24,
+          cwd: '\\\\wsl.localhost\\Ubuntu\\home\\jin\\repo'
+        })
+      } finally {
+        if (savedCodexHome === undefined) {
+          delete process.env.CODEX_HOME
+        } else {
+          process.env.CODEX_HOME = savedCodexHome
+        }
+        if (savedOrcaCodexHome === undefined) {
+          delete process.env.ORCA_CODEX_HOME
+        } else {
+          process.env.ORCA_CODEX_HOME = savedOrcaCodexHome
+        }
+      }
 
       const spawnCall = spawnMock.mock.calls.at(-1)!
       expect(spawnCall[0]).toBe('wsl.exe')

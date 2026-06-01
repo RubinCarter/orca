@@ -36,7 +36,6 @@ vi.mock('../providers/local-pty-utils', async (importOriginal) => {
 import { createPtySubprocess } from './pty-subprocess'
 
 const ORCA_SHELL_WRAPPER_ENV = [
-  'CODEX_HOME',
   'ORCA_ATTRIBUTION_SHIM_DIR',
   'ORCA_OPENCODE_CONFIG_DIR',
   'ORCA_PI_CODING_AGENT_DIR',
@@ -1189,8 +1188,12 @@ describe('createPtySubprocess', () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
+    const savedCodexHome = process.env.CODEX_HOME
+    const savedOrcaCodexHome = process.env.ORCA_CODEX_HOME
 
     Object.defineProperty(process, 'platform', { value: 'win32' })
+    delete process.env.CODEX_HOME
+    delete process.env.ORCA_CODEX_HOME
 
     try {
       createPtySubprocess({
@@ -1206,6 +1209,16 @@ describe('createPtySubprocess', () => {
     } finally {
       if (platform) {
         Object.defineProperty(process, 'platform', platform)
+      }
+      if (savedCodexHome === undefined) {
+        delete process.env.CODEX_HOME
+      } else {
+        process.env.CODEX_HOME = savedCodexHome
+      }
+      if (savedOrcaCodexHome === undefined) {
+        delete process.env.ORCA_CODEX_HOME
+      } else {
+        process.env.ORCA_CODEX_HOME = savedOrcaCodexHome
       }
     }
 

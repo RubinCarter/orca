@@ -16,7 +16,11 @@ import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import type { GlobalSettings } from '../../shared/types'
 
-const testState = { userDataDir: '', fakeHomeDir: '' }
+const testState = {
+  userDataDir: '',
+  fakeHomeDir: '',
+  previousUserDataPath: undefined as string | undefined
+}
 
 vi.mock('electron', () => ({
   app: {
@@ -166,7 +170,6 @@ function createRateLimits() {
 function createRuntimeHome() {
   return {
     syncForCurrentSelection: vi.fn(),
-    refreshCurrentLaunchHome: vi.fn(() => null),
     clearLastWrittenAuthJson: vi.fn()
   }
 }
@@ -184,18 +187,40 @@ function createManagedHome(rootDir: string, accountId: string, config = '', auth
   return managedHomePath
 }
 
+function createCodexAuthJson(email: string, accountId: string, refreshToken: string): string {
+  const payload = Buffer.from(JSON.stringify({ email })).toString('base64url')
+  return `${JSON.stringify(
+    {
+      tokens: {
+        id_token: `header.${payload}.signature`,
+        account_id: accountId,
+        refresh_token: refreshToken
+      }
+    },
+    null,
+    2
+  )}\n`
+}
+
 describe('CodexAccountService config sync', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
     testState.userDataDir = mkdtempSync(join(tmpdir(), 'orca-codex-accounts-'))
     testState.fakeHomeDir = mkdtempSync(join(tmpdir(), 'orca-codex-home-'))
+    testState.previousUserDataPath = process.env.ORCA_USER_DATA_PATH
+    process.env.ORCA_USER_DATA_PATH = testState.userDataDir
     mkdirSync(join(testState.fakeHomeDir, '.codex'), { recursive: true })
   })
 
   afterEach(() => {
     rmSync(testState.userDataDir, { recursive: true, force: true })
     rmSync(testState.fakeHomeDir, { recursive: true, force: true })
+    if (testState.previousUserDataPath === undefined) {
+      delete process.env.ORCA_USER_DATA_PATH
+    } else {
+      process.env.ORCA_USER_DATA_PATH = testState.previousUserDataPath
+    }
   })
 
   it('syncs the canonical ~/.codex/config.toml into managed homes on startup', async () => {
@@ -825,6 +850,70 @@ describe('CodexAccountService config sync', () => {
     expect(result.activeAccountId).toBe(null)
     expect(runtimeHome.syncForCurrentSelection).toHaveBeenCalled()
     expect(rateLimits.refreshForCodexAccountChange).toHaveBeenCalled()
+  })
+
+  it('selectAccount immediately rewrites the shared runtime auth for existing terminals', async () => {
+    const firstAuth = createCodexAuthJson('one@example.com', 'acct-one', 'one')
+    const secondAuth = createCodexAuthJson('two@example.com', 'acct-two', 'two')
+    const firstManagedHomePath = createManagedHome(
+      testState.userDataDir,
+      'account-1',
+      '',
+      firstAuth
+    )
+    const secondManagedHomePath = createManagedHome(
+      testState.userDataDir,
+      'account-2',
+      '',
+      secondAuth
+    )
+    const settings = createSettings({
+      codexManagedAccounts: [
+        {
+          id: 'account-1',
+          email: 'one@example.com',
+          managedHomePath: firstManagedHomePath,
+          providerAccountId: 'acct-one',
+          workspaceLabel: null,
+          workspaceAccountId: 'acct-one',
+          createdAt: 1,
+          updatedAt: 1,
+          lastAuthenticatedAt: 1
+        },
+        {
+          id: 'account-2',
+          email: 'two@example.com',
+          managedHomePath: secondManagedHomePath,
+          providerAccountId: 'acct-two',
+          workspaceLabel: null,
+          workspaceAccountId: 'acct-two',
+          createdAt: 2,
+          updatedAt: 2,
+          lastAuthenticatedAt: 2
+        }
+      ],
+      activeCodexManagedAccountId: 'account-1'
+    })
+    const store = createStore(settings)
+    const rateLimits = createRateLimits()
+
+    const { CodexRuntimeHomeService } = await import('./runtime-home-service')
+    const runtimeHome = new CodexRuntimeHomeService(store as never)
+    const runtimeAuthPath = join(testState.userDataDir, 'codex-runtime-home', 'home', 'auth.json')
+    expect(readFileSync(runtimeAuthPath, 'utf-8')).toBe(firstAuth)
+
+    const { CodexAccountService } = await import('./service')
+    const service = new CodexAccountService(
+      store as never,
+      rateLimits as never,
+      runtimeHome as never
+    )
+
+    await service.selectAccount('account-2')
+
+    expect(readFileSync(runtimeAuthPath, 'utf-8')).toBe(secondAuth)
+    expect(existsSync(join(testState.userDataDir, 'codex-runtime-home', 'launch'))).toBe(false)
+    expect(existsSync(join(testState.userDataDir, 'codex-runtime-home', 'active'))).toBe(false)
   })
 
   it('keeps Windows and WSL active Codex account selections separate', async () => {
