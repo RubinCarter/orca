@@ -16,6 +16,19 @@ import {
   getFeatureWallSetupProgress,
   type FeatureWallSetupProgress
 } from '../feature-wall/feature-wall-setup-progress'
+import type { ComputerUsePermissionStatusResult } from '../../../../shared/computer-use-permissions-types'
+
+export function getComputerUsePermissionSetupState(
+  status: ComputerUsePermissionStatusResult | null
+): { ready: boolean; unavailable: boolean } {
+  return {
+    ready:
+      status !== null &&
+      status.helperUnavailableReason === null &&
+      status.permissions.every((permission) => permission.status !== 'not-granted'),
+    unavailable: status !== null && status.helperUnavailableReason !== null
+  }
+}
 
 export function useSetupGuideProgress(
   shouldRefreshCoreState: boolean,
@@ -113,12 +126,9 @@ export function useSetupGuideProgress(
     if (isStale()) {
       return
     }
-    setComputerUsePermissionsReady(
-      status !== null &&
-        status.helperUnavailableReason === null &&
-        status.permissions.every((permission) => permission.status !== 'not-granted')
-    )
-    setComputerUseUnavailable(status?.helperUnavailableReason !== null)
+    const permissionState = getComputerUsePermissionSetupState(status)
+    setComputerUsePermissionsReady(permissionState.ready)
+    setComputerUseUnavailable(permissionState.unavailable)
   }, [])
 
   useEffect(() => {

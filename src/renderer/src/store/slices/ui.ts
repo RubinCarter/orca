@@ -143,6 +143,17 @@ function mergeFeatureInteractionState(
   return merged
 }
 
+function mergeContextualTourSeenIds(
+  current: readonly ContextualTourId[],
+  incoming: PersistedUIState['contextualToursSeenIds']
+): ContextualTourId[] {
+  const merged = new Set<ContextualTourId>(normalizeContextualTourIds(current))
+  for (const id of normalizeContextualTourIds(incoming)) {
+    merged.add(id)
+  }
+  return [...merged]
+}
+
 function getContextualTourProgressionForFeatureInteraction(
   state: AppState,
   id: FeatureInteractionId
@@ -951,7 +962,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   githubTaskDrawerWorkItem: null,
   newWorkspaceDraft: null,
   openTaskPage: (data = {}) => {
-    get().recordFeatureInteraction?.('tasks')
     // Why: record a Tasks visit in the shared back/forward history so the
     // titlebar Back/Forward buttons can return to Tasks. All task-source
     // variants (github/linear presets) collapse to a single 'tasks' entry;
@@ -1112,7 +1122,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   selectedAutomationId: null,
   setSelectedAutomationId: (id) => set({ selectedAutomationId: id }),
   openAutomationsPage: () => {
-    get().recordFeatureInteraction?.('automations')
     get().recordViewVisit('automations')
     set((state) => ({
       activeView: 'automations',
@@ -1199,7 +1208,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   activeModal: 'none',
   modalData: {},
   openModal: (modal, data = {}) => {
-    if (modal === 'new-workspace-composer' || modal === 'add-repo' || modal === 'create-worktree') {
+    if (modal === 'add-repo' || modal === 'create-worktree') {
       get().recordFeatureInteraction?.('workspace-creation')
     }
     set({
@@ -1253,6 +1262,10 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
                 featureInteractions: mergeFeatureInteractionState(
                   current.featureInteractions,
                   ui.featureInteractions
+                ),
+                contextualToursSeenIds: mergeContextualTourSeenIds(
+                  current.contextualToursSeenIds,
+                  ui.contextualToursSeenIds
                 )
               }))
             })

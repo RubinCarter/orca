@@ -1337,7 +1337,8 @@ describe('createUISlice feature interactions', () => {
         makePersistedUI({
           featureInteractions: {
             tasks: { firstInteractedAt: 100, interactionCount: 3 }
-          }
+          },
+          contextualToursSeenIds: ['browser']
         })
       )
     )
@@ -1355,7 +1356,8 @@ describe('createUISlice feature interactions', () => {
       makePersistedUI({
         featureInteractions: {
           tasks: { firstInteractedAt: 100, interactionCount: 2 }
-        }
+        },
+        contextualToursSeenIds: ['tasks']
       })
     )
     setMock.mockClear()
@@ -1369,6 +1371,7 @@ describe('createUISlice feature interactions', () => {
       firstInteractedAt: 100,
       interactionCount: 3
     })
+    expect(store.getState().contextualToursSeenIds).toEqual(['tasks', 'browser'])
   })
 
   it('keeps newer optimistic interaction counts when persistence responses resolve out of order', async () => {
@@ -1567,6 +1570,34 @@ describe('createUISlice contextual tours', () => {
     store.getState().requestContextualTour('tasks', 'tasks_open', false)
 
     expect(store.getState().activeContextualTourWasFeaturePreviouslyInteracted).toBe(false)
+  })
+
+  it('does not bias first-visit contextual tour telemetry from navigation actions', () => {
+    stubContextualTourTargets([
+      '[data-contextual-tour-target="tasks-source-filters"]',
+      '[data-contextual-tour-target="automations-create"]',
+      '[data-contextual-tour-target="workspace-creation-project"]'
+    ])
+
+    const tasksStore = createUIStore()
+    tasksStore.getState().hydratePersistedUI(makeAutoTourEligibleUI())
+    tasksStore.getState().openTaskPage()
+    tasksStore.getState().requestContextualTour('tasks', 'tasks_open')
+    expect(tasksStore.getState().activeContextualTourWasFeaturePreviouslyInteracted).toBe(false)
+
+    const automationsStore = createUIStore()
+    automationsStore.getState().hydratePersistedUI(makeAutoTourEligibleUI())
+    automationsStore.getState().openAutomationsPage()
+    automationsStore.getState().requestContextualTour('automations', 'automations_open')
+    expect(automationsStore.getState().activeContextualTourWasFeaturePreviouslyInteracted).toBe(
+      false
+    )
+
+    const composerStore = createUIStore()
+    composerStore.getState().hydratePersistedUI(makeAutoTourEligibleUI())
+    composerStore.getState().openModal('new-workspace-composer')
+    composerStore.getState().requestContextualTour('workspace-creation', 'workspace_creation_modal')
+    expect(composerStore.getState().activeContextualTourWasFeaturePreviouslyInteracted).toBe(false)
   })
 
   it('does not mark seen when the required first target is absent', () => {
