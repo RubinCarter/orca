@@ -19,6 +19,7 @@ import {
   CompactAgentRow,
   CompactAgentSummaryButton
 } from './worktree-card-compact-agents'
+import { buildAgentRowLineageTree } from '@/components/dashboard/agent-row-lineage-model'
 import { DEFAULT_AGENT_ACTIVITY_DISPLAY_MODE } from '../../../../shared/constants'
 import { revealElementInScrollContainer } from './worktree-sidebar-reveal'
 
@@ -72,82 +73,6 @@ type BodyProps = {
   worktreeId: string
   agents: DashboardAgentRowData[]
   className?: string
-}
-
-type AgentLineageModel = {
-  rootAgents: DashboardAgentRowData[]
-  childrenByParentPaneKey: Map<string, DashboardAgentRowData[]>
-}
-
-function buildAgentLineageModel(agents: DashboardAgentRowData[]): AgentLineageModel {
-  const agentPaneKeys = new Set(agents.map((agent) => agent.paneKey))
-  const paneKeyByTerminalHandle = new Map<string, string>()
-  for (const agent of agents) {
-    if (agent.entry.terminalHandle && !paneKeyByTerminalHandle.has(agent.entry.terminalHandle)) {
-      paneKeyByTerminalHandle.set(agent.entry.terminalHandle, agent.paneKey)
-    }
-  }
-  const childrenByParentPaneKey = new Map<string, DashboardAgentRowData[]>()
-  const childPaneKeys = new Set<string>()
-
-  for (const agent of agents) {
-    const explicitParentPaneKey = agent.entry.orchestration?.parentPaneKey
-    const parentPaneKey =
-      explicitParentPaneKey && agentPaneKeys.has(explicitParentPaneKey)
-        ? explicitParentPaneKey
-        : agent.entry.orchestration?.parentTerminalHandle
-          ? paneKeyByTerminalHandle.get(agent.entry.orchestration.parentTerminalHandle)
-          : undefined
-    if (!parentPaneKey || parentPaneKey === agent.paneKey || !agentPaneKeys.has(parentPaneKey)) {
-      continue
-    }
-    childPaneKeys.add(agent.paneKey)
-    const siblings = childrenByParentPaneKey.get(parentPaneKey)
-    if (siblings) {
-      siblings.push(agent)
-    } else {
-      childrenByParentPaneKey.set(parentPaneKey, [agent])
-    }
-  }
-
-  const rootAgents = agents.filter((agent) => !childPaneKeys.has(agent.paneKey))
-  if (rootAgents.length === 0 && agents.length > 0) {
-    // Why: malformed orchestration metadata can theoretically form a cycle.
-    // Keep every row visible instead of recursing forever or hiding the list.
-    return { rootAgents: agents, childrenByParentPaneKey: new Map() }
-  }
-
-  const reachablePaneKeys = new Set<string>()
-  const markReachable = (
-    agent: DashboardAgentRowData,
-    ancestorPaneKeys: ReadonlySet<string> = new Set()
-  ): void => {
-    if (reachablePaneKeys.has(agent.paneKey) || ancestorPaneKeys.has(agent.paneKey)) {
-      return
-    }
-    reachablePaneKeys.add(agent.paneKey)
-    const descendantAncestorPaneKeys = new Set(ancestorPaneKeys)
-    descendantAncestorPaneKeys.add(agent.paneKey)
-    for (const childAgent of childrenByParentPaneKey.get(agent.paneKey) ?? []) {
-      markReachable(childAgent, descendantAncestorPaneKeys)
-    }
-  }
-  for (const rootAgent of rootAgents) {
-    markReachable(rootAgent)
-  }
-
-  for (const agent of agents) {
-    if (reachablePaneKeys.has(agent.paneKey)) {
-      continue
-    }
-    // Why: a partial cycle alongside a valid root has no true root, so it
-    // would otherwise disappear. Render malformed participants as flat rows
-    // and drop their child edges, matching the dashboard lineage fallback.
-    rootAgents.push(agent)
-    childrenByParentPaneKey.delete(agent.paneKey)
-  }
-
-  return { rootAgents, childrenByParentPaneKey }
 }
 
 const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
@@ -287,8 +212,8 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
   // never mount this component (see WorktreeCardAgents), so idle worktrees
   // don't pay any timer cost.
   const now = useNow(30_000)
-  const { rootAgents, childrenByParentPaneKey } = useMemo(
-    () => buildAgentLineageModel(agents),
+  const { rootRows: rootAgents, childrenByParentPaneKey } = useMemo(
+    () => buildAgentRowLineageTree(agents),
     [agents]
   )
   const hasLineage = childrenByParentPaneKey.size > 0

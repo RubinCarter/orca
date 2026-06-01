@@ -4,7 +4,6 @@ import {
   AGENT_STATUS_STALE_AFTER_MS,
   type AgentStatusEntry
 } from '../../../../shared/agent-status-types'
-import type { TerminalTab } from '../../../../shared/types'
 import type { AppState } from '../types'
 import type { RetainedAgentEntry } from './agent-status'
 import { createTestStore, makeTab, makeWorktree } from './store-test-helpers'
@@ -363,7 +362,7 @@ describe('agent status runtime orchestration metadata', () => {
     const retained: RetainedAgentEntry = {
       entry,
       worktreeId: 'wt-1',
-      tab: { id: 'tab-child', title: 'codex' } as unknown as TerminalTab,
+      tab: makeTab({ id: 'tab-child', worktreeId: 'wt-1', title: 'codex' }),
       agentType: 'codex',
       startedAt: now
     }
@@ -696,6 +695,47 @@ describe('agent status PR refresh handoff', () => {
     })
   })
 
+  it('uses hook worktree attribution for PR refresh when the agent tab is not mounted', async () => {
+    vi.useFakeTimers()
+    const enqueuePRRefresh = stubGitHubPRRefreshApi()
+    const store = createTestStore()
+    seedAgentPRRefreshFixture(store, ['pr'])
+    store.setState({ tabsByWorktree: { 'wt-1': [] } } as Partial<AppState>)
+    const paneKey = 'tab-worker:11111111-1111-4111-8111-111111111111'
+
+    store
+      .getState()
+      .setAgentStatus(
+        paneKey,
+        { state: 'working', prompt: 'create a PR', agentType: 'codex' },
+        undefined,
+        undefined,
+        { tabId: 'tab-worker', worktreeId: 'wt-1', terminalHandle: 'term-worker' }
+      )
+    store
+      .getState()
+      .setAgentStatus(
+        paneKey,
+        { state: 'done', prompt: 'create a PR', agentType: 'codex' },
+        undefined,
+        undefined,
+        { tabId: 'tab-worker', worktreeId: 'wt-1', terminalHandle: 'term-worker' }
+      )
+
+    await flushMicrotasks()
+
+    expect(enqueuePRRefresh).toHaveBeenCalledWith({
+      candidate: expect.objectContaining({
+        repoPath: '/repo',
+        branch: 'feature/pr-from-agent',
+        worktreeId: 'wt-1',
+        linkedPRNumber: null
+      }),
+      reason: 'active',
+      priority: 80
+    })
+  })
+
   it('does not spend a PR refresh when no PR surface is visible', async () => {
     vi.useFakeTimers()
     const enqueuePRRefresh = stubGitHubPRRefreshApi()
@@ -881,14 +921,14 @@ describe('agent status retention + prefix sweep', () => {
     const retainedA: RetainedAgentEntry = {
       entry: entryA,
       worktreeId: 'wt-a',
-      tab: { id: 'tab-a', title: 'claude' } as unknown as TerminalTab,
+      tab: makeTab({ id: 'tab-a', worktreeId: 'wt-a', title: 'claude' }),
       agentType: 'claude',
       startedAt: now
     }
     const retainedB: RetainedAgentEntry = {
       entry: entryB,
       worktreeId: 'wt-b',
-      tab: { id: 'tab-b', title: 'claude' } as unknown as TerminalTab,
+      tab: makeTab({ id: 'tab-b', worktreeId: 'wt-b', title: 'claude' }),
       agentType: 'claude',
       startedAt: now
     }
@@ -931,14 +971,14 @@ describe('agent status retention + prefix sweep', () => {
     const retainedA: RetainedAgentEntry = {
       entry: entryA,
       worktreeId: 'wt-a',
-      tab: { id: 'tab-a', title: 'claude' } as unknown as TerminalTab,
+      tab: makeTab({ id: 'tab-a', worktreeId: 'wt-a', title: 'claude' }),
       agentType: 'claude',
       startedAt: now
     }
     const retainedB: RetainedAgentEntry = {
       entry: entryB,
       worktreeId: 'wt-a',
-      tab: { id: 'tab-a', title: 'claude' } as unknown as TerminalTab,
+      tab: makeTab({ id: 'tab-a', worktreeId: 'wt-a', title: 'claude' }),
       agentType: 'claude',
       startedAt: now
     }
@@ -956,6 +996,35 @@ describe('agent status retention + prefix sweep', () => {
     // retained-only (no live entry) → no suppressor, to avoid indefinite
     // leaks when no live→gone transition will ever fire for this paneKey.
     expect(suppressed['tab-a:1']).toBeUndefined()
+  })
+
+  it('dropAgentStatusByWorktree removes live entries attributed before their tab exists', () => {
+    vi.useFakeTimers()
+    const store = createTestStore()
+    const paneKey = 'tab-worker:11111111-1111-4111-8111-111111111111'
+
+    store
+      .getState()
+      .setAgentStatus(
+        paneKey,
+        { state: 'working', prompt: 'worker', agentType: 'codex' },
+        undefined,
+        undefined,
+        {
+          tabId: 'tab-worker',
+          worktreeId: 'wt-a',
+          terminalHandle: 'term-worker'
+        }
+      )
+    store.setState({
+      acknowledgedAgentsByPaneKey: { [paneKey]: Date.now() }
+    } as Partial<AppState>)
+
+    store.getState().dropAgentStatusByWorktree('wt-a')
+
+    expect(store.getState().agentStatusByPaneKey[paneKey]).toBeUndefined()
+    expect(store.getState().acknowledgedAgentsByPaneKey[paneKey]).toBeUndefined()
+    expect(store.getState().retentionSuppressedPaneKeys[paneKey]).toBe(true)
   })
 
   it('pruneRetainedAgents keeps only entries whose worktreeId is in the valid set', () => {
@@ -980,14 +1049,14 @@ describe('agent status retention + prefix sweep', () => {
     const retainedA: RetainedAgentEntry = {
       entry: entryA,
       worktreeId: 'wt-a',
-      tab: { id: 'tab-a', title: 'claude' } as unknown as TerminalTab,
+      tab: makeTab({ id: 'tab-a', worktreeId: 'wt-a', title: 'claude' }),
       agentType: 'claude',
       startedAt: now
     }
     const retainedB: RetainedAgentEntry = {
       entry: entryB,
       worktreeId: 'wt-b',
-      tab: { id: 'tab-b', title: 'claude' } as unknown as TerminalTab,
+      tab: makeTab({ id: 'tab-b', worktreeId: 'wt-b', title: 'claude' }),
       agentType: 'claude',
       startedAt: now
     }

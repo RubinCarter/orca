@@ -357,7 +357,7 @@ describe('registerCoreHandlers', () => {
     expect(registerOpenCodeUsageHandlersMock).toHaveBeenCalledWith(openCodeUsage)
     expect(registerAppHandlersMock).toHaveBeenCalledWith(store, { onBeforeRelaunch })
     expect(registerCodexAccountHandlersMock).toHaveBeenCalledWith(codexAccounts)
-    expect(registerAgentHookHandlersMock).toHaveBeenCalled()
+    expect(registerAgentHookHandlersMock).toHaveBeenCalledWith(runtime)
     expect(registerPetHandlersMock).toHaveBeenCalled()
     expect(registerClaudeAccountHandlersMock).toHaveBeenCalledWith(claudeAccounts)
     expect(registerRateLimitHandlersMock).toHaveBeenCalledWith(rateLimits)

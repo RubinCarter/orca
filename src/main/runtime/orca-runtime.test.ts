@@ -7869,6 +7869,62 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('does not attach an unrelated active coordinator run to a completed dispatch', () => {
+    const runtime = new OrcaRuntimeService(store)
+    const workerLeafId = '55555555-5555-4555-8555-555555555555'
+    const workerPaneKey = makePaneKey('tab-worker', workerLeafId)
+    const workerHandle = runtime.preAllocateHandleForPty('pty-worker')
+    runtime.setOrchestrationDb({
+      getActiveDispatchForTerminal: vi.fn(() => undefined),
+      getLatestDispatchForTerminal: vi.fn((handle: string) =>
+        handle === workerHandle
+          ? {
+              id: 'ctx-done',
+              task_id: 'task-done',
+              assignee_handle: workerHandle,
+              status: 'completed',
+              completed_at: new Date(Date.now()).toISOString()
+            }
+          : undefined
+      ),
+      getTask: vi.fn(() => ({
+        id: 'task-done'
+      })),
+      getActiveCoordinatorRun: vi.fn(() => ({
+        id: 'run-unrelated',
+        coordinator_handle: 'term_unrelated'
+      }))
+    } as never)
+    runtime.attachWindow(1)
+
+    const result = runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-worker',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Claude Code',
+          activeLeafId: workerLeafId,
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-worker',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: workerLeafId,
+          paneRuntimeId: 1,
+          ptyId: 'pty-worker',
+          paneTitle: null
+        }
+      ]
+    })
+
+    expect(result.agentOrchestrationByPaneKey?.[workerPaneKey]).toEqual({
+      taskId: 'task-done',
+      dispatchId: 'ctx-done'
+    })
+  })
+
   it('does not return stale completed orchestration context for renderer-synced terminal leaves', () => {
     const runtime = new OrcaRuntimeService(store)
     const workerLeafId = '77777777-7777-4777-8777-777777777777'

@@ -96,15 +96,9 @@ export type AgentStatusSlice = {
    *  Used on worktree sleep/remove — the whole worktree surface is folding, so
    *  retained rows must drop even if their original tab is no longer present.
    *
-   *  Note on orphan-live asymmetry: liveKeys are matched against tab prefixes
-   *  derived from `tabsByWorktree[worktreeId]`. Live entries belonging to the
-   *  same worktree but whose tab has already been pruned from `tabsByWorktree`
-   *  (an orphan-live race) are not swept here. The retained side has a
-   *  fallback (`retained.worktreeId === worktreeId`); the live side does not,
-   *  because live entries do not carry a worktreeId. In practice the gap is
-   *  bounded — `removeAgentStatus` is called on PTY exit — and dropping an
-   *  orphan-live entry on shutdown is best-effort, so accepting the asymmetry
-   *  is the simpler tradeoff. */
+   *  Live entries are swept by tab prefix and by main-stamped worktree
+   *  attribution so worker rows that arrive before their tab exists do not
+   *  survive sleep/remove. */
   dropAgentStatusByWorktree: (worktreeId: string) => void
 
   /** Retain agent snapshots (called by the top-level retention sync effect).
@@ -439,7 +433,7 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
           existing !== undefined &&
           !isAgentCompletionState(existing.state)
         ) {
-          completionRefreshWorktreeId = findAgentPaneWorktreeId(s, paneKey)
+          completionRefreshWorktreeId = entry.worktreeId ?? findAgentPaneWorktreeId(s, paneKey)
         }
         // Why: broad freshness-aware subscribers only need a global tick when
         // an entry appears, changes state, crosses stale->fresh, or receives
@@ -852,9 +846,13 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
       let hadLive = false
       set((s) => {
         const tabPrefixes = (s.tabsByWorktree[worktreeId] ?? []).map((tab) => `${tab.id}:`)
-        const liveKeys = Object.keys(s.agentStatusByPaneKey).filter((k) =>
-          paneKeyMatchesAnyTabPrefix(k, tabPrefixes)
-        )
+        const liveKeys = Object.entries(s.agentStatusByPaneKey)
+          .filter(
+            ([paneKey, entry]) =>
+              entry.worktreeId === worktreeId || paneKeyMatchesAnyTabPrefix(paneKey, tabPrefixes)
+          )
+          .map(([paneKey]) => paneKey)
+        const liveKeySet = new Set(liveKeys)
         const retainedKeys = Object.entries(s.retainedAgentsByPaneKey)
           .filter(
             ([paneKey, retained]) =>
@@ -869,10 +867,12 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
             (entry.paneKey ? paneKeyMatchesAnyTabPrefix(entry.paneKey, tabPrefixes) : false)
         )
         // See removeAgentStatus for rationale on ack cleanup. Current tabs are
-        // swept by prefix; orphan retained rows are swept by their retained key.
+        // swept by prefix; attributed live rows and orphan retained rows are
+        // swept by their retained/lifecycle key.
         let nextAck = s.acknowledgedAgentsByPaneKey
         const ackKeys = Object.keys(nextAck).filter(
-          (k) => paneKeyMatchesAnyTabPrefix(k, tabPrefixes) || retainedKeySet.has(k)
+          (k) =>
+            paneKeyMatchesAnyTabPrefix(k, tabPrefixes) || liveKeySet.has(k) || retainedKeySet.has(k)
         )
         if (ackKeys.length > 0) {
           nextAck = { ...nextAck }

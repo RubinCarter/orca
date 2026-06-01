@@ -15,7 +15,11 @@ type MockAgentOptions = {
   lastAssistantMessage?: string
   stateStartedAt?: number
   terminalHandle?: string
-  orchestration?: { parentPaneKey?: string; parentTerminalHandle?: string }
+  orchestration?: {
+    parentPaneKey?: string
+    parentTerminalHandle?: string
+    coordinatorHandle?: string
+  }
   lineage?: {
     depth: number
     isFirstSibling: boolean
@@ -234,6 +238,30 @@ describe('WorktreeCardAgents', () => {
         state: 'done',
         stateStartedAt: 1500,
         orchestration: { parentTerminalHandle: 'term-parent' }
+      })
+    ]
+    const { default: WorktreeCardAgents } = await import('./WorktreeCardAgents')
+
+    const markup = renderToStaticMarkup(<WorktreeCardAgents worktreeId="wt-1" />)
+
+    expect(markup).toContain('role="tree"')
+    expect(markup).toContain('data-pane-key="tab-parent:1"')
+    expect(markup).toContain('data-pane-key="tab-child:1"')
+    expect(markup).toContain('aria-label="Hide 1 child agent"')
+  })
+
+  it('shows orchestration children under a visible coordinator when parent handle is absent', async () => {
+    mockAgentActivityDisplayMode = 'full'
+    mockAgents = [
+      mockAgent({
+        paneKey: 'tab-parent:1',
+        terminalHandle: 'term-coordinator'
+      }),
+      mockAgent({
+        paneKey: 'tab-child:1',
+        state: 'done',
+        stateStartedAt: 1500,
+        orchestration: { coordinatorHandle: 'term-coordinator' }
       })
     ]
     const { default: WorktreeCardAgents } = await import('./WorktreeCardAgents')

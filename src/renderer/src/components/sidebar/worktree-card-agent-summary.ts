@@ -69,11 +69,6 @@ export function buildSummaryAgentGroups(agents: DashboardAgentRowData[]): Summar
   })
 }
 
-export function formatSummaryGroupLabel(group: SummaryAgentGroup): string {
-  const label = formatSummaryStateLabel(group.state)
-  return group.agents.length === 1 ? label : `${group.agents.length} ${label}`
-}
-
 export function summarizeAgents(agents: DashboardAgentRowData[], subjectLabel: string): string {
   const counts = new Map<AgentDotState, number>()
   for (const agent of agents) {

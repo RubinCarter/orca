@@ -51,6 +51,9 @@ function entryWithRuntimeOrchestration(
     runtimeOrchestration &&
     entry.orchestration.taskId === runtimeOrchestration.taskId &&
     entry.orchestration.dispatchId === runtimeOrchestration.dispatchId
+  if (entry.orchestration && runtimeOrchestration && !sameDispatch) {
+    return entry
+  }
   const orchestration =
     sameDispatch && entry.orchestration && runtimeOrchestration
       ? { ...entry.orchestration, ...runtimeOrchestration }

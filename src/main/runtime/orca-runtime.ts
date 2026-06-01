@@ -11561,7 +11561,7 @@ export class OrcaRuntimeService {
       return undefined
     }
     const task = db?.getTask?.(dispatch.task_id)
-    const activeRun = db?.getActiveCoordinatorRun?.()
+    const activeRun = dispatch.status === 'completed' ? undefined : db?.getActiveCoordinatorRun?.()
     const parentTerminalHandle =
       task?.created_by_terminal_handle ??
       (activeRun?.coordinator_handle && activeRun.coordinator_handle !== handle

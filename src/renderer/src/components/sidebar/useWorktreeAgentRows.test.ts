@@ -169,49 +169,49 @@ describe('buildWorktreeAgentRows', () => {
     expect(rows[1].entry.orchestration).toMatchObject({ parentPaneKey: PANE_KEY_1 })
   })
 
-  it('uses fresh runtime orchestration metadata over stale hook-reported dispatch identity', () => {
-    const staleParent = makeEntry(PANE_KEY_1, 1000, {
-      prompt: 'stale parent',
+  it('does not override current hook dispatch identity with mismatched runtime metadata', () => {
+    const currentParent = makeEntry(PANE_KEY_1, 1000, {
+      prompt: 'current parent',
       state: 'done'
     })
-    const currentParent = makeEntry(PANE_KEY_3, 1100, {
-      prompt: 'current parent',
+    const staleParent = makeEntry(PANE_KEY_3, 1100, {
+      prompt: 'stale parent',
       state: 'working'
     })
     const child = makeEntry(PANE_KEY_2, 1200, {
       prompt: 'child',
       state: 'working',
       orchestration: {
-        taskId: 'task-1',
-        dispatchId: 'ctx-1',
+        taskId: 'task-2',
+        dispatchId: 'ctx-2',
         parentPaneKey: PANE_KEY_1,
-        parentTerminalHandle: 'term-stale'
+        parentTerminalHandle: 'term-current'
       }
     })
     const rows = applyAgentRowLineage(
       buildWorktreeAgentRows({
         tabs: [makeTab('tab-1'), makeTab('tab-2'), makeTab('tab-3')],
-        entries: [staleParent, currentParent, child],
+        entries: [currentParent, staleParent, child],
         retained: [],
         runtimeAgentOrchestrationByPaneKey: {
           [PANE_KEY_2]: {
-            taskId: 'task-2',
-            dispatchId: 'ctx-2',
+            taskId: 'task-1',
+            dispatchId: 'ctx-1',
             parentPaneKey: PANE_KEY_3,
-            parentTerminalHandle: 'term-current'
+            parentTerminalHandle: 'term-stale'
           }
         },
         now: 2000
       })
     )
 
-    expect(rows.map((row) => row.paneKey)).toEqual([PANE_KEY_1, PANE_KEY_3, PANE_KEY_2])
-    expect(rows[1].lineage).toMatchObject({ depth: 0, childCount: 1 })
-    expect(rows[2].lineage).toMatchObject({ depth: 1, childCount: 0 })
-    expect(rows[2].entry.orchestration).toEqual({
+    expect(rows.map((row) => row.paneKey)).toEqual([PANE_KEY_1, PANE_KEY_2, PANE_KEY_3])
+    expect(rows[0].lineage).toMatchObject({ depth: 0, childCount: 1 })
+    expect(rows[1].lineage).toMatchObject({ depth: 1, childCount: 0 })
+    expect(rows[1].entry.orchestration).toEqual({
       taskId: 'task-2',
       dispatchId: 'ctx-2',
-      parentPaneKey: PANE_KEY_3,
+      parentPaneKey: PANE_KEY_1,
       parentTerminalHandle: 'term-current'
     })
   })

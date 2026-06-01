@@ -103,7 +103,7 @@ export function registerCoreHandlers(
   registerCodexUsageHandlers(codexUsage)
   registerOpenCodeUsageHandlers(openCodeUsage)
   registerCodexAccountHandlers(codexAccounts)
-  registerAgentHookHandlers()
+  registerAgentHookHandlers(runtime)
   registerAgentTrustHandlers()
   registerClaudeAccountHandlers(claudeAccounts)
   registerRateLimitHandlers(rateLimits)
