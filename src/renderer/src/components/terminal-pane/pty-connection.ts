@@ -89,6 +89,7 @@ const COMMAND_CODE_OUTPUT_DONE_SETTLE_MS = 1500
 const HIDDEN_OUTPUT_RESTORE_SCROLLBACK_ROWS = 5000
 const HIDDEN_OUTPUT_RESTORE_PENDING_CHARS = 512 * 1024
 const HIDDEN_STARTUP_RENDERER_QUERY_WINDOW_MS = 10_000
+const HIDDEN_RENDERER_OUTPUT_PAUSE_DELAY_MS = 1000
 const STARTUP_COMMAND_EXTENSION_RE = /\.(?:exe|cmd|bat|ps1)$/i
 const TERMINAL_RENDERER_RISK_SCAN_TAIL_CHARS = 256
 const REATTACH_IDLE_AGENT_CURSOR_RESET_DELAY_MS = 250
@@ -135,6 +136,7 @@ let codexRestartNoticePresence = false
 
 type PanePtyBinding = IDisposable & {
   syncProcessTracking: () => void
+  syncRendererOutputVisibility: () => void
 }
 
 function isAgentTaskCompleteNotificationEnabled(): boolean {
@@ -355,6 +357,9 @@ export function connectPanePty(
   let terminalBellNotificationTimer: ReturnType<typeof setTimeout> | null = null
   let pendingTerminalBellNotification = false
   let reattachIdleAgentCursorResetTimer: ReturnType<typeof setTimeout> | null = null
+  let clearRendererOutputPauseTimerImpl = (): void => {}
+  let resumeRendererOutputDeliveryImpl = (): void => {}
+  let syncRendererOutputVisibilityImpl = (): void => {}
   // Why: idle callbacks are registered before the deferred PTY output plumbing
   // exists. Start with the shared scheduler, then switch to the PTY writer
   // below so hidden-tab resets keep backlog-recovery callbacks and byte order.
@@ -1586,6 +1591,10 @@ export function connectPanePty(
     const hiddenStartupRendererQueryUntil = shouldKeepHiddenStartupRendererQueriesLive(paneStartup)
       ? Date.now() + HIDDEN_STARTUP_RENDERER_QUERY_WINDOW_MS
       : 0
+    let rendererOutputPauseTimer: ReturnType<typeof setTimeout> | null = null
+    let rendererOutputPausedPtyId: string | null = null
+    let rendererOutputLastPausedPtyId: string | null = null
+    let rendererOutputPauseGeneration = 0
 
     function canUseMainBufferSnapshot(ptyId: string | null): ptyId is string {
       return Boolean(ptyId) && !isRemoteRuntimePtyId(ptyId)
@@ -1598,6 +1607,116 @@ export function connectPanePty(
         !shouldWritePtyOutputForeground(deps.isVisibleRef.current)
       )
     }
+
+    function canPauseRendererOutputDelivery(): boolean {
+      return (
+        canUseMainBufferSnapshot(transport.getPtyId()) &&
+        !shouldWritePtyOutputForeground(deps.isVisibleRef.current) &&
+        !isHiddenStartupRendererQueryWindowActive()
+      )
+    }
+
+    function clearRendererOutputPauseTimerForCurrentPty(): void {
+      if (rendererOutputPauseTimer === null) {
+        return
+      }
+      clearTimeout(rendererOutputPauseTimer)
+      rendererOutputPauseTimer = null
+    }
+
+    function markSuppressedRendererOutputDirty(): void {
+      markHiddenOutputRestoreNeeded()
+      if (shouldWritePtyOutputForeground(deps.isVisibleRef.current)) {
+        requestHiddenOutputRestoreIfNeeded()
+      }
+    }
+
+    function pauseRendererOutputDeliveryNow(): void {
+      if (disposed || !canPauseRendererOutputDelivery()) {
+        return
+      }
+      const ptyId = transport.getPtyId()
+      if (!canUseMainBufferSnapshot(ptyId)) {
+        return
+      }
+      if (rendererOutputPausedPtyId === ptyId) {
+        return
+      }
+      const generation = ++rendererOutputPauseGeneration
+      rendererOutputPausedPtyId = ptyId
+      rendererOutputLastPausedPtyId = ptyId
+      void window.api.pty
+        .setRendererOutputPaused(ptyId, true, generation)
+        .then((result) => {
+          if (
+            disposed ||
+            rendererOutputPausedPtyId !== ptyId ||
+            generation !== rendererOutputPauseGeneration
+          ) {
+            return
+          }
+          if (result.dirty) {
+            markSuppressedRendererOutputDirty()
+          }
+        })
+        .catch(() => {
+          if (rendererOutputPausedPtyId === ptyId && generation === rendererOutputPauseGeneration) {
+            rendererOutputPausedPtyId = null
+          }
+        })
+    }
+
+    function scheduleRendererOutputPause(): void {
+      if (!canPauseRendererOutputDelivery() || rendererOutputPausedPtyId !== null) {
+        return
+      }
+      if (rendererOutputPauseTimer !== null) {
+        return
+      }
+      // Why: fast tab flips previously restored from snapshots while no bytes
+      // were actually skipped. Debounce pausing so ordinary navigation keeps
+      // the simple live path, while sustained hidden output stops at main IPC.
+      rendererOutputPauseTimer = setTimeout(() => {
+        rendererOutputPauseTimer = null
+        pauseRendererOutputDeliveryNow()
+      }, HIDDEN_RENDERER_OUTPUT_PAUSE_DELAY_MS)
+    }
+
+    function resumeRendererOutputDeliveryForCurrentPty(): void {
+      clearRendererOutputPauseTimerForCurrentPty()
+      const ptyId = rendererOutputPausedPtyId ?? rendererOutputLastPausedPtyId
+      if (!ptyId) {
+        return
+      }
+      const generation = rendererOutputPauseGeneration
+      rendererOutputPausedPtyId = null
+      rendererOutputLastPausedPtyId = null
+      void window.api.pty
+        .setRendererOutputPaused(ptyId, false, generation)
+        .then((result) => {
+          if (disposed || transport.getPtyId() !== ptyId) {
+            return
+          }
+          if (result.dirty) {
+            markSuppressedRendererOutputDirty()
+          }
+        })
+        .catch(() => {})
+    }
+
+    function syncRendererOutputVisibilityForCurrentPty(): void {
+      if (shouldWritePtyOutputForeground(deps.isVisibleRef.current)) {
+        resumeRendererOutputDeliveryForCurrentPty()
+        requestHiddenOutputRestoreIfNeeded()
+        return
+      }
+      if (canPauseRendererOutputDelivery()) {
+        scheduleRendererOutputPause()
+      }
+    }
+    clearRendererOutputPauseTimerImpl = clearRendererOutputPauseTimerForCurrentPty
+    resumeRendererOutputDeliveryImpl = resumeRendererOutputDeliveryForCurrentPty
+    syncRendererOutputVisibilityImpl = syncRendererOutputVisibilityForCurrentPty
 
     function respondToSkippedMode2031Subscribe(data: string): void {
       const scan = scanMode2031Sequences(hiddenMode2031ScanTail, data)
@@ -1684,6 +1803,19 @@ export function connectPanePty(
         !foreground &&
         canUseMainBufferSnapshot(transport.getPtyId()) &&
         isHiddenStartupRendererQueryWindowActive()
+      if (
+        !foreground &&
+        canUseMainBufferSnapshot(transport.getPtyId()) &&
+        !parseHiddenStartupOutput
+      ) {
+        respondToSkippedMode2031Subscribe(data)
+        // Why: hidden panes do not need live xterm parsing. Main already
+        // retains the PTY buffer, so defer display work until the pane is
+        // visible and restore from that snapshot instead.
+        markHiddenOutputRestoreNeeded()
+        scheduleRendererOutputPause()
+        return
+      }
       if (hiddenMode2031ScanTail) {
         respondToSkippedMode2031Subscribe(data)
       }
@@ -2012,7 +2144,10 @@ export function connectPanePty(
     ) {
       const onDocumentVisibilityChange = (): void => {
         if (shouldWritePtyOutputForeground(deps.isVisibleRef.current)) {
+          resumeRendererOutputDeliveryForCurrentPty()
           requestHiddenOutputRestoreIfNeeded()
+        } else {
+          syncRendererOutputVisibilityForCurrentPty()
         }
       }
       document.addEventListener('visibilitychange', onDocumentVisibilityChange)
@@ -2663,8 +2798,13 @@ export function connectPanePty(
     syncProcessTracking() {
       agentCompletionCoordinator.startProcessTracking()
     },
+    syncRendererOutputVisibility() {
+      syncRendererOutputVisibilityImpl()
+    },
     dispose() {
       disposed = true
+      resumeRendererOutputDeliveryImpl()
+      clearRendererOutputPauseTimerImpl()
       if (terminalKeyTargetSupportsEvents) {
         terminalKeyTarget.removeEventListener('keydown', onTerminalKeyDown, { capture: true })
       }

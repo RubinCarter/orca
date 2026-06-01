@@ -883,6 +883,11 @@ export type PreloadApi = {
       id: string,
       opts?: { scrollbackRows?: number }
     ) => Promise<{ data: string; cols: number; rows: number; seq?: number } | null>
+    setRendererOutputPaused: (
+      id: string,
+      paused: boolean,
+      generation: number
+    ) => Promise<{ dirty: boolean; suppressedChars: number; lastSuppressedSeq?: number }>
     onData: (
       callback: (data: { id: string; data: string; seq?: number; rawLength?: number }) => void
     ) => () => void

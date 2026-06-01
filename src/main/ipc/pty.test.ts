@@ -2972,6 +2972,80 @@ describe('registerPtyHandlers', () => {
     }
   })
 
+  it('suppresses already-batched PTY output while renderer delivery is paused', async () => {
+    vi.useFakeTimers()
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawnResult = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      mainWindow.webContents.send.mockClear()
+
+      mockProc.emitData('hidden output')
+      const pauseResult = handlers.get('pty:setRendererOutputPaused')!(null, {
+        id: spawnResult.id,
+        paused: true,
+        generation: 1
+      })
+
+      expect(pauseResult).toEqual({ dirty: true, suppressedChars: 'hidden output'.length })
+      vi.advanceTimersByTime(8)
+      expect(mainWindow.webContents.send).not.toHaveBeenCalled()
+
+      const resumeResult = handlers.get('pty:setRendererOutputPaused')!(null, {
+        id: spawnResult.id,
+        paused: false,
+        generation: 1
+      })
+      expect(resumeResult).toEqual({ dirty: true, suppressedChars: 'hidden output'.length })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let interactive redraw bypass a paused renderer delivery stream', async () => {
+    vi.useFakeTimers()
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawnResult = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const writeListener = getPtyWriteListener()
+      handlers.get('pty:setRendererOutputPaused')!(null, {
+        id: spawnResult.id,
+        paused: true,
+        generation: 1
+      })
+      writeListener(null, {
+        id: spawnResult.id,
+        data: 'a'
+      })
+      mainWindow.webContents.send.mockClear()
+
+      mockProc.emitData('\x1b[20;2Hredraw')
+
+      expect(mainWindow.webContents.send).not.toHaveBeenCalled()
+      const resumeResult = handlers.get('pty:setRendererOutputPaused')!(null, {
+        id: spawnResult.id,
+        paused: false,
+        generation: 1
+      })
+      expect(resumeResult).toEqual({ dirty: true, suppressedChars: '\x1b[20;2Hredraw'.length })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('sends small PTY redraws immediately after terminal input', async () => {
     vi.useFakeTimers()
     const mockProc = createMockProc()

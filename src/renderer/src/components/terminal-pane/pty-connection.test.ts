@@ -462,6 +462,7 @@ describe('connectPanePty', () => {
         pty: {
           signal: vi.fn(),
           getMainBufferSnapshot: vi.fn().mockResolvedValue(null),
+          setRendererOutputPaused: vi.fn().mockResolvedValue({ dirty: false, suppressedChars: 0 }),
           getForegroundProcess: vi.fn().mockResolvedValue(null),
           hasChildProcesses: vi.fn().mockResolvedValue(false),
           ackColdRestore: vi.fn(),
@@ -2793,6 +2794,132 @@ describe('connectPanePty', () => {
 
     vi.advanceTimersByTime(50)
     expect(pane.terminal.write).toHaveBeenCalledWith('backgrounded document output\r\n')
+  })
+
+  it('does not pause or restore a hidden pane that becomes visible without output', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport('pty-id')
+    transport.connect.mockImplementation(async () => 'pty-id')
+    transportFactoryQueue.push(transport)
+    const getMainBufferSnapshot = window.api.pty.getMainBufferSnapshot as unknown as ReturnType<
+      typeof vi.fn
+    >
+    const setRendererOutputPaused = window.api.pty.setRendererOutputPaused as unknown as ReturnType<
+      typeof vi.fn
+    >
+    const deps = createDeps({
+      isVisibleRef: { current: false }
+    })
+
+    const binding = connectPanePty(createPane(1) as never, createManager(1) as never, deps as never)
+    await flushAsyncTicks(6)
+
+    ;(deps.isVisibleRef as { current: boolean }).current = true
+    binding.syncRendererOutputVisibility()
+    await flushAsyncTicks(10)
+
+    expect(setRendererOutputPaused).not.toHaveBeenCalled()
+    expect(getMainBufferSnapshot).not.toHaveBeenCalled()
+    binding.dispose()
+  })
+
+  it('cancels the hidden-output pause when the pane becomes visible quickly', async () => {
+    vi.useFakeTimers()
+    try {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('pty-id')
+      const capturedDataCallback: {
+        current: ((data: string, meta?: { seq?: number; rawLength?: number }) => void) | null
+      } = { current: null }
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-id'
+        }
+      )
+      transportFactoryQueue.push(transport)
+      const setRendererOutputPaused = window.api.pty
+        .setRendererOutputPaused as unknown as ReturnType<typeof vi.fn>
+      const deps = createDeps({
+        isVisibleRef: { current: false }
+      })
+      const binding = connectPanePty(
+        createPane(1) as never,
+        createManager(1) as never,
+        deps as never
+      )
+      vi.advanceTimersByTime(16)
+      await flushAsyncTicks(6)
+
+      capturedDataCallback.current?.('hidden output\r\n', { seq: 15, rawLength: 15 })
+      ;(deps.isVisibleRef as { current: boolean }).current = true
+      binding.syncRendererOutputVisibility()
+      vi.advanceTimersByTime(1000)
+      await flushAsyncTicks(10)
+
+      expect(setRendererOutputPaused).not.toHaveBeenCalledWith('pty-id', true, expect.any(Number))
+      binding.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('pauses sustained hidden output and restores from main snapshot on resume', async () => {
+    vi.useFakeTimers()
+    try {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('pty-id')
+      const capturedDataCallback: {
+        current: ((data: string, meta?: { seq?: number; rawLength?: number }) => void) | null
+      } = { current: null }
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-id'
+        }
+      )
+      transportFactoryQueue.push(transport)
+      const output = 'hidden output after pause\r\n'
+      const getMainBufferSnapshot = window.api.pty.getMainBufferSnapshot as unknown as ReturnType<
+        typeof vi.fn
+      >
+      getMainBufferSnapshot.mockResolvedValue({
+        data: output,
+        cols: 120,
+        rows: 40,
+        seq: output.length
+      })
+      const setRendererOutputPaused = window.api.pty
+        .setRendererOutputPaused as unknown as ReturnType<typeof vi.fn>
+      setRendererOutputPaused
+        .mockResolvedValueOnce({ dirty: false, suppressedChars: 0 })
+        .mockResolvedValueOnce({ dirty: true, suppressedChars: output.length })
+      const pane = createPane(1)
+      const deps = createDeps({
+        isVisibleRef: { current: false }
+      })
+      const binding = connectPanePty(pane as never, createManager(1) as never, deps as never)
+      vi.advanceTimersByTime(16)
+      await flushAsyncTicks(6)
+
+      capturedDataCallback.current?.(output, { seq: output.length, rawLength: output.length })
+      binding.syncRendererOutputVisibility()
+      vi.advanceTimersByTime(1000)
+      await flushAsyncTicks(10)
+
+      expect(setRendererOutputPaused).toHaveBeenCalledWith('pty-id', true, expect.any(Number))
+
+      ;(deps.isVisibleRef as { current: boolean }).current = true
+      binding.syncRendererOutputVisibility()
+      await flushAsyncTicks(20)
+
+      expect(setRendererOutputPaused).toHaveBeenCalledWith('pty-id', false, expect.any(Number))
+      expect(getMainBufferSnapshot).toHaveBeenCalledWith('pty-id', { scrollbackRows: 5000 })
+      expect(pane.terminal.write).toHaveBeenCalledWith(output, expect.any(Function))
+      binding.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps hidden Codex telemetry startup output parsing briefly', async () => {

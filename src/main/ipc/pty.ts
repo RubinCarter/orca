@@ -893,6 +893,7 @@ export function registerPtyHandlers(
   ipcMain.removeHandler('pty:settlePaneSerializer')
   ipcMain.removeHandler('pty:clearPendingPaneSerializer')
   ipcMain.removeHandler('pty:getMainBufferSnapshot')
+  ipcMain.removeHandler('pty:setRendererOutputPaused')
   ipcMain.removeHandler('pty:writeAccepted')
   ipcMain.removeAllListeners('pty:write')
   ipcMain.removeAllListeners('pty:ackColdRestore')
@@ -970,8 +971,15 @@ export function registerPtyHandlers(
     data: string
     startSeq?: number
   }
+  type RendererOutputPauseState = {
+    generation: number
+    dirty: boolean
+    suppressedChars: number
+    lastSuppressedSeq?: number
+  }
 
   const pendingData = new Map<string, PendingPtyData>()
+  const rendererOutputPausedPtys = new Map<string, RendererOutputPauseState>()
   const trustedTerminalHandleEnv = new Set<string>()
   let flushTimer: ReturnType<typeof setTimeout> | null = null
   const PTY_BATCH_INTERVAL_MS = 8
@@ -1031,6 +1039,30 @@ export function registerPtyHandlers(
     return payload
   }
 
+  function markRendererOutputSuppressed(
+    state: RendererOutputPauseState,
+    dataLength: number,
+    startSeq: number | undefined
+  ): void {
+    if (dataLength <= 0) {
+      return
+    }
+    state.dirty = true
+    state.suppressedChars += dataLength
+    if (typeof startSeq === 'number') {
+      state.lastSuppressedSeq = startSeq + dataLength
+    }
+  }
+
+  function suppressPendingRendererOutput(id: string, state: RendererOutputPauseState): void {
+    const pending = pendingData.get(id)
+    if (!pending) {
+      return
+    }
+    pendingData.delete(id)
+    markRendererOutputSuppressed(state, pending.data.length, pending.startSeq)
+  }
+
   function appendPendingPtyData(
     existing: PendingPtyData | undefined,
     data: string,
@@ -1072,6 +1104,16 @@ export function registerPtyHandlers(
       const { data } = pending
       const chunk = data.slice(0, PTY_BATCH_FLUSH_CHUNK_CHARS)
       const remaining = data.slice(PTY_BATCH_FLUSH_CHUNK_CHARS)
+      const paused = rendererOutputPausedPtys.get(id)
+      if (paused) {
+        markRendererOutputSuppressed(paused, chunk.length, pending.startSeq)
+        if (remaining) {
+          const remainingStartSeq =
+            typeof pending.startSeq === 'number' ? pending.startSeq + chunk.length : undefined
+          markRendererOutputSuppressed(paused, remaining.length, remainingStartSeq)
+        }
+        continue
+      }
       if (remaining) {
         const nextPending: PendingPtyData = { data: remaining }
         if (typeof pending.startSeq === 'number') {
@@ -1127,6 +1169,12 @@ export function registerPtyHandlers(
           flushTimer = null
         }
         pendingData.clear()
+        rendererOutputPausedPtys.clear()
+        return
+      }
+      const paused = rendererOutputPausedPtys.get(payload.id)
+      if (paused) {
+        markRendererOutputSuppressed(paused, payload.data.length, startSeq)
         return
       }
       const existing = pendingData.get(payload.id)
@@ -1169,12 +1217,18 @@ export function registerPtyHandlers(
         // tears down the terminal on pty:exit before the batch timer fires.
         const remaining = pendingData.get(payload.id)
         if (remaining) {
-          mainWindow.webContents.send(
-            'pty:data',
-            makePtyDataPayload(payload.id, remaining.data, remaining.startSeq)
-          )
+          const paused = rendererOutputPausedPtys.get(payload.id)
+          if (paused) {
+            markRendererOutputSuppressed(paused, remaining.data.length, remaining.startSeq)
+          } else {
+            mainWindow.webContents.send(
+              'pty:data',
+              makePtyDataPayload(payload.id, remaining.data, remaining.startSeq)
+            )
+          }
           pendingData.delete(payload.id)
         }
+        rendererOutputPausedPtys.delete(payload.id)
         lastInputAtByPty.delete(payload.id)
         interactiveOutputCharsByPty.delete(payload.id)
         mainWindow.webContents.send('pty:exit', payload)
@@ -1572,6 +1626,57 @@ export function registerPtyHandlers(
         return await runtime.serializeMainTerminalBuffer(args.id, { scrollbackRows })
       } catch {
         return null
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'pty:setRendererOutputPaused',
+    (
+      _event,
+      args: { id?: unknown; paused?: unknown; generation?: unknown }
+    ): { dirty: boolean; suppressedChars: number; lastSuppressedSeq?: number } => {
+      if (typeof args?.id !== 'string' || args.id.length === 0) {
+        return { dirty: false, suppressedChars: 0 }
+      }
+      const generation =
+        typeof args.generation === 'number' && Number.isFinite(args.generation)
+          ? Math.max(0, Math.floor(args.generation))
+          : 0
+      if (args.paused === true) {
+        const existing = rendererOutputPausedPtys.get(args.id)
+        const state =
+          existing && existing.generation === generation
+            ? existing
+            : { generation, dirty: false, suppressedChars: 0 }
+        rendererOutputPausedPtys.set(args.id, state)
+        // Why: output can already be batched for this hidden PTY. Move it out
+        // of the renderer queue when the pause begins so it cannot flush later.
+        suppressPendingRendererOutput(args.id, state)
+        clearFlushTimerIfIdle()
+        return {
+          dirty: state.dirty,
+          suppressedChars: state.suppressedChars,
+          ...(typeof state.lastSuppressedSeq === 'number'
+            ? { lastSuppressedSeq: state.lastSuppressedSeq }
+            : {})
+        }
+      }
+
+      const state = rendererOutputPausedPtys.get(args.id)
+      if (!state) {
+        return { dirty: false, suppressedChars: 0 }
+      }
+      if (state.generation > generation) {
+        return { dirty: false, suppressedChars: 0 }
+      }
+      rendererOutputPausedPtys.delete(args.id)
+      return {
+        dirty: state.dirty,
+        suppressedChars: state.suppressedChars,
+        ...(typeof state.lastSuppressedSeq === 'number'
+          ? { lastSuppressedSeq: state.lastSuppressedSeq }
+          : {})
       }
     }
   )

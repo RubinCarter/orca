@@ -697,6 +697,13 @@ const api = {
     ): Promise<{ data: string; cols: number; rows: number; seq?: number } | null> =>
       ipcRenderer.invoke('pty:getMainBufferSnapshot', { id, opts }),
 
+    setRendererOutputPaused: (
+      id: string,
+      paused: boolean,
+      generation: number
+    ): Promise<{ dirty: boolean; suppressedChars: number; lastSuppressedSeq?: number }> =>
+      ipcRenderer.invoke('pty:setRendererOutputPaused', { id, paused, generation }),
+
     /** Check if a PTY's shell has child processes (e.g. a running command).
      *  Returns false for an idle shell prompt. */
     hasChildProcesses: (id: string): Promise<boolean> =>
