@@ -233,7 +233,7 @@ export function RepoStep({
       ) : (
         <button
           type="button"
-          className="group w-full rounded-xl border border-foreground/40 bg-muted/40 p-5 text-left shadow-xs transition hover:border-foreground/60 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60"
+          className="group w-full rounded-xl border border-border bg-muted/30 p-5 text-left transition hover:border-foreground/40 hover:bg-muted/60 focus:border-foreground focus:bg-muted/40 focus:outline-none focus:ring-[3px] focus:ring-foreground/15 disabled:opacity-60"
           disabled={disabled}
           autoFocus={!disabled}
           onClick={onOpenFolder}

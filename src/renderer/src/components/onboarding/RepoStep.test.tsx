@@ -49,7 +49,9 @@ describe('RepoStep', () => {
   it('presents the local-folder card itself as the browse action', () => {
     const html = renderRepoStep()
 
-    expect(html).toContain('border-foreground/40 bg-muted/40')
+    expect(html).toContain('border-border bg-muted/30')
+    expect(html).toContain('focus:border-foreground')
+    expect(html).toContain('focus:ring-[3px] focus:ring-foreground/15')
     expect(html).toContain('autofocus=""')
     expect(html).toContain('Browse for a folder')
     expect(html).toContain('group-hover:translate-x-0.5')
