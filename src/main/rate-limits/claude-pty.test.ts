@@ -15,6 +15,11 @@ vi.mock('node-pty', () => ({
 
 import { fetchViaPty } from './claude-pty'
 
+function decodeEncodedWslBashCommand(command: string): string {
+  const encoded = command.match(/^set -o pipefail; printf %s '([^']+)' \| base64 -d \| bash$/)?.[1]
+  return encoded ? Buffer.from(encoded, 'base64').toString('utf8') : command
+}
+
 function makeDisposable() {
   return { dispose: vi.fn() }
 }
@@ -176,5 +181,36 @@ describe('fetchViaPty', () => {
       },
       error: null
     })
+  })
+
+  it('launches WSL Claude usage through the WSL user shell environment', async () => {
+    const term = makeMockTerm()
+    spawnMock.mockReturnValue(term)
+
+    const resultPromise = fetchViaPty({
+      authPreparation: {
+        configDir: '\\\\wsl.localhost\\Ubuntu\\home\\alice\\.config\\claude',
+        runtime: 'wsl',
+        wslDistro: 'Ubuntu',
+        wslLinuxConfigDir: '/home/alice/.config/claude',
+        envPatch: {},
+        stripAuthEnv: false,
+        provenance: 'wsl:Ubuntu:system'
+      }
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    term.emitExit()
+    await resultPromise
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      'wsl.exe',
+      ['-d', 'Ubuntu', '--', 'bash', '-lc', expect.any(String)],
+      expect.objectContaining({ name: 'xterm-256color' })
+    )
+    const args = spawnMock.mock.calls[0][1] as string[]
+    const script = decodeEncodedWslBashCommand(args[5])
+    expect(script).toContain("export CLAUDE_CONFIG_DIR='/home/alice/.config/claude'")
+    expect(script).toContain('exec claude')
   })
 })

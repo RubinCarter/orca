@@ -7,6 +7,8 @@ import type { ClaudeRuntimeAuthPreparation } from '../claude-accounts/runtime-au
 import { applyClaudeEnvPatch } from '../claude-accounts/environment'
 import { withMacTailscaleDnsHint } from '../network/macos-tailscale-dns-diagnostic'
 import { cleanupHiddenRateLimitPty } from './hidden-pty-cleanup'
+import { buildEncodedWslBashCommand } from '../wsl-bash-command'
+import { buildWslUserShellCommand } from '../wsl-shell-env'
 
 const PTY_TIMEOUT_MS = 25_000
 const MAX_OUTPUT_LENGTH = 100_000 // 100KB buffer limit
@@ -196,7 +198,12 @@ export async function fetchViaPty(options?: {
           '--',
           'bash',
           '-lc',
-          `export CLAUDE_CONFIG_DIR=${shellQuote(wslConfig.linuxConfigDir)}; exec claude`
+          buildEncodedWslBashCommand(
+            buildWslUserShellCommand(
+              wslConfig.distro,
+              `export CLAUDE_CONFIG_DIR=${shellQuote(wslConfig.linuxConfigDir)}\nexec claude`
+            )
+          )
         ]
       : isWin32
         ? ['/c', `"${claudeCommand}"`]

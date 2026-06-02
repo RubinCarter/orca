@@ -21,6 +21,11 @@ vi.mock('node-pty', () => ({
 
 import { fetchCodexRateLimits } from './codex-fetcher'
 
+function decodeEncodedWslBashCommand(command: string): string {
+  const encoded = command.match(/^set -o pipefail; printf %s '([^']+)' \| base64 -d \| bash$/)?.[1]
+  return encoded ? Buffer.from(encoded, 'base64').toString('utf8') : command
+}
+
 function makeDisposable() {
   return { dispose: vi.fn() }
 }
@@ -236,18 +241,15 @@ describe('fetchCodexRateLimits', () => {
 
       expect(childSpawnMock).toHaveBeenCalledWith(
         'wsl.exe',
-        [
-          '-d',
-          'Ubuntu',
-          '--',
-          'bash',
-          '-lc',
-          "export CODEX_HOME='/home/alice/.local/share/orca/account/home'; exec codex '-s' 'read-only' '-a' 'untrusted' 'app-server'"
-        ],
+        expect.arrayContaining(['-d', 'Ubuntu', '--', 'bash', '-lc']),
         expect.objectContaining({
           env: expect.not.objectContaining({ CODEX_HOME: expect.anything() })
         })
       )
+      const rpcArgs = childSpawnMock.mock.calls[0]?.[1] as string[]
+      const rpcScript = decodeEncodedWslBashCommand(rpcArgs[5])
+      expect(rpcScript).toContain("export CODEX_HOME='/home/alice/.local/share/orca/account/home'")
+      expect(rpcScript).toContain("exec codex '-s' 'read-only' '-a' 'untrusted' 'app-server'")
     } finally {
       Object.defineProperty(process, 'platform', {
         configurable: true,
@@ -287,18 +289,15 @@ describe('fetchCodexRateLimits', () => {
 
       expect(ptySpawnMock).toHaveBeenCalledWith(
         'wsl.exe',
-        [
-          '-d',
-          'Ubuntu',
-          '--',
-          'bash',
-          '-lc',
-          "export CODEX_HOME='/home/alice/.local/share/orca/account/home'; exec codex "
-        ],
+        expect.arrayContaining(['-d', 'Ubuntu', '--', 'bash', '-lc']),
         expect.objectContaining({
           env: expect.not.objectContaining({ CODEX_HOME: expect.anything() })
         })
       )
+      const ptyArgs = ptySpawnMock.mock.calls[0]?.[1] as string[]
+      const ptyScript = decodeEncodedWslBashCommand(ptyArgs[5])
+      expect(ptyScript).toContain("export CODEX_HOME='/home/alice/.local/share/orca/account/home'")
+      expect(ptyScript).toContain('exec codex ')
 
       const onPtyData = ptyHandlers.onData
       if (!onPtyData) {

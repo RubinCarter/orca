@@ -21,6 +21,7 @@ import type { RateLimitService } from '../rate-limits/service'
 import { parseWslUncPath } from '../../shared/wsl-paths'
 import { toWindowsWslPath } from '../wsl'
 import { buildEncodedWslBashCommand } from '../wsl-bash-command'
+import { buildWslUserShellCommand } from '../wsl-shell-env'
 import {
   getCodexSelectionTargetForAccount,
   getSelectedCodexAccountIdForTarget,
@@ -795,7 +796,12 @@ export class CodexAccountService {
               '--',
               'bash',
               '-lc',
-              `export CODEX_HOME=${shellQuote(wslInfo.linuxPath)}; exec codex login`
+              buildEncodedWslBashCommand(
+                buildWslUserShellCommand(
+                  wslInfo.distro,
+                  `export CODEX_HOME=${shellQuote(wslInfo.linuxPath)}\nexec codex login`
+                )
+              )
             ],
             env: process.env,
             codexCommand: 'codex'
@@ -914,7 +920,9 @@ export class CodexAccountService {
           '--',
           'bash',
           '-lc',
-          buildEncodedWslBashCommand('command -v codex >/dev/null 2>&1')
+          buildEncodedWslBashCommand(
+            buildWslUserShellCommand(wslInfo.distro, 'command -v codex >/dev/null 2>&1')
+          )
         ],
         { encoding: 'utf-8', timeout: 5000 }
       )

@@ -68,6 +68,11 @@ import {
   runPreflightCheck
 } from './preflight'
 
+function decodeEncodedWslBashCommand(command: string): string {
+  const encoded = command.match(/^set -o pipefail; printf %s '([^']+)' \| base64 -d \| bash$/)?.[1]
+  return encoded ? Buffer.from(encoded, 'base64').toString('utf8') : command
+}
+
 type HandlerMap = Record<string, (_event?: unknown, args?: unknown) => Promise<unknown>>
 
 describe('preflight', () => {
@@ -265,7 +270,7 @@ describe('preflight', () => {
         throw Object.assign(new Error('spawn glab ENOENT'), { code: 'ENOENT' })
       }
       if (command === 'wsl.exe') {
-        const script = String(args[5])
+        const script = decodeEncodedWslBashCommand(String(args[5]))
         if (script === "'gh' --version") {
           return { stdout: 'gh version 2.0.0\n' }
         }
@@ -280,16 +285,15 @@ describe('preflight', () => {
     const status = await runPreflightCheck(false, { wslDistro: 'Ubuntu' })
 
     expect(status.gh).toEqual({ installed: true, authenticated: true })
-    expect(execFileAsyncMock).toHaveBeenCalledWith(
-      'wsl.exe',
-      ['-d', 'Ubuntu', '--', 'bash', '-lc', "'gh' --version"],
-      { encoding: 'utf-8', timeout: 5000 }
-    )
-    expect(execFileAsyncMock).toHaveBeenCalledWith(
-      'wsl.exe',
-      ['-d', 'Ubuntu', '--', 'bash', '-lc', "'gh' auth status"],
-      { encoding: 'utf-8', timeout: 5000 }
-    )
+    const wslCalls = execFileAsyncMock.mock.calls.filter(([command]) => command === 'wsl.exe')
+    expect(
+      wslCalls.some(([, args]) => decodeEncodedWslBashCommand(String(args[5])) === "'gh' --version")
+    ).toBe(true)
+    expect(
+      wslCalls.some(
+        ([, args]) => decodeEncodedWslBashCommand(String(args[5])) === "'gh' auth status"
+      )
+    ).toBe(true)
   })
 
   it('times out hung WSL preflight probes', async () => {
@@ -306,10 +310,18 @@ describe('preflight', () => {
         if (command === 'gh' || command === 'glab') {
           return Promise.reject(Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }))
         }
-        if (command === 'wsl.exe' && Array.isArray(args) && args.at(-1) === "'gh' --version") {
+        if (
+          command === 'wsl.exe' &&
+          Array.isArray(args) &&
+          decodeEncodedWslBashCommand(String(args.at(-1))) === "'gh' --version"
+        ) {
           return new Promise(() => {})
         }
-        if (command === 'wsl.exe' && Array.isArray(args) && args.at(-1) === "'glab' --version") {
+        if (
+          command === 'wsl.exe' &&
+          Array.isArray(args) &&
+          decodeEncodedWslBashCommand(String(args.at(-1))) === "'glab' --version"
+        ) {
           return Promise.reject(Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }))
         }
         throw new Error(`unexpected command ${String(command)}`)
@@ -509,20 +521,18 @@ describe('preflight', () => {
       value: 'win32'
     })
     execFileAsyncMock.mockImplementation(async (command, args) => {
-      if (command === 'where') {
-        throw new Error('not found')
-      }
       if (command !== 'wsl.exe') {
         throw new Error(`unexpected command ${String(command)}`)
       }
-      const script = String(args[5])
-      if (script === "command -v 'claude'") {
-        return { stdout: '/home/test/.local/bin/claude\n' }
+      const script = decodeEncodedWslBashCommand(String(args[5]))
+      if (script.includes('ORCA_AGENT_COMMANDS') && script.includes('\nclaude\n')) {
+        return { stdout: 'claude\n' }
       }
       throw new Error('not found')
     })
 
     await expect(detectInstalledAgents({ wslDistro: 'Ubuntu' })).resolves.toEqual(['claude'])
+    expect(execFileAsyncMock).toHaveBeenCalledTimes(1)
   })
 
   it('detects agents from the default WSL distro when requested', async () => {
@@ -534,9 +544,9 @@ describe('preflight', () => {
       if (command !== 'wsl.exe') {
         throw new Error(`unexpected command ${String(command)}`)
       }
-      const script = String(args[3])
-      if (script === "command -v 'codex'") {
-        return { stdout: '/home/test/.local/bin/codex\n' }
+      const script = decodeEncodedWslBashCommand(String(args[3]))
+      if (script.includes('ORCA_AGENT_COMMANDS') && script.includes('\ncodex\n')) {
+        return { stdout: 'codex\n' }
       }
       throw new Error('not found')
     })
@@ -544,9 +554,32 @@ describe('preflight', () => {
     await expect(detectInstalledAgents({ wslDefault: true })).resolves.toEqual(['codex'])
     expect(execFileAsyncMock).toHaveBeenCalledWith(
       'wsl.exe',
-      ['--', 'bash', '-lc', "command -v 'codex'"],
+      expect.arrayContaining(['--', 'bash', '-lc', expect.any(String)]),
       { encoding: 'utf-8', timeout: 5000 }
     )
+    expect(execFileAsyncMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('batches WSL agent detection and deduplicates aliases by agent id', async () => {
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: 'win32'
+    })
+    execFileAsyncMock.mockImplementation(async (command, args) => {
+      if (command !== 'wsl.exe') {
+        throw new Error(`unexpected command ${String(command)}`)
+      }
+      const script = decodeEncodedWslBashCommand(String(args[5]))
+      expect(script).toContain('while IFS= read -r cmd')
+      expect(script).toContain('command -v -- "$cmd"')
+      expect(script).toContain('/*) printf')
+      expect(script).toContain('\nvibe\n')
+      expect(script).toContain('\nmistral-vibe\n')
+      return { stdout: 'vibe\nmistral-vibe\n' }
+    })
+
+    await expect(detectInstalledAgents({ wslDistro: 'Ubuntu' })).resolves.toEqual(['mistral-vibe'])
+    expect(execFileAsyncMock).toHaveBeenCalledTimes(1)
   })
 
   it('refreshes via preflight:refreshAgents by re-hydrating PATH before re-detecting', async () => {

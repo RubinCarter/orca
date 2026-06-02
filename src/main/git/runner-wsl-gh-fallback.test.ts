@@ -22,6 +22,11 @@ vi.mock('../wsl', async (importOriginal) => ({
 
 import { ghExecFileAsync, glabExecFileAsync } from './runner'
 
+function decodeEncodedWslBashCommand(command: string): string {
+  const encoded = command.match(/^set -o pipefail; printf %s '([^']+)' \| base64 -d \| bash$/)?.[1]
+  return encoded ? Buffer.from(encoded, 'base64').toString('utf8') : command
+}
+
 describe('ghExecFileAsync WSL fallback', () => {
   const originalPlatform = process.platform
 
@@ -68,16 +73,13 @@ describe('ghExecFileAsync WSL fallback', () => {
     expect(execFileMock).toHaveBeenNthCalledWith(
       1,
       'wsl.exe',
-      [
-        '-d',
-        'Ubuntu',
-        '--',
-        'bash',
-        '-c',
-        "cd '/home/jinwoo/stably/noqa' && gh 'issue' 'list' '--repo' 'stablyhq/noqa' '--json' 'number,title'"
-      ],
+      ['-d', 'Ubuntu', '--', 'bash', '-lc', expect.any(String)],
       expect.objectContaining({ cwd: undefined }),
       expect.any(Function)
+    )
+    const firstWslArgs = execFileMock.mock.calls[0][1] as string[]
+    expect(decodeEncodedWslBashCommand(firstWslArgs[5])).toBe(
+      "cd '/home/jinwoo/stably/noqa' && gh 'issue' 'list' '--repo' 'stablyhq/noqa' '--json' 'number,title'"
     )
     expect(execFileMock).toHaveBeenNthCalledWith(
       2,
@@ -285,10 +287,12 @@ describe('ghExecFileAsync WSL fallback', () => {
     expect(execFileMock).toHaveBeenNthCalledWith(
       2,
       'wsl.exe',
-      ['-d', 'Ubuntu', '--', 'bash', '-c', "gh 'api' 'rate_limit'"],
+      ['-d', 'Ubuntu', '--', 'bash', '-lc', expect.any(String)],
       expect.objectContaining({ cwd: undefined }),
       expect.any(Function)
     )
+    const secondWslArgs = execFileMock.mock.calls[1][1] as string[]
+    expect(decodeEncodedWslBashCommand(secondWslArgs[5])).toBe("gh 'api' 'rate_limit'")
   })
 
   it('does not retry non-idempotent glab transient failures', async () => {
@@ -347,10 +351,12 @@ describe('ghExecFileAsync WSL fallback', () => {
     expect(execFileMock).toHaveBeenNthCalledWith(
       2,
       'wsl.exe',
-      ['-d', 'Ubuntu', '--', 'bash', '-c', "glab 'api' 'projects'"],
+      ['-d', 'Ubuntu', '--', 'bash', '-lc', expect.any(String)],
       expect.objectContaining({ cwd: undefined }),
       expect.any(Function)
     )
+    const glabWslArgs = execFileMock.mock.calls[1][1] as string[]
+    expect(decodeEncodedWslBashCommand(glabWslArgs[5])).toBe("glab 'api' 'projects'")
   })
 
   it('still retries idempotent glab transient failures', async () => {

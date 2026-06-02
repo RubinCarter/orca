@@ -9,6 +9,8 @@ import { getCmdExePath, getSpawnArgsForWindows } from '../win32-utils'
 import { cleanupHiddenRateLimitPty } from './hidden-pty-cleanup'
 import { parseWslUncPath } from '../../shared/wsl-paths'
 import { extractCodexAuthError, isCodexAuthError } from '../../shared/codex-auth-errors'
+import { buildWslUserShellCommand } from '../wsl-shell-env'
+import { buildEncodedWslBashCommand } from '../wsl-bash-command'
 
 const RPC_TIMEOUT_MS = 10_000
 const WSL_RPC_TIMEOUT_MS = 25_000
@@ -68,7 +70,14 @@ function buildWslCodexCommand(
   ].join('; ')
   return {
     command: 'wsl.exe',
-    args: ['-d', wslInfo.distro, '--', 'bash', '-lc', script]
+    args: [
+      '-d',
+      wslInfo.distro,
+      '--',
+      'bash',
+      '-lc',
+      buildEncodedWslBashCommand(buildWslUserShellCommand(wslInfo.distro, script))
+    ]
   }
 }
 

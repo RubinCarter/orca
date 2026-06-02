@@ -20,6 +20,8 @@ import {
 import { withGitSpan } from '../observability/instrumentation'
 import { getDefaultWslDistro, parseWslPath, toWindowsWslPath, type WslPathInfo } from '../wsl'
 import { getSpawnArgsForWindows, isWindowsBatchScript, resolveWindowsCommand } from '../win32-utils'
+import { buildEncodedWslBashCommand } from '../wsl-bash-command'
+import { buildWslUserShellCommand } from '../wsl-shell-env'
 
 // ─── Core resolution ────────────────────────────────────────────────
 
@@ -196,10 +198,11 @@ function resolveCommand(
   const shellCmd = cwdWsl
     ? `cd '${cwdWsl.linuxPath.replace(/'/g, "'\\''")}' && ${command} ${escapedArgs.join(' ')}`
     : `${command} ${escapedArgs.join(' ')}`
+  const wrappedShellCmd = buildEncodedWslBashCommand(buildWslUserShellCommand(wsl.distro, shellCmd))
 
   return {
     binary: 'wsl.exe',
-    args: ['-d', wsl.distro, '--', 'bash', '-c', shellCmd],
+    args: ['-d', wsl.distro, '--', 'bash', '-lc', wrappedShellCmd],
     // Why: cwd is set to undefined because wsl.exe handles directory switching
     // via the cd inside bash -c. Setting a UNC cwd on the Node process would
     // be redundant and can cause issues with some Node internals.

@@ -10,6 +10,9 @@ import { getBitbucketAuthStatus } from '../bitbucket/client'
 import { getGiteaAuthStatus } from '../gitea/client'
 import { _resetKnownHostsCache } from '../gitlab/gl-utils'
 import { getActiveMultiplexer } from './ssh'
+import { buildEncodedWslBashCommand } from '../wsl-bash-command'
+import { buildWslUserShellCommand } from '../wsl-shell-env'
+import { detectKnownAgentsOnWslPath } from './preflight-wsl-agent-detection'
 const execFileAsync = promisify(execFile)
 const PREFLIGHT_COMMAND_TIMEOUT_MS = 5000
 
@@ -105,10 +108,20 @@ async function execCommandInWsl(
   command: string
 ): Promise<{ stdout: string; stderr: string }> {
   const distroArgs = target.distro ? ['-d', target.distro] : []
-  const commandPromise = execFileAsync('wsl.exe', [...distroArgs, '--', 'bash', '-lc', command], {
-    encoding: 'utf-8',
-    timeout: PREFLIGHT_COMMAND_TIMEOUT_MS
-  }) as Promise<{ stdout: string; stderr: string }>
+  const commandPromise = execFileAsync(
+    'wsl.exe',
+    [
+      ...distroArgs,
+      '--',
+      'bash',
+      '-lc',
+      buildEncodedWslBashCommand(buildWslUserShellCommand(target.distro, command))
+    ],
+    {
+      encoding: 'utf-8',
+      timeout: PREFLIGHT_COMMAND_TIMEOUT_MS
+    }
+  ) as Promise<{ stdout: string; stderr: string }>
   return withPreflightTimeout('wsl.exe', commandPromise)
 }
 
@@ -184,10 +197,13 @@ async function detectCommandRuntime(
 
 export async function detectInstalledAgents(context?: PreflightRuntimeContext): Promise<string[]> {
   const wslTarget = getPreflightWslTarget(context)
+  if (wslTarget) {
+    return detectKnownAgentsOnWslPath(KNOWN_AGENT_COMMANDS, wslTarget, execCommandInWsl)
+  }
   const checks = await Promise.all(
     KNOWN_AGENT_COMMANDS.map(async ({ id, cmd }) => ({
       id,
-      installed: await isCommandOnPath(cmd, wslTarget ?? undefined)
+      installed: await isCommandOnPath(cmd)
     }))
   )
   return uniqueAgentIds(checks.filter((c) => c.installed).map((c) => c.id))

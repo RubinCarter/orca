@@ -697,6 +697,15 @@ describe('CodexAccountService config sync', () => {
     const execFileSyncMock = vi.fn((_command: string, args: string[]) => {
       const script = decodeEncodedWslBashCommand(String(args.at(-1)))
       expect(args.slice(0, 2)).toEqual(['-d', 'Debian'])
+      if (script.includes("bash -lic 'env -0'")) {
+        return Buffer.from(
+          [
+            'PATH=/home/alice/.nvm/versions/node/v20.19.5/bin:/usr/local/bin:/usr/bin',
+            'NVM_DIR=/home/alice/.nvm',
+            ''
+          ].join('\0')
+        )
+      }
       if (script.includes('WSL_DISTRO_NAME')) {
         return 'Debian\n/home/alice\n'
       }
@@ -709,14 +718,13 @@ describe('CodexAccountService config sync', () => {
     })
     const spawnMock = vi.fn((command: string, args: string[]) => {
       expect(command).toBe('wsl.exe')
-      expect(args).toEqual([
-        '-d',
-        'Debian',
-        '--',
-        'bash',
-        '-lc',
-        `export CODEX_HOME='${wslLinuxHomePath}'; exec codex login`
-      ])
+      expect(args.slice(0, 5)).toEqual(['-d', 'Debian', '--', 'bash', '-lc'])
+      const script = decodeEncodedWslBashCommand(args[5])
+      expect(script).toContain(
+        "export PATH='/home/alice/.nvm/versions/node/v20.19.5/bin:/usr/local/bin:/usr/bin'"
+      )
+      expect(script).toContain(`export CODEX_HOME='${wslLinuxHomePath}'`)
+      expect(script).toContain('exec codex login')
       expect(readFileSync(join(wslManagedHomePath, 'config.toml'), 'utf-8')).toBe(
         'sandbox_mode = "danger-full-access"\n'
       )
@@ -893,14 +901,10 @@ describe('CodexAccountService config sync', () => {
     })
     const spawnMock = vi.fn((command: string, args: string[]) => {
       expect(command).toBe('wsl.exe')
-      expect(args).toEqual([
-        '-d',
-        'Ubuntu',
-        '--',
-        'bash',
-        '-lc',
-        `export CODEX_HOME='${wslLinuxHomePath}'; exec codex login`
-      ])
+      expect(args.slice(0, 5)).toEqual(['-d', 'Ubuntu', '--', 'bash', '-lc'])
+      const script = decodeEncodedWslBashCommand(args[5])
+      expect(script).toContain(`export CODEX_HOME='${wslLinuxHomePath}'`)
+      expect(script).toContain('exec codex login')
       const child = new EventEmitter() as EventEmitter & {
         stdout: PassThrough
         stderr: PassThrough
@@ -1008,14 +1012,10 @@ describe('CodexAccountService config sync', () => {
     })
     const spawnMock = vi.fn((command: string, args: string[]) => {
       expect(command).toBe('wsl.exe')
-      expect(args).toEqual([
-        '-d',
-        'Ubuntu',
-        '--',
-        'bash',
-        '-lc',
-        `export CODEX_HOME='${wslLinuxHomePath}'; exec codex login`
-      ])
+      expect(args.slice(0, 5)).toEqual(['-d', 'Ubuntu', '--', 'bash', '-lc'])
+      const script = decodeEncodedWslBashCommand(args[5])
+      expect(script).toContain(`export CODEX_HOME='${wslLinuxHomePath}'`)
+      expect(script).toContain('exec codex login')
       expect(readFileSync(join(wslManagedHomePath, '.orca-managed-home'), 'utf-8')).toBe(
         'account-1\n'
       )
