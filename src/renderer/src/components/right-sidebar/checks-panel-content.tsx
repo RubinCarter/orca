@@ -12,6 +12,7 @@ import {
   Copy,
   Check,
   MessageSquare,
+  Plus,
   ChevronDown,
   ChevronRight,
   Sparkles,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react'
 import { ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Accordion,
   AccordionContent,
@@ -1564,34 +1566,20 @@ export function PRCommentsList({
     setIsAddingComment(false)
   }, [])
 
-  const renderAddCommentSurface = (empty: boolean): React.JSX.Element => (
+  const renderAddCommentComposer = (empty: boolean): React.JSX.Element => (
     <div
       ref={addCommentSurfaceRef}
       className={cn(empty ? 'px-3 py-2' : 'border-t border-border px-3 py-2')}
     >
-      {isAddingComment ? (
-        <RightPanelCommentComposer
-          placeholder={empty ? 'Start conversation...' : 'Add a PR comment'}
-          submitLabel="Comment"
-          autoFocus
-          disabled={commentsDisabled}
-          disabledReason={commentsDisabledReason}
-          onCancel={cancelAddComment}
-          onSubmit={onAddComment ?? (async () => ({ ok: false, error: 'Commenting unavailable.' }))}
-        />
-      ) : (
-        // Why: the empty comments state should be a single composer affordance;
-        // duplicating "no comments" copy or the header icon makes the panel noisy.
-        <button
-          type="button"
-          disabled={commentsDisabled}
-          title={commentsDisabled ? commentsDisabledReason : undefined}
-          className="flex h-10 w-full min-w-0 items-center rounded-md border border-input bg-background px-3 text-left text-[12px] text-muted-foreground shadow-xs transition-colors hover:border-ring/50 hover:bg-accent/30 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={startAddComment}
-        >
-          <span className="truncate">{empty ? 'Start conversation...' : 'Add a comment...'}</span>
-        </button>
-      )}
+      <RightPanelCommentComposer
+        placeholder={empty ? 'Start conversation...' : 'Add a PR comment'}
+        submitLabel="Send"
+        autoFocus
+        disabled={commentsDisabled}
+        disabledReason={commentsDisabledReason}
+        onCancel={cancelAddComment}
+        onSubmit={onAddComment ?? (async () => ({ ok: false, error: 'Commenting unavailable.' }))}
+      />
     </div>
   )
 
@@ -1599,11 +1587,36 @@ export function PRCommentsList({
     <div className="border-t border-border">
       {/* Header */}
       <div className="border-b border-border px-3 py-2">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <MessageSquare className="size-3.5 text-muted-foreground" />
           <span className="text-[11px] font-medium text-foreground">Comments</span>
           {comments.length > 0 && (
             <span className="text-[10px] text-muted-foreground">{comments.length}</span>
+          )}
+          {onAddComment && !isAddingComment && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={comments.length === 0 ? 'Start conversation' : 'Add comment'}
+                  disabled={commentsDisabled}
+                  title={commentsDisabled ? commentsDisabledReason : undefined}
+                  className="-mr-1 ml-auto text-muted-foreground hover:text-foreground"
+                  onClick={startAddComment}
+                >
+                  <Plus className="size-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={4}>
+                {commentsDisabled && commentsDisabledReason
+                  ? commentsDisabledReason
+                  : comments.length === 0
+                    ? 'Start conversation'
+                    : 'Add comment'}
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
         {comments.length > 0 && (
@@ -1640,12 +1653,14 @@ export function PRCommentsList({
         <div className="flex items-center justify-center py-6">
           <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
         </div>
-      ) : comments.length === 0 && onAddComment ? (
-        renderAddCommentSurface(true)
+      ) : comments.length === 0 && isAddingComment && onAddComment ? (
+        renderAddCommentComposer(true)
       ) : comments.length === 0 ? (
-        <div className="flex items-center justify-center py-5 text-[11px] text-muted-foreground">
-          No comments
-        </div>
+        !onAddComment && (
+          <div className="flex items-center justify-center py-5 text-[11px] text-muted-foreground">
+            No comments
+          </div>
+        )
       ) : visibleComments.length === 0 ? (
         <div className="flex items-center justify-center py-5 text-[11px] text-muted-foreground">
           {getPRCommentAudienceEmptyLabel(commentFilter)}
@@ -1684,7 +1699,7 @@ export function PRCommentsList({
           })}
         </div>
       )}
-      {onAddComment && comments.length > 0 && renderAddCommentSurface(false)}
+      {onAddComment && comments.length > 0 && isAddingComment && renderAddCommentComposer(false)}
     </div>
   )
 }

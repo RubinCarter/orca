@@ -1,6 +1,7 @@
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type { PRCheckDetail, PRComment, PRInfo } from '../../../../shared/types'
 import {
   CheckJobLogTail,
@@ -10,6 +11,10 @@ import {
   PRCommentsList,
   PRTriageStrip
 } from './checks-panel-content'
+
+function renderWithTooltips(element: React.ReactElement): string {
+  return renderToStaticMarkup(React.createElement(TooltipProvider, null, element))
+}
 
 function makePR(overrides: Partial<PRInfo> = {}): PRInfo {
   return {
@@ -102,7 +107,7 @@ describe('MergeConflictNotice', () => {
 })
 
 describe('PRCommentsList', () => {
-  it('places the collapsed add-comment action after existing comments', () => {
+  it('places the collapsed add-comment action in the comments header', () => {
     const comments: PRComment[] = [
       {
         id: 1,
@@ -114,7 +119,7 @@ describe('PRCommentsList', () => {
       }
     ]
 
-    const markup = renderToStaticMarkup(
+    const markup = renderWithTooltips(
       React.createElement(PRCommentsList, {
         comments,
         commentsLoading: false,
@@ -122,14 +127,16 @@ describe('PRCommentsList', () => {
       })
     )
 
-    expect(markup.indexOf('Existing review context')).toBeLessThan(
-      markup.indexOf('Add a comment...')
+    expect(markup.indexOf('aria-label="Add comment"')).toBeLessThan(
+      markup.indexOf('Existing review context')
     )
+    expect(markup).toContain('lucide-plus')
+    expect(markup).not.toContain('Add a comment...')
     expect(markup).not.toContain('Add a PR comment')
   })
 
-  it('uses the collapsed composer as the empty comments state', () => {
-    const markup = renderToStaticMarkup(
+  it('uses the header plus action as the empty comments state', () => {
+    const markup = renderWithTooltips(
       React.createElement(PRCommentsList, {
         comments: [],
         commentsLoading: false,
@@ -137,7 +144,9 @@ describe('PRCommentsList', () => {
       })
     )
 
-    expect(markup).toContain('Start conversation...')
+    expect(markup).toContain('aria-label="Start conversation"')
+    expect(markup).toContain('lucide-plus')
+    expect(markup).not.toContain('Start conversation...')
     expect(markup).not.toContain('No comments yet')
     expect(markup).not.toContain('Add a comment')
     expect((markup.match(/lucide-message-square/g) ?? []).length).toBe(1)
