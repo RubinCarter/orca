@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'fs'
-import { join } from 'path'
+import { createHash } from 'node:crypto'
+import { dirname, join } from 'path'
 import { writeFileAtomically } from '../codex-accounts/fs-utils'
 import { getOrcaManagedCodexHomePath, getSystemCodexHomePath } from './codex-home-paths'
 
@@ -9,6 +10,37 @@ function getRuntimeCodexConfigTomlPath(): string {
 
 function getSystemCodexConfigTomlPath(): string {
   return join(getSystemCodexHomePath(), 'config.toml')
+}
+
+function getConfigSyncStatePath(): string {
+  return join(dirname(getOrcaManagedCodexHomePath()), 'config-sync-state.json')
+}
+
+function computeSystemConfigDigest(systemConfig: string): string {
+  return `sha256:${createHash('sha256').update(systemConfig).digest('hex')}`
+}
+
+function readLastMirroredSystemConfigDigest(): string | null {
+  try {
+    const parsed = JSON.parse(readFileSync(getConfigSyncStatePath(), 'utf-8')) as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const digest = (parsed as Record<string, unknown>).lastMirroredSystemConfigDigest
+      if (typeof digest === 'string' && /^sha256:[a-f0-9]{64}$/.test(digest)) {
+        return digest
+      }
+    }
+  } catch {
+    /* missing or invalid sync state is treated as no baseline */
+  }
+  return null
+}
+
+function writeLastMirroredSystemConfigDigest(digest: string): void {
+  writeFileAtomically(
+    getConfigSyncStatePath(),
+    `${JSON.stringify({ lastMirroredSystemConfigDigest: digest }, null, 2)}\n`,
+    { mode: 0o600 }
+  )
 }
 
 export function syncSystemConfigIntoManagedCodexHome(): void {
@@ -31,10 +63,23 @@ function syncSystemConfigIntoManagedCodexHomeUnsafe(): void {
   const systemConfig = normalizeDeprecatedCodexHookFeatureFlag(
     systemConfigExists ? readFileSync(systemConfigPath, 'utf-8') : ''
   )
+  const systemConfigDigest = computeSystemConfigDigest(systemConfig)
   if (!runtimeConfigExists) {
     // Why: trust blocks reference a hooks.json path, so system-home hook trust
     // entries are not valid in Orca's runtime CODEX_HOME until install remaps them.
     writeFileAtomically(runtimeConfigPath, stripRuntimeOwnedTomlSections(systemConfig))
+    writeLastMirroredSystemConfigDigest(systemConfigDigest)
+    return
+  }
+
+  // Why: top-level Codex preferences (model, model_reasoning_effort, fast_mode,
+  // …) are written by the Codex TUI directly into the runtime config.toml. The
+  // merge below replaces the runtime preamble with the system preamble, so
+  // re-running it when the system config hasn't changed clobbers user edits on
+  // every launch / rate-limit fetch. Skip the merge when the system content is
+  // identical to the last-mirrored snapshot.
+  const lastMirroredDigest = readLastMirroredSystemConfigDigest()
+  if (lastMirroredDigest === systemConfigDigest) {
     return
   }
 
@@ -43,6 +88,7 @@ function syncSystemConfigIntoManagedCodexHomeUnsafe(): void {
   if (mergedConfig !== runtimeConfig) {
     writeFileAtomically(runtimeConfigPath, mergedConfig)
   }
+  writeLastMirroredSystemConfigDigest(systemConfigDigest)
 }
 
 function normalizeDeprecatedCodexHookFeatureFlag(config: string): string {
