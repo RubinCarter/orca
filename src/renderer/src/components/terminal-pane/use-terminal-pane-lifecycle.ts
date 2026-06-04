@@ -29,7 +29,7 @@ import { resolveTerminalFontWeights } from '../../../../shared/terminal-fonts'
 import {
   buildFontFamily,
   normalizeTerminalLayoutSnapshot,
-  RESET_KITTY_KEYBOARD_PROTOCOL,
+  RESET_TERMINAL_INTERACTIVE_MODES,
   replayTerminalLayout,
   restoreScrollbackBuffers
 } from './layout-serialization'
@@ -629,9 +629,9 @@ export function useTerminalPaneLifecycle({
               // ETX must stay transport-agnostic through the existing onData path.
               pendingTerminalInterruptKeyup = true
               pane.terminal.input(TERMINAL_INTERRUPT_INPUT)
-              // Why: CLIs such as Codex can die on SIGINT before restoring
-              // xterm's renderer-side Kitty flags, leaving the shell corrupted.
-              pane.terminal.write(RESET_KITTY_KEYBOARD_PROTOCOL)
+              // Why: TUIs can die on SIGINT before restoring renderer-side
+              // modes, leaving mouse/keyboard reports echoed at the shell.
+              pane.terminal.write(RESET_TERMINAL_INTERACTIVE_MODES)
             } else {
               pendingTerminalInterruptKeyup = false
             }

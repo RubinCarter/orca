@@ -3,6 +3,7 @@ import type { PaneManager, ManagedPane } from '@/lib/pane-manager/pane-manager'
 import type { IDisposable } from '@xterm/xterm'
 import {
   detectAgentStatusFromTitle,
+  getAgentLabel,
   isGeminiTerminalTitle,
   isClaudeAgent
 } from '@/lib/agent-status'
@@ -546,6 +547,37 @@ export function connectPanePty(
       titleOnlyInterruptTimer = null
     }
   }
+  const titlesDescribeSameWorkingAgent = (
+    baselineTitle: string | null | undefined,
+    currentTitle: string | null | undefined
+  ): boolean => {
+    if (!baselineTitle || !currentTitle) {
+      return false
+    }
+    if (
+      detectAgentStatusFromTitle(baselineTitle) !== 'working' ||
+      detectAgentStatusFromTitle(currentTitle) !== 'working'
+    ) {
+      return false
+    }
+    const baselineLabel = getAgentLabel(baselineTitle)
+    return Boolean(baselineLabel) && baselineLabel === getAgentLabel(currentTitle)
+  }
+  const titleOnlyWorkingAgentHasExited = async (): Promise<boolean> => {
+    const state = useAppStore.getState()
+    const ptyId = (state.tabsByWorktree[deps.worktreeId] ?? []).find(
+      (entry) => entry.id === deps.tabId
+    )?.ptyId
+    if (!ptyId) {
+      return true
+    }
+    try {
+      const process = await inspectRuntimeTerminalProcess(state.settings, ptyId)
+      return !process.foregroundProcess && !process.hasChildProcesses
+    } catch {
+      return false
+    }
+  }
   const observeTitleOnlyInterrupt = (): void => {
     const state = useAppStore.getState()
     if (state.agentStatusByPaneKey[cacheKey]) {
@@ -561,24 +593,31 @@ export function connectPanePty(
     }
     clearTitleOnlyInterruptTimer()
     titleOnlyInterruptTimer = setTimeout(() => {
-      titleOnlyInterruptTimer = null
-      if (useAppStore.getState().agentStatusByPaneKey[cacheKey]) {
-        return
-      }
-      const currentState = useAppStore.getState()
-      const currentRuntimeTitle = currentState.runtimePaneTitlesByTabId?.[deps.tabId]?.[pane.id]
-      const currentTabTitle = (currentState.tabsByWorktree[deps.worktreeId] ?? []).find(
-        (entry) => entry.id === deps.tabId
-      )?.title
-      const currentTitle = currentRuntimeTitle ?? currentTabTitle
-      if (
-        currentTitle === baselineTitle &&
-        detectAgentStatusFromTitle(currentTitle ?? '') === 'working'
-      ) {
-        // Why: title-only agents such as Pi can miss their own idle title after
-        // Ctrl+C. Clear only an unchanged, acknowledged working title.
-        clearInferredInterruptWorkingTitle()
-      }
+      void (async () => {
+        titleOnlyInterruptTimer = null
+        if (useAppStore.getState().agentStatusByPaneKey[cacheKey]) {
+          return
+        }
+        const currentState = useAppStore.getState()
+        const currentRuntimeTitle = currentState.runtimePaneTitlesByTabId?.[deps.tabId]?.[pane.id]
+        const currentTabTitle = (currentState.tabsByWorktree[deps.worktreeId] ?? []).find(
+          (entry) => entry.id === deps.tabId
+        )?.title
+        const currentTitle = currentRuntimeTitle ?? currentTabTitle
+        const titleUnchanged = currentTitle === baselineTitle
+        const sameWorkingAgent = titlesDescribeSameWorkingAgent(baselineTitle, currentTitle)
+        if (titleUnchanged && detectAgentStatusFromTitle(currentTitle ?? '') === 'working') {
+          // Why: title-only agents such as Pi can miss their own idle title after
+          // Ctrl+C. Clear only an unchanged, acknowledged working title.
+          clearInferredInterruptWorkingTitle()
+          return
+        }
+        if (sameWorkingAgent && (await titleOnlyWorkingAgentHasExited())) {
+          // Why: spinner titles change every frame, so exact-title comparison
+          // misses OpenCode/Codex exits that leave only a stale working spinner.
+          clearInferredInterruptWorkingTitle()
+        }
+      })()
     }, AGENT_INTERRUPT_SETTLE_MS)
   }
   const clearReattachIdleAgentCursorResetTimer = (): void => {

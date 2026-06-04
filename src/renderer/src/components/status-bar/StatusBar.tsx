@@ -1523,6 +1523,7 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
 
   const [containerWidth, setContainerWidth] = useState(900)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
+  const resizeObserverRafRef = useRef<number | null>(null)
 
   useEffect(() => {
     mountedRef.current = true
@@ -1550,16 +1551,33 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
       resizeObserverRef.current.disconnect()
       resizeObserverRef.current = null
     }
+    if (resizeObserverRafRef.current !== null) {
+      cancelAnimationFrame(resizeObserverRafRef.current)
+      resizeObserverRafRef.current = null
+    }
     if (node) {
       containerRef.current = node
+      const updateWidth = (width: number): void => {
+        setContainerWidth((current) => (current === width ? current : width))
+      }
       const observer = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          setContainerWidth(entry.contentRect.width)
+        const width = entries.at(-1)?.contentRect.width
+        if (typeof width !== 'number') {
+          return
         }
+        if (resizeObserverRafRef.current !== null) {
+          return
+        }
+        // Why: defer width state writes out of ResizeObserver delivery so
+        // status-bar layout cannot participate in Chromium resize loops.
+        resizeObserverRafRef.current = requestAnimationFrame(() => {
+          resizeObserverRafRef.current = null
+          updateWidth(width)
+        })
       })
       observer.observe(node)
       resizeObserverRef.current = observer
-      setContainerWidth(node.getBoundingClientRect().width)
+      updateWidth(node.getBoundingClientRect().width)
     }
   }, [])
 
