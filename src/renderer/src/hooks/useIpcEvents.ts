@@ -102,6 +102,7 @@ import {
 } from './agent-hook-completion-notifications'
 import { showTerminalShortcutCaptureNotification } from '@/lib/terminal-shortcut-capture-notification'
 import { resolveAgentStatusTerminalTitle } from '@/lib/agent-status-terminal-title'
+import { titleHasAgentName } from '../../../shared/agent-detection'
 
 function getShortcutPlatform(): NodeJS.Platform {
   if (navigator.userAgent.includes('Mac')) {
@@ -2915,7 +2916,11 @@ function resolveHookPayloadAgentType(
   payload: ParsedAgentStatusPayload,
   terminalTitle: string | undefined
 ): ParsedAgentStatusPayload {
-  if (payload.agentType !== 'claude' || !terminalTitle?.toLowerCase().includes('openclaude')) {
+  if (
+    payload.agentType !== 'claude' ||
+    !terminalTitle ||
+    !titleHasAgentName(terminalTitle, 'openclaude')
+  ) {
     return payload
   }
   // Why: OpenClaude emits Claude-compatible hooks, so title identity is the

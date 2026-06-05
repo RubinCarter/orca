@@ -3935,7 +3935,7 @@ describe('useIpcEvents agent status snapshot integration', () => {
             groupId: 'group-1',
             worktreeId: 'wt-1',
             contentType: 'terminal',
-            label: 'OpenClaude',
+            label: 'openclaude.exe',
             customLabel: null,
             sortOrder: 0,
             createdAt: 1_700_000_000_000
