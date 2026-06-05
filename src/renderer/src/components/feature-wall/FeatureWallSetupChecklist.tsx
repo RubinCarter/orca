@@ -312,7 +312,7 @@ export function FeatureWallSetupChecklist(
                 ) : null}
                 {/* Action lives under the caption, not after the grid, so it sits just
                     below the copy instead of being pushed down by the taller visual. */}
-                <div className="mt-5 min-w-0">
+                <div className="mt-7 min-w-0">
                   <SelectedStepAction {...props} />
                 </div>
               </div>
