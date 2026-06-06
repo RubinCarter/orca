@@ -32,13 +32,19 @@ export function useFileExplorerGitIgnoredRows(
   const settings = useAppStore((s) => s.settings)
   const updateSettings = useAppStore((s) => s.updateSettings)
   const showGitIgnoredFiles = settings?.showGitIgnoredFiles ?? true
-  const [ignoredPaths, setIgnoredPaths] = useState<string[]>([])
+  const [ignoredPathsState, setIgnoredPathsState] = useState<{
+    sourceKey: string | null
+    paths: string[]
+  }>({ sourceKey: null, paths: [] })
   const relativePaths = useMemo(() => flatRows.map((row) => row.relativePath), [flatRows])
   const canLoadIgnoredPaths =
     activeRepoSupportsGit &&
     Boolean(activeWorktreeId) &&
     Boolean(worktreePath) &&
     relativePaths.length > 0
+  const ignoredPathsSourceKey = canLoadIgnoredPaths
+    ? `${activeWorktreeId ?? ''}\n${worktreePath ?? ''}`
+    : null
 
   useEffect(() => {
     if (!canLoadIgnoredPaths || !activeWorktreeId || !worktreePath) {
@@ -47,6 +53,7 @@ export function useFileExplorerGitIgnoredRows(
 
     let canceled = false
     const connectionId = getConnectionId(activeWorktreeId) ?? undefined
+    const sourceKey = `${activeWorktreeId}\n${worktreePath}`
     void getRuntimeGitIgnoredPaths(
       {
         settings: useAppStore.getState().settings,
@@ -58,12 +65,12 @@ export function useFileExplorerGitIgnoredRows(
     )
       .then((nextIgnoredPaths) => {
         if (!canceled) {
-          setIgnoredPaths(nextIgnoredPaths)
+          setIgnoredPathsState({ sourceKey, paths: nextIgnoredPaths })
         }
       })
       .catch(() => {
         if (!canceled) {
-          setIgnoredPaths([])
+          setIgnoredPathsState({ sourceKey, paths: [] })
         }
       })
 
@@ -72,7 +79,10 @@ export function useFileExplorerGitIgnoredRows(
     }
   }, [activeWorktreeId, canLoadIgnoredPaths, relativePaths, worktreePath])
 
-  const effectiveIgnoredPaths = canLoadIgnoredPaths ? ignoredPaths : EMPTY_IGNORED_PATHS
+  const effectiveIgnoredPaths =
+    canLoadIgnoredPaths && ignoredPathsState.sourceKey === ignoredPathsSourceKey
+      ? ignoredPathsState.paths
+      : EMPTY_IGNORED_PATHS
   const ignoredSet = useMemo(() => buildIgnoredSet(effectiveIgnoredPaths), [effectiveIgnoredPaths])
   const visibleFlatRows = useMemo(
     () => getVisibleFileExplorerRows(flatRows, ignoredSet, showGitIgnoredFiles),
