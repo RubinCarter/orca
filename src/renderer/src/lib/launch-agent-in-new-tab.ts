@@ -10,6 +10,10 @@ import { CLIENT_PLATFORM } from '@/lib/new-workspace'
 import { reconcileTabOrder } from '@/components/tab-bar/reconcile-order'
 import { track, tuiAgentToAgentKind } from '@/lib/telemetry'
 import { pasteDraftWhenAgentReady } from '@/lib/agent-paste-draft'
+import {
+  createWebRuntimeSessionTerminal,
+  isWebRuntimeSessionActive
+} from '@/runtime/web-runtime-session'
 import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
 import { makePaneKey } from '../../../shared/stable-pane-id'
 import type { TuiAgent } from '../../../shared/types'
@@ -40,7 +44,7 @@ export type LaunchAgentInNewTabArgs = {
 }
 
 export type LaunchAgentInNewTabResult = {
-  tabId: string
+  tabId: string | null
   startupPlan: AgentStartupPlan
   pasteDraftAfterLaunch: boolean
 } | null
@@ -187,6 +191,24 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
 
   if (!startupPlan) {
     return null
+  }
+
+  const runtimeEnvironmentId = store.settings?.activeRuntimeEnvironmentId?.trim()
+  if (isWebRuntimeSessionActive(runtimeEnvironmentId) && pasteDraftAfterLaunch === null) {
+    // Why: paired web tabs are host-owned. Local-only agent tabs cannot be
+    // closed because close routes through session.tabs.close on the host.
+    void createWebRuntimeSessionTerminal({
+      worktreeId,
+      environmentId: runtimeEnvironmentId,
+      targetGroupId: groupId,
+      activate: true,
+      ...(hasPrompt ? { command: startupPlan.launchCommand } : { agent })
+    })
+    store.setActiveTabType('terminal')
+    if (hasPrompt) {
+      onPromptDelivered?.()
+    }
+    return { tabId: null, startupPlan, pasteDraftAfterLaunch: false }
   }
 
   // Why: queue the startup command BEFORE TerminalPane mounts — it captures

@@ -10,6 +10,7 @@ import type {
   RuntimeTerminalSplit
 } from '../../../shared/runtime-types'
 import type { TerminalPaneSplitSource } from '../../../shared/feature-education-telemetry'
+import type { TuiAgent } from '../../../shared/types'
 import type { AppState } from '../store/types'
 import { useAppStore } from '../store'
 import { unwrapRuntimeRpcResult } from './runtime-rpc-client'
@@ -44,6 +45,7 @@ export async function createWebRuntimeSessionTerminal(args: {
   afterTabId?: string
   targetGroupId?: string
   command?: string
+  agent?: TuiAgent
   activate?: boolean
   selectWorktree?: boolean
 }): Promise<boolean> {
@@ -67,6 +69,7 @@ export async function createWebRuntimeSessionTerminal(args: {
         afterTabId: args.afterTabId ? toHostSessionTabId(args.afterTabId) : undefined,
         targetGroupId: args.targetGroupId,
         command: args.command,
+        agent: args.agent,
         activate: args.activate !== false
       },
       timeoutMs: 15_000

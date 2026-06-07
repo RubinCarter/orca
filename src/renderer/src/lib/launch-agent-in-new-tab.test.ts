@@ -55,10 +55,20 @@ vi.mock('@/lib/telemetry', () => ({
   tuiAgentToAgentKind: (agent: string) => agent
 }))
 
+const mockCreateWebRuntimeSessionTerminal = vi.fn()
+const mockIsWebRuntimeSessionActive = vi.fn(() => false)
+
+vi.mock('@/runtime/web-runtime-session', () => ({
+  createWebRuntimeSessionTerminal: mockCreateWebRuntimeSessionTerminal,
+  isWebRuntimeSessionActive: mockIsWebRuntimeSessionActive
+}))
+
 describe('launchAgentInNewTab', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    store.settings = { agentCmdOverrides: {} }
+    mockIsWebRuntimeSessionActive.mockReturnValue(false)
+    mockCreateWebRuntimeSessionTerminal.mockResolvedValue(true)
+    store.settings = { agentCmdOverrides: {}, activeRuntimeEnvironmentId: null }
     store.tabsByWorktree = { 'wt-1': [{ id: 'tab-1' }] }
     store.openFiles = []
     store.browserTabsByWorktree = {}
@@ -79,6 +89,35 @@ describe('launchAgentInNewTab', () => {
     expect(mockCreateTab).toHaveBeenCalledWith('wt-1', undefined, undefined, {
       launchAgent: 'codex'
     })
+  })
+
+  it('delegates agent quick launch to the host runtime in paired web clients', async () => {
+    mockIsWebRuntimeSessionActive.mockReturnValue(true)
+    store.settings = { agentCmdOverrides: {}, activeRuntimeEnvironmentId: 'web-runtime' }
+    const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
+
+    const result = launchAgentInNewTab({
+      agent: 'claude',
+      worktreeId: 'wt-1',
+      groupId: 'group-1'
+    })
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        tabId: null,
+        pasteDraftAfterLaunch: false
+      })
+    )
+    expect(mockCreateWebRuntimeSessionTerminal).toHaveBeenCalledWith({
+      worktreeId: 'wt-1',
+      environmentId: 'web-runtime',
+      targetGroupId: 'group-1',
+      activate: true,
+      agent: 'claude'
+    })
+    expect(mockCreateTab).not.toHaveBeenCalled()
+    expect(mockQueueTabStartupCommand).not.toHaveBeenCalled()
+    expect(mockSetActiveTabType).toHaveBeenCalledWith('terminal')
   })
 
   it('queues initial working status for Command Code argv prompt launches', async () => {

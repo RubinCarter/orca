@@ -6,8 +6,10 @@ import {
   activateWebRuntimeSessionTab,
   closeWebRuntimeSessionTab,
   createWebRuntimeSessionTerminal,
-  isWebRuntimeSessionActive
+  isWebRuntimeSessionActive,
+  isWebTerminalSurfaceTabId
 } from '@/runtime/web-runtime-session'
+import { resolveHostSessionTabIdForWebSessionTab } from '@/runtime/web-session-tabs-sync'
 
 const EDITOR_TAB_CONTENT_TYPES = new Set<TabContentType>(['editor', 'diff', 'conflict-review'])
 
@@ -83,14 +85,24 @@ export function closeTerminalTab(tabId: string): void {
 
   const runtimeEnvironmentId = state.settings?.activeRuntimeEnvironmentId?.trim()
   if (isWebRuntimeSessionActive(runtimeEnvironmentId)) {
-    // Why: paired web tabs are host-owned. Closing locally leaves the host to
-    // re-publish the same stale surface on the next session-tabs snapshot.
-    void closeWebRuntimeSessionTab({
-      worktreeId: owningWorktreeId,
-      tabId,
-      environmentId: runtimeEnvironmentId
-    })
-    return
+    const hostBackedTabId =
+      resolveHostSessionTabIdForWebSessionTab(state, {
+        environmentId: runtimeEnvironmentId,
+        worktreeId: owningWorktreeId,
+        tabId
+      }) ?? (isWebTerminalSurfaceTabId(tabId) ? tabId : null)
+    if (hostBackedTabId) {
+      // Why: paired web tabs are host-owned. Closing locally leaves the host to
+      // re-publish the same stale surface on the next session-tabs snapshot.
+      void closeWebRuntimeSessionTab({
+        worktreeId: owningWorktreeId,
+        tabId,
+        environmentId: runtimeEnvironmentId
+      })
+      return
+    }
+    // Why: legacy local-only tabs (e.g. agent quick launch before host routing)
+    // have no host session binding and must still close locally.
   }
 
   const currentTabs = state.tabsByWorktree[owningWorktreeId] ?? []
