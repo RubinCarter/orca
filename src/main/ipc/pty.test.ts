@@ -4502,6 +4502,53 @@ describe('registerPtyHandlers', () => {
     }
   })
 
+  it('lets active PTY output exceed its old background in-flight cap', async () => {
+    vi.useFakeTimers()
+    const activeProc = createMockProc()
+    spawnMock.mockReturnValue(activeProc.proc)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const activeSpawn = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const setActiveRendererPty = getPtySetActiveRendererPtyListener()
+      mainWindow.webContents.send.mockClear()
+
+      activeProc.emitData('x'.repeat(768 * 1024))
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 31; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(32)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingPtyCount: 1,
+        pendingChars: 256 * 1024,
+        rendererInFlightChars: 512 * 1024,
+        maxRendererInFlightCharsByPty: 512 * 1024
+      })
+
+      setActiveRendererPty(null, { id: activeSpawn.id, active: true })
+      vi.advanceTimersByTime(1)
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(33)
+      expect(mainWindow.webContents.send).toHaveBeenNthCalledWith(33, 'pty:data', {
+        id: activeSpawn.id,
+        data: 'x'.repeat(16 * 1024)
+      })
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingChars: 240 * 1024,
+        rendererInFlightChars: 528 * 1024,
+        maxRendererInFlightCharsByPty: 528 * 1024
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('batches stale PTY output after the interactive window expires', async () => {
     vi.useFakeTimers()
     const mockProc = createMockProc()
