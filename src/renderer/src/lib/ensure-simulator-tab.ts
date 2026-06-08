@@ -1,4 +1,5 @@
 import { useAppStore } from '@/store'
+import { findReusableRightSplitGroupId } from './emulator-right-split-target'
 import { cancelPendingSimulatorPaneShutdown } from './simulator-pane-shutdown-scheduler'
 import { shouldShutdownSimulatorForPaneUnmountFromTabs } from './simulator-tab-shutdown'
 
@@ -58,6 +59,22 @@ export function ensureSimulatorTab(
   }
 
   if (options?.placement === 'rightSplit' && shouldSurface) {
+    const reusableRightGroupId = findReusableRightSplitGroupId(
+      store.layoutByWorktree[worktreeId],
+      sourceGroupId
+    )
+    if (reusableRightGroupId) {
+      const tab = store.createUnifiedTab(worktreeId, 'simulator', {
+        label: 'Mobile Emulator',
+        targetGroupId: reusableRightGroupId,
+        activate: true
+      })
+      store.activateTab(tab.id)
+      store.setActiveTabType('simulator')
+      store.focusGroup(worktreeId, tab.groupId)
+      return tab.id
+    }
+
     // Why: publish the simulator directly in its split group. A two-step
     // create-then-move can persist the midpoint during dev reload/HMR.
     const splitTab = store.createUnifiedTabInSplit(

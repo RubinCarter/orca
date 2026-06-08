@@ -10,6 +10,7 @@ const mockStoreState = vi.hoisted(() => ({
   dropUnifiedTab: vi.fn(),
   focusGroup: vi.fn(),
   groupsByWorktree: {} as Record<string, { id: string }[]>,
+  layoutByWorktree: {} as Record<string, unknown>,
   settings: { mobileEmulatorEnabled: true },
   setActiveTab: vi.fn(),
   setActiveTabType: vi.fn(),
@@ -34,6 +35,7 @@ describe('ensureSimulatorTab', () => {
     mockStoreState.activeGroupIdByWorktree = { 'wt-1': 'group-1' }
     mockStoreState.activeWorktreeId = 'wt-1'
     mockStoreState.groupsByWorktree = { 'wt-1': [{ id: 'group-1' }] }
+    mockStoreState.layoutByWorktree = { 'wt-1': { type: 'leaf', groupId: 'group-1' } }
     mockStoreState.settings = { mobileEmulatorEnabled: true }
     mockStoreState.unifiedTabsByWorktree = {
       'wt-1': [{ id: 'sim-1', groupId: 'group-1', contentType: 'simulator' }]
@@ -114,6 +116,37 @@ describe('ensureSimulatorTab', () => {
     expect(mockStoreState.activateTab).not.toHaveBeenCalled()
     expect(mockStoreState.focusGroup).not.toHaveBeenCalled()
     expect(mockStoreState.setActiveTabType).not.toHaveBeenCalled()
+  })
+
+  it('reuses an existing right split when requested', async () => {
+    mockStoreState.groupsByWorktree = { 'wt-1': [{ id: 'group-1' }, { id: 'group-2' }] }
+    mockStoreState.layoutByWorktree = {
+      'wt-1': {
+        type: 'split',
+        direction: 'horizontal',
+        first: { type: 'leaf', groupId: 'group-1' },
+        second: { type: 'leaf', groupId: 'group-2' }
+      }
+    }
+    mockStoreState.unifiedTabsByWorktree = { 'wt-1': [] }
+    mockStoreState.createUnifiedTab.mockReturnValue({
+      id: 'sim-2',
+      groupId: 'group-2',
+      contentType: 'simulator'
+    })
+    const { ensureSimulatorTab } = await import('./ensure-simulator-tab')
+
+    expect(ensureSimulatorTab('wt-1', { placement: 'rightSplit' })).toBe('sim-2')
+
+    expect(mockStoreState.createUnifiedTabInSplit).not.toHaveBeenCalled()
+    expect(mockStoreState.createUnifiedTab).toHaveBeenCalledWith('wt-1', 'simulator', {
+      label: 'Mobile Emulator',
+      targetGroupId: 'group-2',
+      activate: true
+    })
+    expect(mockStoreState.activateTab).toHaveBeenCalledWith('sim-2')
+    expect(mockStoreState.focusGroup).toHaveBeenCalledWith('wt-1', 'group-2')
+    expect(mockStoreState.setActiveTabType).toHaveBeenCalledWith('simulator')
   })
 
   it('falls back to the source group when atomic right split creation fails', async () => {
