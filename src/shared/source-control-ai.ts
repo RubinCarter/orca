@@ -245,6 +245,15 @@ export function normalizeRepoSourceControlAiOverrides(
     return undefined
   }
   const normalized: RepoSourceControlAiOverrides = {}
+  if (typeof value.enabled === 'boolean') {
+    normalized.enabled = value.enabled
+  }
+  if (typeof value.customAgentCommand === 'string') {
+    const customAgentCommand = value.customAgentCommand.trim()
+    if (customAgentCommand) {
+      normalized.customAgentCommand = customAgentCommand
+    }
+  }
   const modelOverridesByOperation = normalizeOperationRecord(
     value.modelOverridesByOperation,
     normalizeSourceControlAiModelChoice
@@ -297,7 +306,7 @@ export function normalizeRepoSourceControlAiOverrides(
   if (prCreationDefaults) {
     normalized.prCreationDefaults = prCreationDefaults
   }
-  return normalized
+  return Object.keys(normalized).length > 0 ? normalized : undefined
 }
 
 function commandTemplateFromInstruction(instruction: string | null | undefined): string {
@@ -1080,6 +1089,18 @@ export function resolveSourceControlAiPrCreationDefaults(
   )
 }
 
+export function resolveSourceControlAiEnabled(input: {
+  settings: Pick<GlobalSettings, 'sourceControlAi' | 'commitMessageAi'> | null | undefined
+  repo?: Pick<Repo, 'sourceControlAi'> | null
+}): boolean {
+  const source = normalizeSourceControlAiSettings(
+    input.settings?.sourceControlAi,
+    input.settings?.commitMessageAi
+  )
+  const repoOverrides = normalizeRepoSourceControlAiOverrides(input.repo?.sourceControlAi)
+  return repoOverrides?.enabled ?? source.enabled
+}
+
 export function resolveSourceControlActionRecipe(input: {
   settings: Pick<GlobalSettings, 'sourceControlAi' | 'commitMessageAi'> | null | undefined
   repo?: Pick<Repo, 'sourceControlAi'> | null
@@ -1116,14 +1137,14 @@ export function resolveSourceControlAiForOperation(
 ): ResolveSourceControlAiResult {
   const legacy = input.settings.commitMessageAi
   const source = normalizeSourceControlAiSettings(input.settings.sourceControlAi, legacy)
-  if (!source.enabled) {
+  const repoOverrides = normalizeRepoSourceControlAiOverrides(input.repo?.sourceControlAi)
+  if (!(repoOverrides?.enabled ?? source.enabled)) {
     return {
       ok: false,
       error: 'Enable Source Control AI in Settings -> Git.'
     }
   }
 
-  const repoOverrides = normalizeRepoSourceControlAiOverrides(input.repo?.sourceControlAi)
   const prCreationDefaults = resolvePrCreationDefaults(
     source,
     repoOverrides,
@@ -1152,8 +1173,9 @@ export function resolveSourceControlAiForOperation(
     }
   }
 
+  const customAgentCommand =
+    repoOverrides?.customAgentCommand?.trim() || source.customAgentCommand.trim()
   if (isCustomAgentId(agentChoice)) {
-    const customAgentCommand = source.customAgentCommand.trim()
     if (!customAgentCommand) {
       return {
         ok: false,
@@ -1249,6 +1271,7 @@ export function resolveSourceControlAiForOperation(
         ),
         commandInputTemplate: actionRecipe.commandInputTemplate,
         ...(actionRecipe.agentArgs !== undefined ? { agentArgs: actionRecipe.agentArgs } : {}),
+        ...(customAgentCommand ? { customAgentCommand } : {}),
         ...(agentCommandOverride ? { agentCommandOverride } : {})
       },
       prCreationDefaults

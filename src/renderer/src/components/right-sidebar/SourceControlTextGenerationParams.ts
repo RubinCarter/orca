@@ -47,12 +47,14 @@ export function buildCommitMessageGenerationParams(args: {
       ? args.baseParams.thinkingLevel
       : model?.defaultThinkingLevel
   const agentCommandOverride = args.settings?.agentCmdOverrides?.[args.agentId]?.trim()
+  const customAgentCommand = args.baseParams?.customAgentCommand ?? args.customAgentCommand
   return {
     agentId: args.agentId,
     model: modelId,
     ...(thinkingLevel ? { thinkingLevel } : {}),
     commandInputTemplate: args.commandTemplate,
     ...(args.agentArgs !== undefined ? { agentArgs: args.agentArgs } : {}),
+    ...(customAgentCommand ? { customAgentCommand } : {}),
     ...(agentCommandOverride ? { agentCommandOverride } : {})
   }
 }

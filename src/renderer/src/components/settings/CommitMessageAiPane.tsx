@@ -629,9 +629,18 @@ export function CommitMessageAiPane({
   if (
     config.enabled &&
     matchesSettingsSearch(searchQuery, {
-      title: 'PR creation defaults',
-      description: 'Defaults used when the Create PR composer opens.',
-      keywords: ['pull request', 'pr', 'draft', 'template', 'generate', 'open']
+      title: 'Hosted-review creation defaults',
+      description: 'Defaults used when the hosted-review composer opens.',
+      keywords: [
+        'hosted review',
+        'pull request',
+        'merge request',
+        'pr',
+        'draft',
+        'template',
+        'generate',
+        'open'
+      ]
     })
   ) {
     const prDefaults = config.prCreationDefaults ?? {}
@@ -647,32 +656,41 @@ export function CommitMessageAiPane({
       },
       {
         key: 'useTemplate',
-        label: 'Use PR template when available',
+        label: 'Use review template when available',
         description: 'Prefer repository pull request templates when no description is set.'
       },
       {
         key: 'generateDetailsOnOpen',
         label: 'Generate details when opening Create PR',
-        description: 'Run pull-request detail generation once when the composer opens.'
+        description: 'Run hosted-review detail generation once when the composer opens.'
       },
       {
         key: 'openAfterCreate',
-        label: 'Open PR after creation',
+        label: 'Open hosted review after creation',
         description: 'Open the created hosted review in your browser after submit.'
       }
     ]
     sections.push(
       <SearchableSetting
         key="pr-creation-defaults"
-        title="PR creation defaults"
-        description="Defaults used when the Create PR composer opens."
-        keywords={['pull request', 'pr', 'draft', 'template', 'generate', 'open']}
+        title="Hosted-review creation defaults"
+        description="Defaults used when the hosted-review composer opens."
+        keywords={[
+          'hosted review',
+          'pull request',
+          'merge request',
+          'pr',
+          'draft',
+          'template',
+          'generate',
+          'open'
+        ]}
         className="space-y-3 px-1 py-2"
       >
         <div className="space-y-0.5">
-          <Label>PR creation defaults</Label>
+          <Label>Hosted-review creation defaults</Label>
           <p className="text-xs text-muted-foreground">
-            Provider-neutral defaults for the Create PR composer.
+            Used by repositories that inherit global hosted-review defaults.
           </p>
         </div>
         <div className="space-y-2">
@@ -705,9 +723,9 @@ export function CommitMessageAiPane({
       className="space-y-4 border-t border-border/40 pt-4"
     >
       <div className="space-y-0.5">
-        <h3 className="text-sm font-semibold">Source Control AI</h3>
+        <h3 className="text-sm font-semibold">Source Control AI defaults</h3>
         <p className="text-xs text-muted-foreground">
-          Configure the agent and command template behind each Source Control AI button.
+          Used by repositories that have not customized Source Control AI.
         </p>
       </div>
       {sections}

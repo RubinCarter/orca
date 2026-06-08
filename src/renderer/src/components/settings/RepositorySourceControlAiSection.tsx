@@ -1,177 +1,85 @@
-/* eslint-disable max-lines -- Why: repo Source Control AI settings keep one
-   draft/save flow across action recipes and PR-default override groups. */
 import { useMemo, useState } from 'react'
-import { Terminal } from 'lucide-react'
-import type { Repo, TuiAgent } from '../../../../shared/types'
-import {
-  CUSTOM_AGENT_ID,
-  isCustomAgentId,
-  type CustomAgentId
-} from '../../../../shared/commit-message-agent-spec'
-import type {
-  RepoSourceControlAiOverrides,
-  SourceControlAiSettings
-} from '../../../../shared/source-control-ai-types'
+import type React from 'react'
+import type { GlobalSettings, Repo, TuiAgent } from '../../../../shared/types'
+import { CUSTOM_AGENT_ID } from '../../../../shared/commit-message-agent-spec'
+import type { RepoSourceControlAiOverrides } from '../../../../shared/source-control-ai-types'
 import {
   normalizeRepoSourceControlAiOverrides,
-  normalizeSourceControlAiSettings
+  normalizeSourceControlAiSettings,
+  resolveSourceControlActionRecipe
 } from '../../../../shared/source-control-ai'
-import {
-  SOURCE_CONTROL_ACTION_IDS,
-  SOURCE_CONTROL_ACTION_LABELS,
-  resolveSourceControlActionCommandTemplate,
-  type SourceControlActionId
-} from '../../../../shared/source-control-ai-actions'
-import { Label } from '../ui/label'
-import { Input } from '../ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
-import { useAppStore } from '../../store'
-import { getRepositorySourceControlAiSectionId } from './repository-settings-targets'
+import { toSourceControlAiRepoUpdate } from '../../../../shared/source-control-ai-recipe-save'
+import type { SourceControlAiRepoUpdate } from '../../../../shared/source-control-ai-recipe-save'
+import type { SourceControlActionId } from '../../../../shared/source-control-ai-actions'
 import { Button } from '../ui/button'
+import { useAppStore } from '../../store'
 import { useMountedRef } from '@/hooks/useMountedRef'
-import { AgentIcon } from '@/lib/agent-catalog'
-import { SourceControlActionVariableChips } from '../source-control/SourceControlActionVariableChips'
+import { getRepositorySourceControlAiSectionId } from './repository-settings-targets'
+import { RepositorySourceControlAiActionRows } from './RepositorySourceControlAiActionRows'
+import { RepositorySourceControlAiCustomCommand } from './RepositorySourceControlAiCustomCommand'
+import { RepositorySourceControlAiEnablement } from './RepositorySourceControlAiEnablement'
+import { RepositorySourceControlAiHostedReviewDefaults } from './RepositorySourceControlAiHostedReviewDefaults'
 import {
-  ACTION_DESCRIPTIONS,
-  SOURCE_CONTROL_TEXT_ACTION_ID_SET,
-  getAgentCatalogForAction,
-  getSourceControlAgentArgsPlaceholder
-} from './source-control-action-recipe-options'
+  createRepoAiDraftState,
+  dropRepoLegacyInstructionForAction,
+  hasOwnActionOverride,
+  normalizeRepoAiDraft,
+  resolveRepoAiDraftState,
+  serializeRepoAiDraft,
+  type RepoAiDraftState
+} from './repository-source-control-ai-draft'
+import {
+  ACTION_MODE_INHERIT,
+  DEFAULT_AGENT_VALUE,
+  completeRepoActionRecipe,
+  readInheritedCommandTemplate
+} from './repository-source-control-ai-labels'
+
+export {
+  createRepoAiDraftState,
+  dropRepoLegacyInstructionForAction,
+  resolveRepoAiDraftState
+} from './repository-source-control-ai-draft'
 
 type RepositorySourceControlAiSectionProps = {
   repo: Repo
-  updateRepo: (repoId: string, updates: Partial<Repo>) => void | Promise<boolean>
+  updateRepo: (repoId: string, updates: SourceControlAiRepoUpdate) => void | Promise<boolean>
 }
 
-const ACTION_MODE_INHERIT = 'inherit'
-const ACTION_MODE_OVERRIDE = 'override'
-const INHERIT_AGENT_VALUE = '__inherit_agent__'
-const DEFAULT_AGENT_VALUE = '__default_agent__'
+type HostedReviewDefaultKey = keyof NonNullable<RepoSourceControlAiOverrides['prCreationDefaults']>
 
-type PrDefaultKey = keyof NonNullable<RepoSourceControlAiOverrides['prCreationDefaults']>
-type RepoAiDraftState = {
-  repoId: string
-  value: RepoSourceControlAiOverrides
-  baseSerialized: string
-}
-
-function hasOwnActionOverride(
-  overrides: RepoSourceControlAiOverrides['actionOverrides'],
+function readCompleteRecipeForDraft(
+  current: RepoSourceControlAiOverrides,
+  settings: GlobalSettings | null,
   actionId: SourceControlActionId
-): boolean {
-  return Object.prototype.hasOwnProperty.call(overrides ?? {}, actionId)
+): NonNullable<
+  NonNullable<RepoSourceControlAiOverrides['actionOverrides']>[SourceControlActionId]
+> {
+  const recipe = resolveSourceControlActionRecipe({
+    settings,
+    repo: { sourceControlAi: current },
+    actionId
+  })
+  return completeRepoActionRecipe(recipe, actionId)
 }
 
-function triStateValue(value: boolean | null | undefined): 'inherit' | 'on' | 'off' {
-  if (value === true) {
-    return 'on'
-  }
-  if (value === false) {
-    return 'off'
-  }
-  return 'inherit'
-}
-
-function normalizeRepoAiDraft(
-  value: RepoSourceControlAiOverrides | null | undefined
-): RepoSourceControlAiOverrides {
-  return normalizeRepoSourceControlAiOverrides(value) ?? {}
-}
-
-function serializeRepoAiDraft(value: RepoSourceControlAiOverrides): string {
-  return JSON.stringify(normalizeRepoAiDraft(value))
-}
-
-export function createRepoAiDraftState(
-  repoId: string,
-  value: RepoSourceControlAiOverrides
-): RepoAiDraftState {
-  const normalized = normalizeRepoAiDraft(value)
-  return {
-    repoId,
-    value: normalized,
-    baseSerialized: serializeRepoAiDraft(normalized)
-  }
-}
-
-export function resolveRepoAiDraftState(
-  current: RepoAiDraftState,
-  repoId: string,
-  persistedRepoAi: RepoSourceControlAiOverrides,
-  persistedSerialized = serializeRepoAiDraft(persistedRepoAi)
-): RepoAiDraftState {
-  const currentSerialized = serializeRepoAiDraft(current.value)
-  // Why: render-time draft sync relies on object identity to avoid repeating
-  // the same state update during server-rendered settings tests.
-  if (
-    current.repoId === repoId &&
-    currentSerialized === persistedSerialized &&
-    current.baseSerialized === persistedSerialized
-  ) {
-    return current
-  }
-  if (
-    current.repoId !== repoId ||
-    currentSerialized === current.baseSerialized ||
-    currentSerialized === persistedSerialized
-  ) {
-    return {
-      repoId,
-      value: persistedRepoAi,
-      baseSerialized: persistedSerialized
-    }
-  }
-  return current
-}
-
-function readInheritedCommandTemplate(
-  source: SourceControlAiSettings,
-  actionId: SourceControlActionId
-): string {
-  return resolveSourceControlActionCommandTemplate(source.actions, actionId)
-}
-
-function readInheritedAgentArgs(
-  source: SourceControlAiSettings,
-  actionId: SourceControlActionId
-): string {
-  return source.actions?.[actionId]?.agentArgs?.trim() ?? ''
-}
-
-export function dropRepoLegacyInstructionForAction(
-  value: RepoSourceControlAiOverrides,
-  actionId: SourceControlActionId
-): RepoSourceControlAiOverrides {
-  if (!SOURCE_CONTROL_TEXT_ACTION_ID_SET.has(actionId) || !value.instructionsByOperation) {
-    return value
-  }
-  const instructionsByOperation = { ...value.instructionsByOperation }
-  delete instructionsByOperation[actionId as keyof typeof instructionsByOperation]
-  return {
-    ...value,
-    instructionsByOperation:
-      Object.keys(instructionsByOperation).length > 0 ? instructionsByOperation : undefined
-  }
-}
-
-function actionAgentSelectValue(agentId: TuiAgent | CustomAgentId | null | undefined): string {
-  if (agentId === undefined) {
-    return INHERIT_AGENT_VALUE
-  }
-  return agentId ?? DEFAULT_AGENT_VALUE
-}
-
-function resolveAgentArgsPlaceholderAgent(
-  agentId: TuiAgent | CustomAgentId | null | undefined,
-  source: SourceControlAiSettings,
+function setActionOverride(
+  current: RepoSourceControlAiOverrides,
   actionId: SourceControlActionId,
-  defaultTuiAgent: TuiAgent | 'blank' | null | undefined
-): TuiAgent | null {
-  const effectiveAgent = agentId === undefined ? source.actions?.[actionId]?.agentId : agentId
-  if (effectiveAgent && !isCustomAgentId(effectiveAgent)) {
-    return effectiveAgent
-  }
-  return defaultTuiAgent && defaultTuiAgent !== 'blank' ? defaultTuiAgent : null
+  recipe: NonNullable<
+    NonNullable<RepoSourceControlAiOverrides['actionOverrides']>[SourceControlActionId]
+  >
+): RepoSourceControlAiOverrides {
+  return dropRepoLegacyInstructionForAction(
+    {
+      ...current,
+      actionOverrides: {
+        ...current.actionOverrides,
+        [actionId]: recipe
+      }
+    },
+    actionId
+  )
 }
 
 export function RepositorySourceControlAiSection({
@@ -244,10 +152,11 @@ export function RepositorySourceControlAiSection({
     }
     const next = normalizeRepoAiDraft(resolvedDraftState.value)
     const nextSerialized = serializeRepoAiDraft(next)
+    const repoUpdate = toSourceControlAiRepoUpdate(next)
     setIsSaving(true)
     setSaveError(null)
     try {
-      const result = await updateRepo(repo.id, { sourceControlAi: next })
+      const result = await updateRepo(repo.id, repoUpdate)
       if (!mountedRef.current) {
         return
       }
@@ -255,6 +164,10 @@ export function RepositorySourceControlAiSection({
         setSaveError('Failed to save Source Control AI settings.')
         return
       }
+      const savedValue =
+        repoUpdate.sourceControlAi === null
+          ? {}
+          : (normalizeRepoSourceControlAiOverrides(repoUpdate.sourceControlAi) ?? {})
       setDraftState((current) => {
         if (current.repoId !== repo.id) {
           return current
@@ -262,8 +175,8 @@ export function RepositorySourceControlAiSection({
         const currentSerialized = serializeRepoAiDraft(current.value)
         return {
           repoId: repo.id,
-          value: currentSerialized === nextSerialized ? next : current.value,
-          baseSerialized: nextSerialized
+          value: currentSerialized === nextSerialized ? savedValue : current.value,
+          baseSerialized: serializeRepoAiDraft(savedValue)
         }
       })
     } catch {
@@ -282,16 +195,26 @@ export function RepositorySourceControlAiSection({
     setSaveError(null)
   }
 
+  const updateEnablement = (value: boolean | undefined): void => {
+    updateDraftRepoAi((current) => ({ ...current, enabled: value }))
+  }
+
+  const updateCustomCommand = (value: string | undefined): void => {
+    updateDraftRepoAi((current) => ({ ...current, customAgentCommand: value }))
+  }
+
   const updateActionMode = (actionId: SourceControlActionId, mode: string): void => {
     updateDraftRepoAi((current) => {
       const nextActionOverrides = { ...current.actionOverrides }
       if (mode === ACTION_MODE_INHERIT) {
         delete nextActionOverrides[actionId]
-      } else if (!hasOwnActionOverride(nextActionOverrides, actionId)) {
-        nextActionOverrides[actionId] = {
-          commandInputTemplate: readInheritedCommandTemplate(source, actionId),
-          agentArgs: readInheritedAgentArgs(source, actionId)
-        }
+        return dropRepoLegacyInstructionForAction(
+          { ...current, actionOverrides: nextActionOverrides },
+          actionId
+        )
+      }
+      if (!hasOwnActionOverride(nextActionOverrides, actionId)) {
+        nextActionOverrides[actionId] = readCompleteRecipeForDraft(current, settings, actionId)
       }
       return dropRepoLegacyInstructionForAction(
         { ...current, actionOverrides: nextActionOverrides },
@@ -302,66 +225,44 @@ export function RepositorySourceControlAiSection({
 
   const updateActionAgent = (actionId: SourceControlActionId, value: string): void => {
     updateDraftRepoAi((current) => {
-      const nextActionOverrides = { ...current.actionOverrides }
-      const currentOverride = nextActionOverrides[actionId] ?? {
-        commandInputTemplate: readInheritedCommandTemplate(source, actionId),
-        agentArgs: readInheritedAgentArgs(source, actionId)
+      const currentRecipe =
+        current.actionOverrides?.[actionId] ??
+        readCompleteRecipeForDraft(current, settings, actionId)
+      const nextRecipe = {
+        ...currentRecipe,
+        agentId:
+          value === DEFAULT_AGENT_VALUE
+            ? null
+            : value === CUSTOM_AGENT_ID
+              ? CUSTOM_AGENT_ID
+              : (value as TuiAgent)
       }
-      if (value === INHERIT_AGENT_VALUE) {
-        const { agentId: _agentId, ...rest } = currentOverride
-        nextActionOverrides[actionId] = rest
-      } else {
-        nextActionOverrides[actionId] = {
-          ...currentOverride,
-          agentId:
-            value === DEFAULT_AGENT_VALUE
-              ? null
-              : value === CUSTOM_AGENT_ID
-                ? CUSTOM_AGENT_ID
-                : (value as TuiAgent)
-        }
-      }
-      return dropRepoLegacyInstructionForAction(
-        { ...current, actionOverrides: nextActionOverrides },
-        actionId
-      )
+      return setActionOverride(current, actionId, nextRecipe)
     })
   }
 
   const updateActionTemplate = (actionId: SourceControlActionId, value: string): void => {
-    updateDraftRepoAi((current) =>
-      dropRepoLegacyInstructionForAction(
-        {
-          ...current,
-          actionOverrides: {
-            ...current.actionOverrides,
-            [actionId]: {
-              ...current.actionOverrides?.[actionId],
-              commandInputTemplate: value
-            }
-          }
-        },
-        actionId
-      )
-    )
+    updateDraftRepoAi((current) => {
+      const currentRecipe =
+        current.actionOverrides?.[actionId] ??
+        readCompleteRecipeForDraft(current, settings, actionId)
+      return setActionOverride(current, actionId, {
+        ...currentRecipe,
+        commandInputTemplate: value
+      })
+    })
   }
 
   const updateActionAgentArgs = (actionId: SourceControlActionId, value: string): void => {
-    updateDraftRepoAi((current) =>
-      dropRepoLegacyInstructionForAction(
-        {
-          ...current,
-          actionOverrides: {
-            ...current.actionOverrides,
-            [actionId]: {
-              ...current.actionOverrides?.[actionId],
-              agentArgs: value
-            }
-          }
-        },
-        actionId
-      )
-    )
+    updateDraftRepoAi((current) => {
+      const currentRecipe =
+        current.actionOverrides?.[actionId] ??
+        readCompleteRecipeForDraft(current, settings, actionId)
+      return setActionOverride(current, actionId, {
+        ...currentRecipe,
+        agentArgs: value
+      })
+    })
   }
 
   const appendVariable = (actionId: SourceControlActionId, variable: string): void => {
@@ -374,7 +275,7 @@ export function RepositorySourceControlAiSection({
     updateActionTemplate(actionId, `${currentTemplate}${separator}{${variable}}`)
   }
 
-  const updatePrDefault = (key: PrDefaultKey, value: string): void => {
+  const updateHostedReviewDefault = (key: HostedReviewDefaultKey, value: string): void => {
     updateDraftRepoAi((current) => {
       const nextDefaults = { ...current.prCreationDefaults }
       if (value === 'inherit') {
@@ -386,13 +287,6 @@ export function RepositorySourceControlAiSection({
     })
   }
 
-  const prDefaultRows: { key: PrDefaultKey; label: string }[] = [
-    { key: 'draft', label: 'Draft by default' },
-    { key: 'useTemplate', label: 'Use PR template when available' },
-    { key: 'generateDetailsOnOpen', label: 'Generate details when opening Create PR' },
-    { key: 'openAfterCreate', label: 'Open PR after creation' }
-  ]
-
   return (
     <section
       id={getRepositorySourceControlAiSectionId(repo.id)}
@@ -403,8 +297,8 @@ export function RepositorySourceControlAiSection({
         <div className="min-w-0 space-y-1">
           <h3 className="text-sm font-semibold">Source Control AI</h3>
           <p className="text-xs text-muted-foreground">
-            Repo-specific action recipes. Each action inherits global settings until you customize
-            it here.
+            Repository action recipes. Global settings are used until this repository customizes
+            them.
           </p>
           {saveError ? <p className="text-xs text-destructive">{saveError}</p> : null}
         </div>
@@ -435,155 +329,31 @@ export function RepositorySourceControlAiSection({
         </div>
       </div>
 
-      <div className="space-y-3">
-        <Label className="text-xs font-medium">Action recipes</Label>
-        {SOURCE_CONTROL_ACTION_IDS.map((actionId) => {
-          const hasOverride = hasOwnActionOverride(repoAi.actionOverrides, actionId)
-          const override = repoAi.actionOverrides?.[actionId]
-          const inheritedTemplate = readInheritedCommandTemplate(source, actionId)
-          const inheritedAgentArgs = readInheritedAgentArgs(source, actionId)
-          const templateValue =
-            hasOverride && typeof override?.commandInputTemplate === 'string'
-              ? override.commandInputTemplate
-              : ''
-          const agentArgsValue =
-            hasOverride && typeof override?.agentArgs === 'string' ? override.agentArgs : ''
-          const agentArgsPlaceholder =
-            inheritedAgentArgs ||
-            getSourceControlAgentArgsPlaceholder(
-              resolveAgentArgsPlaceholderAgent(
-                override?.agentId,
-                source,
-                actionId,
-                settings?.defaultTuiAgent
-              )
-            )
-          const agentOptions = getAgentCatalogForAction(actionId, override?.agentId)
-          return (
-            <div key={actionId} className="space-y-3 rounded-md border border-border px-3 py-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 space-y-0.5">
-                  <p className="text-xs font-medium text-foreground">
-                    {SOURCE_CONTROL_ACTION_LABELS[actionId]}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {ACTION_DESCRIPTIONS[actionId]}
-                  </p>
-                </div>
-                <Select
-                  value={hasOverride ? ACTION_MODE_OVERRIDE : ACTION_MODE_INHERIT}
-                  onValueChange={(value) => updateActionMode(actionId, value)}
-                >
-                  <SelectTrigger size="sm" className="h-8 w-full shrink-0 text-xs sm:w-[150px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ACTION_MODE_INHERIT}>Use global</SelectItem>
-                    <SelectItem value={ACTION_MODE_OVERRIDE}>Customize</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
-                <div className="space-y-2">
-                  <Label className="text-[11px] text-muted-foreground">Agent</Label>
-                  <Select
-                    value={actionAgentSelectValue(override?.agentId)}
-                    onValueChange={(value) => updateActionAgent(actionId, value)}
-                    disabled={!hasOverride}
-                  >
-                    <SelectTrigger size="sm" className="h-8 w-full text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={INHERIT_AGENT_VALUE}>
-                        <span className="flex items-center gap-2">
-                          <Terminal className="size-3.5 text-muted-foreground" />
-                          Use global agent
-                        </span>
-                      </SelectItem>
-                      <SelectItem value={DEFAULT_AGENT_VALUE}>
-                        <span className="flex items-center gap-2">
-                          <Terminal className="size-3.5 text-muted-foreground" />
-                          Use default agent
-                        </span>
-                      </SelectItem>
-                      {SOURCE_CONTROL_TEXT_ACTION_ID_SET.has(actionId) ? (
-                        <SelectItem value={CUSTOM_AGENT_ID}>
-                          <span className="flex items-center gap-2">
-                            <Terminal className="size-3.5 text-muted-foreground" />
-                            Custom command
-                          </span>
-                        </SelectItem>
-                      ) : null}
-                      {agentOptions.map((agent) => (
-                        <SelectItem key={agent.id} value={agent.id}>
-                          <span className="flex items-center gap-2">
-                            <AgentIcon agent={agent.id} size={14} />
-                            {agent.label}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Label className="text-[11px] text-muted-foreground">CLI arguments</Label>
-                  <Input
-                    value={agentArgsValue}
-                    onChange={(event) => updateActionAgentArgs(actionId, event.target.value)}
-                    disabled={!hasOverride}
-                    placeholder={agentArgsPlaceholder}
-                    spellCheck={false}
-                    className="h-8 font-mono text-xs disabled:cursor-not-allowed disabled:bg-muted/40"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[11px] text-muted-foreground">Command template</Label>
-                  <textarea
-                    rows={3}
-                    value={templateValue}
-                    onChange={(event) => updateActionTemplate(actionId, event.target.value)}
-                    disabled={!hasOverride}
-                    placeholder={inheritedTemplate}
-                    spellCheck={false}
-                    className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:bg-muted/40"
-                  />
-                  <SourceControlActionVariableChips
-                    actionId={actionId}
-                    disabled={!hasOverride}
-                    onInsert={(variable) => appendVariable(actionId, variable)}
-                  />
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="space-y-2">
-        <Label className="text-xs font-medium">PR creation defaults</Label>
-        <div className="space-y-2">
-          {prDefaultRows.map((row) => (
-            <div
-              key={row.key}
-              className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2"
-            >
-              <span className="text-xs text-foreground">{row.label}</span>
-              <Select
-                value={triStateValue(repoAi.prCreationDefaults?.[row.key])}
-                onValueChange={(value) => updatePrDefault(row.key, value)}
-              >
-                <SelectTrigger size="sm" className="h-8 w-[120px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">Use global</SelectItem>
-                  <SelectItem value="on">On</SelectItem>
-                  <SelectItem value="off">Off</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          ))}
-        </div>
-      </div>
+      <RepositorySourceControlAiEnablement
+        value={repoAi.enabled}
+        source={source}
+        onChange={updateEnablement}
+      />
+      <RepositorySourceControlAiCustomCommand
+        value={repoAi.customAgentCommand}
+        source={source}
+        onChange={updateCustomCommand}
+      />
+      <RepositorySourceControlAiActionRows
+        repoAi={repoAi}
+        source={source}
+        defaultTuiAgent={settings?.defaultTuiAgent}
+        onActionModeChange={updateActionMode}
+        onActionAgentChange={updateActionAgent}
+        onActionTemplateChange={updateActionTemplate}
+        onActionAgentArgsChange={updateActionAgentArgs}
+        onAppendVariable={appendVariable}
+      />
+      <RepositorySourceControlAiHostedReviewDefaults
+        value={repoAi.prCreationDefaults}
+        source={source}
+        onChange={updateHostedReviewDefault}
+      />
     </section>
   )
 }

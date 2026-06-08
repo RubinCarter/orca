@@ -2303,6 +2303,24 @@ describe('Store', () => {
     expect(reloaded.getRepo('r1')!.sourceControlAi).toBeUndefined()
   })
 
+  it('updateRepo treats source-control AI null as a transport clear sentinel', async () => {
+    const store = await createStore()
+    store.addRepo(
+      makeRepo({
+        sourceControlAi: {
+          enabled: true,
+          customAgentCommand: 'repo-agent {prompt}'
+        }
+      })
+    )
+
+    store.updateRepo('r1', {
+      sourceControlAi: null
+    })
+
+    expect(store.getRepo('r1')!.sourceControlAi).toBeUndefined()
+  })
+
   it('updateRepo normalizes source-control AI overrides before storing', async () => {
     const store = await createStore()
     store.addRepo(makeRepo())
@@ -2366,7 +2384,12 @@ describe('Store', () => {
     const updated = store.updateRepo('r1', { sourceControlAi: 'bad' as never })
 
     expect(updated!.sourceControlAi).toEqual({
-      instructionsByOperation: { commitMessage: 'Keep me' }
+      instructionsByOperation: { commitMessage: 'Keep me' },
+      actionOverrides: {
+        commitMessage: {
+          commandInputTemplate: '{basePrompt}\n\nKeep me'
+        }
+      }
     })
   })
 

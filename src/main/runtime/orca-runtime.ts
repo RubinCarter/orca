@@ -6748,9 +6748,8 @@ export class OrcaRuntimeService {
         | 'externalWorktreeVisibilityPromptDismissedAt'
         | 'projectGroupId'
         | 'projectGroupOrder'
-        | 'sourceControlAi'
       >
-    >
+    > & { sourceControlAi?: Repo['sourceControlAi'] | null }
   ): Promise<Repo> {
     if (!this.store) {
       throw new Error('runtime_unavailable')
@@ -6759,6 +6758,9 @@ export class OrcaRuntimeService {
     const sanitizedUpdates = omitUndefinedProperties(updates)
     if ('worktreeBasePath' in updates && updates.worktreeBasePath === undefined) {
       sanitizedUpdates.worktreeBasePath = undefined
+    }
+    if ('sourceControlAi' in updates && updates.sourceControlAi === null) {
+      sanitizedUpdates.sourceControlAi = null
     }
     const updated = this.store.updateRepo(repo.id, sanitizedUpdates)
     if (!updated) {

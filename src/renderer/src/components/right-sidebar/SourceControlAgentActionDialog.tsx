@@ -18,6 +18,7 @@ import {
 import { isTuiAgentEnabled } from '../../../../shared/tui-agent-selection'
 import type { TuiAgent } from '../../../../shared/types'
 import type { LaunchSource } from '../../../../shared/telemetry-events'
+import type { SourceControlAiWriteTarget } from '../../../../shared/source-control-ai-recipe-save'
 import { planSourceControlAgentActionLaunch } from '@/lib/source-control-agent-action-plan'
 import { pickSourceControlLaunchAgent } from '@/lib/source-control-launch-agent-selection'
 import { toast } from 'sonner'
@@ -38,10 +39,13 @@ export type SourceControlAgentActionDialogProps = {
   worktreeId?: string | null
   groupId?: string | null
   connectionId?: string | null
+  repoId?: string | null
   promptDelivery?: 'auto-submit' | 'draft' | 'submit-after-ready'
+  launchPlatform?: NodeJS.Platform
   launchSource: LaunchSource
   savedAgentId?: TuiAgent | null
   onSaveAgentDefault?: (
+    target: SourceControlAiWriteTarget,
     actionId: SourceControlLaunchActionId,
     recipe: SourceControlActionRecipe
   ) => void | Promise<void>
@@ -77,7 +81,9 @@ export function SourceControlAgentActionDialog({
   worktreeId,
   groupId,
   connectionId,
+  repoId,
   promptDelivery = 'submit-after-ready',
+  launchPlatform,
   launchSource,
   savedAgentId,
   onSaveAgentDefault,
@@ -100,7 +106,18 @@ export function SourceControlAgentActionDialog({
     status: 'idle'
   })
   const [isStarting, setIsStarting] = useState(false)
-  const [saveAgentDefault, setSaveAgentDefault] = useState(true)
+  const saveTargets = useMemo(() => {
+    const targets = [{ value: 'none', label: "Don't save" }]
+    if (repoId) {
+      targets.push({ value: 'repo', label: 'Save for this repository only' })
+    }
+    targets.push({
+      value: 'global',
+      label: repoId ? 'Save as default for all repositories' : 'Save as global default'
+    })
+    return targets
+  }, [repoId])
+  const [saveTargetValue, setSaveTargetValue] = useState(repoId ? 'repo' : 'global')
 
   const disabledAgents = settings?.disabledTuiAgents
   const connectionUnavailable = Boolean(worktreeId && connectionId === undefined)
@@ -131,6 +148,7 @@ export function SourceControlAgentActionDialog({
     setCommandTemplate(savedCommandInputTemplate ?? '{basePrompt}')
     setAgentArgs(savedAgentArgs ?? '')
     setSelectedAgent(savedAgentId ?? null)
+    setSaveTargetValue(repoId ? 'repo' : 'global')
     let stale = false
     void refreshDetectedAgents().then((nextAgents) => {
       if (stale) {
@@ -163,6 +181,7 @@ export function SourceControlAgentActionDialog({
     savedAgentId,
     savedAgentArgs,
     savedCommandInputTemplate,
+    repoId,
     settings?.defaultTuiAgent
   ])
 
@@ -170,11 +189,11 @@ export function SourceControlAgentActionDialog({
     (nextOpen: boolean) => {
       if (!nextOpen) {
         setDeliveryPlan({ status: 'idle' })
-        setSaveAgentDefault(true)
+        setSaveTargetValue(repoId ? 'repo' : 'global')
       }
       onOpenChange(nextOpen)
     },
-    [onOpenChange]
+    [onOpenChange, repoId]
   )
 
   const enabledDetectedAgents = useMemo(
@@ -217,7 +236,8 @@ export function SourceControlAgentActionDialog({
         promptDelivery,
         detectedAgents: currentDetectedAgents,
         disabledAgents: useAppStore.getState().settings?.disabledTuiAgents,
-        cmdOverrides: useAppStore.getState().settings?.agentCmdOverrides
+        cmdOverrides: useAppStore.getState().settings?.agentCmdOverrides,
+        platform: launchPlatform
       })
       if (!result.ok) {
         return { status: 'error', error: result.error }
@@ -235,7 +255,8 @@ export function SourceControlAgentActionDialog({
       connectionUnavailable,
       promptDelivery,
       refreshDetectedAgents,
-      selectedAgent
+      selectedAgent,
+      launchPlatform
     ]
   )
 
@@ -272,6 +293,7 @@ export function SourceControlAgentActionDialog({
           prompt: trimmedCommandInput,
           agentArgs,
           promptDelivery,
+          launchPlatform,
           launchSource
         })
         launched = Boolean(result)
@@ -283,8 +305,14 @@ export function SourceControlAgentActionDialog({
         toast.error('Could not start the selected agent.')
         return
       }
-      if (saveAgentDefault && onSaveAgentDefault) {
-        await onSaveAgentDefault(actionId, {
+      const saveTarget =
+        saveTargetValue === 'repo' && repoId
+          ? ({ type: 'repo', repoId } as const)
+          : saveTargetValue === 'global'
+            ? ({ type: 'global' } as const)
+            : null
+      if (saveTarget && onSaveAgentDefault) {
+        await onSaveAgentDefault(saveTarget, actionId, {
           agentId: selectedAgent,
           commandInputTemplate: commandTemplate,
           agentArgs
@@ -304,13 +332,15 @@ export function SourceControlAgentActionDialog({
     groupId,
     isStarting,
     launchSource,
+    launchPlatform,
     handleOpenChange,
     onLaunched,
     onSaveAgentDefault,
     onStart,
     promptDelivery,
     refreshDetectedAgents,
-    saveAgentDefault,
+    repoId,
+    saveTargetValue,
     selectedAgent,
     trimmedCommandInput,
     worktreeId
@@ -342,7 +372,8 @@ export function SourceControlAgentActionDialog({
           commandTemplate={commandTemplate}
           savedCommandInputTemplate={savedCommandInputTemplate}
           baseCommandInput={baseCommandInput}
-          saveAgentDefault={saveAgentDefault}
+          saveTargetValue={saveTargetValue}
+          saveTargets={saveTargets}
           canSaveAgentDefault={Boolean(onSaveAgentDefault)}
           deliveryPlan={deliveryPlan}
           canStart={canStart}
@@ -360,7 +391,7 @@ export function SourceControlAgentActionDialog({
             setCommandTemplate(value)
             setDeliveryPlan({ status: 'idle' })
           }}
-          onSaveAgentDefaultChange={setSaveAgentDefault}
+          onSaveAgentDefaultChange={setSaveTargetValue}
           onOpenSettings={onOpenSettings}
           onStart={() => void handleStart()}
         />

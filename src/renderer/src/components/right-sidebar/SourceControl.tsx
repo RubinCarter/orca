@@ -177,24 +177,28 @@ import { isCustomAgentId } from '../../../../shared/commit-message-agent-spec'
 import {
   DEFAULT_SOURCE_CONTROL_AI_PR_CREATION_DEFAULTS,
   normalizeRepoSourceControlAiOverrides,
-  normalizeSourceControlAiSettings,
   resolveSourceControlActionRecipe,
   resolveSourceControlAiForOperation,
-  resolveSourceControlAiPrCreationDefaults
+  resolveSourceControlAiPrCreationDefaults,
+  type ResolvedSourceControlAiGenerationParams
 } from '../../../../shared/source-control-ai'
 import {
   DEFAULT_SOURCE_CONTROL_ACTION_COMMAND_TEMPLATES,
   renderSourceControlActionCommandTemplate,
-  setSourceControlActionDefault,
   type SourceControlTextActionId,
   type SourceControlActionRecipe,
   type SourceControlLaunchActionId
 } from '../../../../shared/source-control-ai-actions'
+import {
+  saveSourceControlActionRecipe,
+  type SourceControlAiWriteTarget
+} from '../../../../shared/source-control-ai-recipe-save'
 import { isTuiAgentEnabled } from '../../../../shared/tui-agent-selection'
 import { getCommitMessageModelDiscoveryHostKeyForScope } from '../../../../shared/commit-message-host-key'
 import { getRuntimeGitScope } from '@/runtime/runtime-git-client'
 import { getWorktreeGitIdentityDisplay } from '@/lib/worktree-git-identity-display'
 import { getRepositorySourceControlAiSectionId } from '@/components/settings/repository-settings-targets'
+import { resolveSourceControlLaunchPlatform } from '@/lib/source-control-launch-platform'
 import {
   getCommitFailureDialogWorktreeKey,
   shouldShowCommitFailureDialog,
@@ -208,10 +212,6 @@ import {
 } from './source-control-split-open'
 import { SourceControlAgentActionDialog } from './SourceControlAgentActionDialog'
 import { SourceControlTextGenerationDialog } from './SourceControlTextGenerationDialog'
-import {
-  applyCommitMessageGenerationDefaults,
-  applySourceControlTextGenerationDefaults
-} from './SourceControlTextGenerationDefaults'
 
 export type SourceControlScope = 'all' | 'uncommitted'
 type AbortConflictOperation = Extract<GitConflictOperation, 'merge' | 'rebase'>
@@ -240,6 +240,16 @@ function textGenerationRecipeIsConfigured(
     return true
   }
   return typeof recipe?.agentArgs === 'string' && recipe.agentArgs.trim().length > 0
+}
+
+function generationParamsToActionRecipe(
+  params: ResolvedSourceControlAiGenerationParams
+): SourceControlActionRecipe {
+  return {
+    agentId: params.agentId,
+    commandInputTemplate: params.commandInputTemplate ?? '{basePrompt}',
+    ...(params.agentArgs !== undefined ? { agentArgs: params.agentArgs } : {})
+  }
 }
 
 export function hasConfiguredSourceControlTextGenerationDefaults(input: {
@@ -1369,13 +1379,6 @@ function SourceControlInner(): React.JSX.Element {
   const prGenerationRequestSeqRef = useRef(0)
   const prGenerationInFlightRef = useRef<Record<string, boolean>>({})
   const [prGenerationRecords, setPrGenerationRecords] = useState<PullRequestGenerationRecords>({})
-  const sourceControlAi = useMemo(() => {
-    const normalized = normalizeSourceControlAiSettings(
-      settings?.sourceControlAi,
-      settings?.commitMessageAi
-    )
-    return settings ? normalized : { ...normalized, enabled: false }
-  }, [settings])
   const getLaunchActionRecipe = useCallback(
     (actionId: SourceControlLaunchActionId): SourceControlActionRecipe =>
       resolveSourceControlActionRecipe({
@@ -1385,24 +1388,47 @@ function SourceControlInner(): React.JSX.Element {
       }),
     [activeRepo, settings]
   )
+  const saveActionRecipeForTarget = useCallback(
+    async (
+      target: SourceControlAiWriteTarget,
+      actionId: SourceControlTextActionId | SourceControlLaunchActionId,
+      recipe: SourceControlActionRecipe,
+      customAgentCommand?: string
+    ): Promise<void> => {
+      const state = useAppStore.getState()
+      const latestSettings = state.settings
+      if (!latestSettings) {
+        throw new Error('Settings are not loaded.')
+      }
+      const latestRepo =
+        target.type === 'repo'
+          ? (state.repos.find((candidate) => candidate.id === target.repoId) ?? null)
+          : null
+      const result = saveSourceControlActionRecipe({
+        target,
+        settings: latestSettings,
+        repo: latestRepo,
+        actionId,
+        recipe,
+        customAgentCommand
+      })
+      if ('sourceControlAi' in result) {
+        await updateSettings({ sourceControlAi: result.sourceControlAi })
+        return
+      }
+      await updateRepo(result.target.repoId, result.update)
+    },
+    [updateRepo, updateSettings]
+  )
   const saveLaunchActionDefault = useCallback(
     async (
+      target: SourceControlAiWriteTarget,
       actionId: SourceControlLaunchActionId,
       recipe: SourceControlActionRecipe
     ): Promise<void> => {
-      const latestSettings = useAppStore.getState().settings
-      const latestSourceControlAi = normalizeSourceControlAiSettings(
-        latestSettings?.sourceControlAi,
-        latestSettings?.commitMessageAi
-      )
-      await updateSettings({
-        sourceControlAi: {
-          ...latestSourceControlAi,
-          actions: setSourceControlActionDefault(latestSourceControlAi.actions, actionId, recipe)
-        }
-      })
+      await saveActionRecipeForTarget(target, actionId, recipe)
     },
-    [updateSettings]
+    [saveActionRecipeForTarget]
   )
   const filterInputRef = useRef<HTMLInputElement>(null)
   const commitMessage = readCommitDraftForWorktree(commitDrafts, activeWorktreeId)
@@ -1420,6 +1446,10 @@ function SourceControlInner(): React.JSX.Element {
 
   const isFolder = activeRepo ? isFolderRepo(activeRepo) : false
   const worktreePath = activeWorktree?.path ?? null
+  const activeSourceControlLaunchPlatform = resolveSourceControlLaunchPlatform({
+    connectionId: activeRepo?.connectionId ?? null,
+    worktreePath
+  })
   const gitIdentityDisplay = activeWorktree ? getWorktreeGitIdentityDisplay(activeWorktree) : null
   const detachedHeadDisplay = gitIdentityDisplay?.kind === 'detached' ? gitIdentityDisplay : null
   const branchName = gitIdentityDisplay?.kind === 'branch' ? gitIdentityDisplay.branchName : ''
@@ -1442,8 +1472,6 @@ function SourceControlInner(): React.JSX.Element {
         : null,
     [activeRepo, settings, sourceControlAiDiscoveryHostKey]
   )
-  const effectiveCommitMessageAgentId =
-    resolvedCommitMessageAi?.ok === true ? resolvedCommitMessageAi.value.params.agentId : null
   const resolvedPrCreationDefaults = useMemo(() => {
     if (!settings) {
       return DEFAULT_SOURCE_CONTROL_AI_PR_CREATION_DEFAULTS
@@ -1921,6 +1949,7 @@ function SourceControlInner(): React.JSX.Element {
           prompt,
           agentArgs: savedRecipe.agentArgs,
           promptDelivery: 'submit-after-ready',
+          launchPlatform: activeSourceControlLaunchPlatform,
           launchSource: 'source_control_recovery'
         })
         if (!result) {
@@ -1928,7 +1957,9 @@ function SourceControlInner(): React.JSX.Element {
           return false
         }
 
-        focusTerminalTabSurface(result.tabId)
+        if (result.tabId) {
+          focusTerminalTabSurface(result.tabId)
+        }
         toast.success('Started an AI agent for the commit failure.')
         return true
       } finally {
@@ -1938,6 +1969,7 @@ function SourceControlInner(): React.JSX.Element {
     [
       activeGroupId,
       activeWorktreeId,
+      activeSourceControlLaunchPlatform,
       commitError,
       commitFailureRecoveryPrompt,
       getLaunchActionRecipe,
@@ -2139,18 +2171,16 @@ function SourceControlInner(): React.JSX.Element {
       if (generateInFlightRef.current[activeWorktreeId]) {
         return
       }
-      if (
-        !overrides?.sourceControlAiResolvedParams &&
-        (!sourceControlAi.enabled || !effectiveCommitMessageAgentId)
-      ) {
+      if (!overrides?.sourceControlAiResolvedParams && resolvedCommitMessageAi?.ok !== true) {
         return
       }
 
       if (
         !overrides?.sourceControlAiResolvedParams &&
-        isCustomAgentId(effectiveCommitMessageAgentId)
+        resolvedCommitMessageAi?.ok === true &&
+        isCustomAgentId(resolvedCommitMessageAi.value.params.agentId)
       ) {
-        const command = sourceControlAi.customAgentCommand?.trim() ?? ''
+        const command = resolvedCommitMessageAi.value.params.customAgentCommand?.trim() ?? ''
         if (!command) {
           setGenerateErrors((prev) => ({
             ...prev,
@@ -2213,7 +2243,7 @@ function SourceControlInner(): React.JSX.Element {
         generateInFlightRef.current[activeWorktreeId] = false
       }
     },
-    [activeWorktreeId, effectiveCommitMessageAgentId, sourceControlAi, worktreePath]
+    [activeWorktreeId, resolvedCommitMessageAi, worktreePath]
   )
 
   const handleGenerateCommitMessageClick = useCallback((): void => {
@@ -2248,44 +2278,34 @@ function SourceControlInner(): React.JSX.Element {
 
   const handleSaveCommitMessageGenerationDefaults = useCallback(
     async (
+      target: SourceControlAiWriteTarget,
       params: NonNullable<RuntimeGenerateCommitMessageOverrides['sourceControlAiResolvedParams']>
     ): Promise<void> => {
-      const latestSettings = useAppStore.getState().settings
-      const latestSourceControlAi = normalizeSourceControlAiSettings(
-        latestSettings?.sourceControlAi,
-        latestSettings?.commitMessageAi
+      await saveActionRecipeForTarget(
+        target,
+        'commitMessage',
+        generationParamsToActionRecipe(params),
+        isCustomAgentId(params.agentId) ? params.customAgentCommand : undefined
       )
-      await updateSettings({
-        sourceControlAi: applyCommitMessageGenerationDefaults(
-          latestSourceControlAi,
-          sourceControlAiDiscoveryHostKey,
-          params
-        )
-      })
     },
-    [sourceControlAiDiscoveryHostKey, updateSettings]
+    [saveActionRecipeForTarget]
   )
 
   const handleSavePullRequestGenerationDefaults = useCallback(
     async (
+      target: SourceControlAiWriteTarget,
       params: NonNullable<
         RuntimeGeneratePullRequestFieldsOverrides['sourceControlAiResolvedParams']
       >
     ): Promise<void> => {
-      const latestSettings = useAppStore.getState().settings
-      const latestSourceControlAi = normalizeSourceControlAiSettings(
-        latestSettings?.sourceControlAi,
-        latestSettings?.commitMessageAi
+      await saveActionRecipeForTarget(
+        target,
+        'pullRequest',
+        generationParamsToActionRecipe(params),
+        isCustomAgentId(params.agentId) ? params.customAgentCommand : undefined
       )
-      await updateSettings({
-        sourceControlAi: applySourceControlTextGenerationDefaults(
-          latestSourceControlAi,
-          'pullRequest',
-          params
-        )
-      })
     },
-    [updateSettings]
+    [saveActionRecipeForTarget]
   )
 
   // Why: a single dispatcher for every remote-only action the split button or
@@ -2791,6 +2811,7 @@ function SourceControlInner(): React.JSX.Element {
     worktreePath: worktreePath ?? '',
     branch: branchName,
     eligibility: hostedReviewCreation,
+    repo: activeRepo ?? null,
     settings,
     submitting: isCreatingPr,
     prCreationDefaults: resolvedPrCreationDefaults,
@@ -3034,6 +3055,7 @@ function SourceControlInner(): React.JSX.Element {
   ])
 
   const hasUnstagedChanges = grouped.unstaged.length > 0 || grouped.untracked.length > 0
+  const hasStageableChanges = hasUnstagedChanges
   const hasPartiallyStagedChanges = useMemo(() => {
     if (grouped.staged.length === 0 || grouped.unstaged.length === 0) {
       return false
@@ -3046,6 +3068,7 @@ function SourceControlInner(): React.JSX.Element {
     const action = resolvePrimaryAction({
       stagedCount: grouped.staged.length,
       hasUnstagedChanges,
+      hasStageableChanges,
       hasPartiallyStagedChanges,
       hasMessage: commitMessage.trim().length > 0,
       hasUnresolvedConflicts: unresolvedConflicts.length > 0,
@@ -3069,6 +3092,7 @@ function SourceControlInner(): React.JSX.Element {
   }, [
     commitMessage,
     grouped.staged.length,
+    hasStageableChanges,
     hasUnstagedChanges,
     hasPartiallyStagedChanges,
     isCommitting,
@@ -3091,6 +3115,7 @@ function SourceControlInner(): React.JSX.Element {
       resolveDropdownItems({
         stagedCount: grouped.staged.length,
         hasUnstagedChanges,
+        hasStageableChanges,
         hasPartiallyStagedChanges,
         hasMessage: commitMessage.trim().length > 0,
         hasUnresolvedConflicts: unresolvedConflicts.length > 0,
@@ -3110,6 +3135,7 @@ function SourceControlInner(): React.JSX.Element {
     [
       commitMessage,
       grouped.staged.length,
+      hasStageableChanges,
       hasUnstagedChanges,
       hasPartiallyStagedChanges,
       isCommitting,
@@ -4572,6 +4598,8 @@ function SourceControlInner(): React.JSX.Element {
               <CommitArea
                 worktreeId={activeWorktreeId}
                 connectionId={activeWorktreeId ? getConnectionId(activeWorktreeId) : null}
+                repoId={activeRepo?.id ?? null}
+                launchPlatform={activeSourceControlLaunchPlatform}
                 commitMessage={commitMessage}
                 commitError={commitError}
                 commitFailureRecoveryPrompt={commitFailureRecoveryPrompt}
@@ -4580,16 +4608,8 @@ function SourceControlInner(): React.JSX.Element {
                 isFixingCommitFailureWithAI={isLaunchingCommitFailureAgent}
                 groupId={activeGroupId ?? activeWorktreeId}
                 showComposer={!(scope === 'all' && showGenericEmptyState)}
-                aiEnabled={sourceControlAi.enabled === true}
-                aiAgentConfigured={
-                  sourceControlAi.enabled === true &&
-                  effectiveCommitMessageAgentId !== null &&
-                  // Why: 'custom' is configured only once the user types a command.
-                  // Without this guard, Generate would spawn an empty command and
-                  // fail with a confusing error.
-                  (!isCustomAgentId(effectiveCommitMessageAgentId) ||
-                    (sourceControlAi.customAgentCommand ?? '').trim().length > 0)
-                }
+                aiEnabled={resolvedCommitMessageAi?.ok === true}
+                aiAgentConfigured={resolvedCommitMessageAi?.ok === true}
                 isGenerating={isGenerating}
                 generateError={generateError}
                 stagedCount={grouped.staged.length}
@@ -4999,7 +5019,9 @@ function SourceControlInner(): React.JSX.Element {
         worktreeId={activeWorktreeId}
         groupId={activeGroupId ?? activeWorktreeId}
         connectionId={activeWorktreeId ? getConnectionId(activeWorktreeId) : null}
+        repoId={activeRepo?.id ?? null}
         promptDelivery="submit-after-ready"
+        launchPlatform={activeSourceControlLaunchPlatform}
         launchSource="conflict_resolution"
         savedAgentId={readSourceControlLaunchRecipeAgentId(
           getLaunchActionRecipe('resolveConflicts')
@@ -5398,6 +5420,8 @@ type CommitFailureFixSplitButtonProps = {
   worktreeId: string | null
   groupId: string | null
   connectionId?: string | null
+  repoId?: string | null
+  launchPlatform?: NodeJS.Platform
   prompt: string | null
   isLaunching: boolean
   variant: React.ComponentProps<typeof Button>['variant']
@@ -5409,6 +5433,7 @@ type CommitFailureFixSplitButtonProps = {
   savedCommandInputTemplate?: string | null
   savedAgentArgs?: string | null
   onSaveAgentDefault?: (
+    target: SourceControlAiWriteTarget,
     actionId: SourceControlLaunchActionId,
     recipe: SourceControlActionRecipe
   ) => void | Promise<void>
@@ -5422,6 +5447,8 @@ function CommitFailureFixSplitButton({
   worktreeId,
   groupId,
   connectionId,
+  repoId,
+  launchPlatform,
   prompt,
   isLaunching,
   variant,
@@ -5501,7 +5528,9 @@ function CommitFailureFixSplitButton({
           worktreeId={worktreeId}
           groupId={groupId}
           connectionId={connectionId}
+          repoId={repoId}
           promptDelivery="submit-after-ready"
+          launchPlatform={launchPlatform}
           launchSource="source_control_recovery"
           savedAgentId={savedAgentId}
           savedCommandInputTemplate={savedCommandInputTemplate}
@@ -5531,6 +5560,8 @@ type CommitAreaProps = {
   worktreeId: string | null
   groupId: string | null
   connectionId?: string | null
+  repoId?: string | null
+  launchPlatform?: NodeJS.Platform
   commitMessage: string
   commitError: string | null
   commitFailureRecoveryPrompt: string | null
@@ -5554,6 +5585,7 @@ type CommitAreaProps = {
   onGenerate: () => void
   onCancelGenerate: () => void
   onSaveLaunchActionDefault?: (
+    target: SourceControlAiWriteTarget,
     actionId: SourceControlLaunchActionId,
     recipe: SourceControlActionRecipe
   ) => void | Promise<void>
@@ -5567,6 +5599,8 @@ export function CommitArea({
   worktreeId,
   groupId,
   connectionId,
+  repoId,
+  launchPlatform,
   commitMessage,
   commitError,
   commitFailureRecoveryPrompt,
@@ -5919,6 +5953,8 @@ export function CommitArea({
                 worktreeId={worktreeId}
                 groupId={groupId}
                 connectionId={connectionId}
+                repoId={repoId}
+                launchPlatform={launchPlatform}
                 prompt={commitFailureRecoveryPrompt}
                 isLaunching={isFixingCommitFailureWithAI}
                 variant="secondary"
@@ -5969,6 +6005,8 @@ export function CommitArea({
                 worktreeId={worktreeId}
                 groupId={groupId}
                 connectionId={connectionId}
+                repoId={repoId}
+                launchPlatform={launchPlatform}
                 prompt={commitFailureRecoveryPrompt}
                 isLaunching={isFixingCommitFailureWithAI}
                 variant="default"

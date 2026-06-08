@@ -6,6 +6,7 @@ import {
   mergeLegacyCommitMessageAiIntoSourceControlAi,
   normalizeRepoSourceControlAiOverrides,
   projectSourceControlAiToLegacyCommitMessageAi,
+  resolveSourceControlAiEnabled,
   readSourceControlAiModelChoiceForHost,
   resolveSourceControlAiForOperation,
   resolveSourceControlAiPrCreationDefaults,
@@ -111,6 +112,30 @@ describe('source-control AI resolution', () => {
     })
   })
 
+  it('lets repo enablement override the global default', () => {
+    const base = settings()
+    base.sourceControlAi = {
+      ...base.sourceControlAi!,
+      enabled: false
+    }
+
+    expect(resolveSourceControlAiEnabled({ settings: base, repo: null })).toBe(false)
+    expect(
+      resolveSourceControlAiEnabled({
+        settings: base,
+        repo: { sourceControlAi: { enabled: true } }
+      })
+    ).toBe(true)
+
+    base.sourceControlAi.enabled = true
+    expect(
+      resolveSourceControlAiEnabled({
+        settings: base,
+        repo: { sourceControlAi: { enabled: false } }
+      })
+    ).toBe(false)
+  })
+
   it('resolves PR defaults even when generation config is invalid', () => {
     const base = settings()
     base.sourceControlAi = {
@@ -201,6 +226,34 @@ describe('source-control AI resolution', () => {
       discoveryHostKey: 'local'
     })
     expect(result.ok && result.value.params.model).toBe('gpt-5.4-mini')
+  })
+
+  it('uses the repo custom command before the global custom command', () => {
+    const base = settings()
+    base.sourceControlAi = {
+      ...base.sourceControlAi!,
+      actions: {
+        ...base.sourceControlAi!.actions,
+        commitMessage: {
+          agentId: 'custom',
+          commandInputTemplate: '{basePrompt}'
+        }
+      },
+      customAgentCommand: 'global-agent {prompt}'
+    }
+
+    const result = resolveSourceControlAiForOperation({
+      settings: base,
+      repo: {
+        sourceControlAi: {
+          customAgentCommand: 'repo-agent {prompt}'
+        }
+      },
+      operation: 'commitMessage',
+      discoveryHostKey: 'local'
+    })
+
+    expect(result.ok && result.value.params.customAgentCommand).toBe('repo-agent {prompt}')
   })
 
   it('resolves thinking effort with override precedence and model default fallback', () => {

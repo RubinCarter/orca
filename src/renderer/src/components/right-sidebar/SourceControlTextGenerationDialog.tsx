@@ -8,13 +8,16 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import {
-  normalizeSourceControlAiSettings,
   resolveSourceControlAiForOperation,
   type ResolvedSourceControlAiGenerationParams
 } from '../../../../shared/source-control-ai'
 import type { SourceControlTextActionId } from '../../../../shared/source-control-ai-actions'
 import type { GlobalSettings, Repo } from '../../../../shared/types'
-import { SourceControlTextGenerationDialogForm } from './SourceControlTextGenerationDialogForm'
+import type { SourceControlAiWriteTarget } from '../../../../shared/source-control-ai-recipe-save'
+import {
+  SourceControlTextGenerationDialogForm,
+  type SourceControlTextGenerationSaveTarget
+} from './SourceControlTextGenerationDialogForm'
 
 export { buildCommitMessageGenerationParams } from './SourceControlTextGenerationParams'
 
@@ -22,10 +25,13 @@ type SourceControlTextGenerationBaseDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   settings: GlobalSettings | null
-  repo?: Pick<Repo, 'sourceControlAi'> | null
+  repo?: Pick<Repo, 'id' | 'sourceControlAi'> | null
   discoveryHostKey: string
   onGenerate: (params: ResolvedSourceControlAiGenerationParams) => void
-  onSaveDefaults: (params: ResolvedSourceControlAiGenerationParams) => Promise<void> | void
+  onSaveDefaults: (
+    target: SourceControlAiWriteTarget,
+    params: ResolvedSourceControlAiGenerationParams
+  ) => Promise<void> | void
 }
 
 type SourceControlTextGenerationDialogProps = SourceControlTextGenerationBaseDialogProps & {
@@ -61,13 +67,32 @@ export function SourceControlTextGenerationDialog({
     [actionId, discoveryHostKey, repo, settings]
   )
   const baseParams = resolved.ok ? resolved.value.params : null
-  const sourceControlAi = useMemo(
-    () =>
-      settings
-        ? normalizeSourceControlAiSettings(settings.sourceControlAi, settings.commitMessageAi)
-        : null,
-    [settings]
-  )
+  const recipeLabel =
+    actionId === 'commitMessage'
+      ? 'commit-message recipe'
+      : actionId === 'pullRequest'
+        ? 'hosted-review recipe'
+        : 'branch-name recipe'
+  const saveTargets: SourceControlTextGenerationSaveTarget[] = repo?.id
+    ? [
+        {
+          target: { type: 'repo', repoId: repo.id },
+          label: 'Save for this repository only',
+          successMessage: `Saved ${recipeLabel} for this repository.`
+        },
+        {
+          target: { type: 'global' },
+          label: 'Save as default for all repositories',
+          successMessage: `Saved ${recipeLabel} as a global default.`
+        }
+      ]
+    : [
+        {
+          target: { type: 'global' },
+          label: 'Save as global default',
+          successMessage: `Saved ${recipeLabel} as a global default.`
+        }
+      ]
   const formKey = open
     ? JSON.stringify([
         actionId,
@@ -99,7 +124,7 @@ export function SourceControlTextGenerationDialog({
           generateLabel={generateLabel}
           settings={settings}
           baseParams={baseParams}
-          sourceControlAi={sourceControlAi}
+          saveTargets={saveTargets}
           onGenerate={onGenerate}
           onOpenChange={onOpenChange}
           onSaveDefaults={onSaveDefaults}

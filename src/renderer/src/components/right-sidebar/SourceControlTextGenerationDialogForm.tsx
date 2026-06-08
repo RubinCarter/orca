@@ -20,7 +20,7 @@ import {
 } from '../../../../shared/commit-message-agent-spec'
 import type { ResolvedSourceControlAiGenerationParams } from '../../../../shared/source-control-ai'
 import type { SourceControlTextActionId } from '../../../../shared/source-control-ai-actions'
-import type { SourceControlAiSettings } from '../../../../shared/source-control-ai-types'
+import type { SourceControlAiWriteTarget } from '../../../../shared/source-control-ai-recipe-save'
 import type { GlobalSettings, TuiAgent } from '../../../../shared/types'
 import { toast } from 'sonner'
 import { SourceControlActionVariableChips } from '../source-control/SourceControlActionVariableChips'
@@ -36,15 +36,24 @@ type PlanState =
   | { status: 'success'; commandLabel: string; delivery: string; caveat: string }
   | { status: 'error'; error: string }
 
+export type SourceControlTextGenerationSaveTarget = {
+  target: SourceControlAiWriteTarget
+  label: string
+  successMessage: string
+}
+
 type SourceControlTextGenerationDialogFormProps = {
   actionId: SourceControlTextActionId
   generateLabel: string
   settings: GlobalSettings | null
   baseParams: ResolvedSourceControlAiGenerationParams | null
-  sourceControlAi: SourceControlAiSettings | null
+  saveTargets: SourceControlTextGenerationSaveTarget[]
   onGenerate: (params: ResolvedSourceControlAiGenerationParams) => void
   onOpenChange: (open: boolean) => void
-  onSaveDefaults: (params: ResolvedSourceControlAiGenerationParams) => Promise<void> | void
+  onSaveDefaults: (
+    target: SourceControlAiWriteTarget,
+    params: ResolvedSourceControlAiGenerationParams
+  ) => Promise<void> | void
 }
 
 function agentLabel(agentId: TuiAgent): string {
@@ -56,15 +65,14 @@ export function SourceControlTextGenerationDialogForm({
   generateLabel,
   settings,
   baseParams,
-  sourceControlAi,
+  saveTargets,
   onGenerate,
   onOpenChange,
   onSaveDefaults
 }: SourceControlTextGenerationDialogFormProps): React.JSX.Element {
   const capabilities = useMemo(listCommitMessageAgentCapabilities, [])
   const showCustomAgent = Boolean(
-    baseParams &&
-    (isCustomAgentId(baseParams.agentId) || sourceControlAi?.customAgentCommand.trim())
+    baseParams && (isCustomAgentId(baseParams.agentId) || baseParams.customAgentCommand?.trim())
   )
   const [agentId, setAgentId] = useState<CommitMessageGenerationAgentChoice>(
     baseParams?.agentId ?? ''
@@ -74,7 +82,7 @@ export function SourceControlTextGenerationDialogForm({
   )
   const [agentArgs, setAgentArgs] = useState(baseParams?.agentArgs ?? '')
   const [plan, setPlan] = useState<PlanState>({ status: 'idle' })
-  const [saving, setSaving] = useState(false)
+  const [savingTargetKey, setSavingTargetKey] = useState<string | null>(null)
   const commandTemplateId = `source-control-${actionId}-command-template`
 
   const params = buildCommitMessageGenerationParams({
@@ -83,10 +91,11 @@ export function SourceControlTextGenerationDialogForm({
     agentArgs,
     baseParams,
     settings,
-    customAgentCommand: sourceControlAi?.customAgentCommand
+    customAgentCommand: baseParams?.customAgentCommand
   })
   const paramsPlanResult = params ? planSourceControlTextGeneration(actionId, params) : null
   const canRunGeneration = Boolean(params && paramsPlanResult?.ok)
+  const saving = savingTargetKey !== null
 
   const handlePlan = (): void => {
     if (!params || !paramsPlanResult) {
@@ -106,29 +115,30 @@ export function SourceControlTextGenerationDialogForm({
   }
 
   const saveCurrentDefaults = useCallback(
-    async (options: { showToast: boolean; showErrors: boolean }): Promise<boolean> => {
+    async (
+      saveTarget: SourceControlTextGenerationSaveTarget,
+      options: { showToast: boolean; showErrors: boolean }
+    ): Promise<boolean> => {
       if (!params || saving || !paramsPlanResult?.ok) {
         if (options.showErrors && paramsPlanResult && !paramsPlanResult.ok) {
           setPlan({ status: 'error', error: paramsPlanResult.error })
         }
         return false
       }
-      setSaving(true)
+      const targetKey =
+        saveTarget.target.type === 'repo' ? `repo:${saveTarget.target.repoId}` : 'global'
+      setSavingTargetKey(targetKey)
       try {
-        await onSaveDefaults(params)
+        await onSaveDefaults(saveTarget.target, params)
         if (options.showToast) {
-          toast.success(
-            actionId === 'commitMessage'
-              ? 'Saved commit-message recipe.'
-              : 'Saved hosted-review recipe.'
-          )
+          toast.success(saveTarget.successMessage)
         }
         return true
       } finally {
-        setSaving(false)
+        setSavingTargetKey(null)
       }
     },
-    [actionId, onSaveDefaults, params, paramsPlanResult, saving]
+    [onSaveDefaults, params, paramsPlanResult, saving]
   )
 
   const handleGenerate = (): void => {
@@ -142,8 +152,10 @@ export function SourceControlTextGenerationDialogForm({
     onOpenChange(false)
   }
 
-  const handleSaveDefaults = async (): Promise<void> => {
-    await saveCurrentDefaults({ showToast: true, showErrors: true })
+  const handleSaveDefaults = async (
+    saveTarget: SourceControlTextGenerationSaveTarget
+  ): Promise<void> => {
+    await saveCurrentDefaults(saveTarget, { showToast: true, showErrors: true })
   }
 
   return (
@@ -260,16 +272,27 @@ export function SourceControlTextGenerationDialogForm({
           <CheckCircle2 className="size-4" />
           Check generation
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!canRunGeneration || saving}
-          onClick={() => void handleSaveDefaults()}
-        >
-          {saving ? <RefreshCw className="size-4 animate-spin" /> : <Save className="size-4" />}
-          Save as default
-        </Button>
+        {saveTargets.map((saveTarget) => {
+          const targetKey =
+            saveTarget.target.type === 'repo' ? `repo:${saveTarget.target.repoId}` : 'global'
+          return (
+            <Button
+              key={targetKey}
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!canRunGeneration || saving}
+              onClick={() => void handleSaveDefaults(saveTarget)}
+            >
+              {savingTargetKey === targetKey ? (
+                <RefreshCw className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
+              {saveTarget.label}
+            </Button>
+          )
+        })}
         <Button
           type="button"
           size="sm"

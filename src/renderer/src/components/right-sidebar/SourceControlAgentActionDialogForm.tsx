@@ -5,7 +5,14 @@ import { Button } from '@/components/ui/button'
 import { DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { getAgentLabel, type AgentCatalogEntry } from '@/lib/agent-catalog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import type { AgentCatalogEntry } from '@/lib/agent-catalog'
 import { cn } from '@/lib/utils'
 import type { SourceControlLaunchActionId } from '../../../../shared/source-control-ai-actions'
 import type { TuiAgent } from '../../../../shared/types'
@@ -27,7 +34,8 @@ type SourceControlAgentActionDialogFormProps = {
   commandTemplate: string
   savedCommandInputTemplate?: string | null
   baseCommandInput: string
-  saveAgentDefault: boolean
+  saveTargetValue: string
+  saveTargets: { value: string; label: string }[]
   canSaveAgentDefault: boolean
   deliveryPlan: SourceControlAgentActionDeliveryPlanState
   canStart: boolean
@@ -36,7 +44,7 @@ type SourceControlAgentActionDialogFormProps = {
   onSelectedAgentChange: (agent: TuiAgent | null) => void
   onAgentArgsChange: (value: string) => void
   onCommandTemplateChange: (value: string) => void
-  onSaveAgentDefaultChange: (value: boolean) => void
+  onSaveAgentDefaultChange: (value: string) => void
   onOpenSettings?: () => void
   onStart: () => void
 }
@@ -52,7 +60,8 @@ export function SourceControlAgentActionDialogForm({
   commandTemplate,
   savedCommandInputTemplate,
   baseCommandInput,
-  saveAgentDefault,
+  saveTargetValue,
+  saveTargets,
   canSaveAgentDefault,
   deliveryPlan,
   canStart,
@@ -145,16 +154,21 @@ export function SourceControlAgentActionDialogForm({
         </div>
 
         {canSaveAgentDefault && selectedAgent ? (
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={saveAgentDefault}
-              onChange={(event) => onSaveAgentDefaultChange(event.target.checked)}
-              className="size-3.5 rounded border-border"
-            />
-            Save {getAgentLabel(selectedAgent)}, these CLI arguments, and this command template as
-            the default for this action
-          </label>
+          <div className="space-y-2">
+            <Label className="text-xs">Save launch recipe</Label>
+            <Select value={saveTargetValue} onValueChange={onSaveAgentDefaultChange}>
+              <SelectTrigger size="sm" className="h-8 w-full text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {saveTargets.map((target) => (
+                  <SelectItem key={target.value} value={target.value}>
+                    {target.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         ) : null}
 
         {deliveryPlan.status !== 'idle' ? (

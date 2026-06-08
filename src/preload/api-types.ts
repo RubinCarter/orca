@@ -737,9 +737,8 @@ export type PreloadApi = {
           | 'externalWorktreeVisibilityPromptDismissedAt'
           | 'projectGroupId'
           | 'projectGroupOrder'
-          | 'sourceControlAi'
         >
-      >
+      > & { sourceControlAi?: Repo['sourceControlAi'] | null }
     }) => Promise<Repo>
     pickFolder: () => Promise<string | null>
     pickDirectory: () => Promise<string | null>

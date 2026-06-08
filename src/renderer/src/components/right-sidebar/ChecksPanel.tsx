@@ -102,15 +102,16 @@ import { gitLabPipelineJobsToPRChecks } from '../../../../shared/gitlab-pipeline
 import { getWorktreeGitIdentityDisplay } from '@/lib/worktree-git-identity-display'
 import { SourceControlAgentActionDialog } from './SourceControlAgentActionDialog'
 import { readSourceControlLaunchRecipeAgentId } from '@/lib/source-control-launch-agent-selection'
+import { resolveSourceControlActionRecipe } from '../../../../shared/source-control-ai'
 import {
-  normalizeSourceControlAiSettings,
-  resolveSourceControlActionRecipe
-} from '../../../../shared/source-control-ai'
-import {
-  setSourceControlActionDefault,
   type SourceControlActionRecipe,
   type SourceControlLaunchActionId
 } from '../../../../shared/source-control-ai-actions'
+import {
+  saveSourceControlActionRecipe,
+  type SourceControlAiWriteTarget
+} from '../../../../shared/source-control-ai-recipe-save'
+import { resolveSourceControlLaunchPlatform } from '@/lib/source-control-launch-platform'
 
 const RUNTIME_SSH_STATUS_REFRESH_MS = 3000
 const GIT_STATUS_FAILURE_RETRY_MS = 3000
@@ -291,6 +292,7 @@ export default function ChecksPanel(): React.JSX.Element {
   const repo = useRepoById(activeWorktree?.repoId ?? null)
   const settings = useAppStore((s) => s.settings)
   const updateSettings = useAppStore((s) => s.updateSettings)
+  const updateRepo = useAppStore((s) => s.updateRepo)
   const prCache = useAppStore((s) => s.prCache)
   const fetchPRForBranch = useAppStore((s) => s.fetchPRForBranch)
   const fetchHostedReviewForBranch = useAppStore((s) => s.fetchHostedReviewForBranch)
@@ -370,22 +372,33 @@ export default function ChecksPanel(): React.JSX.Element {
 
   const saveLaunchActionDefault = useCallback(
     async (
+      target: SourceControlAiWriteTarget,
       actionId: SourceControlLaunchActionId,
       recipe: SourceControlActionRecipe
     ): Promise<void> => {
-      const latestSettings = useAppStore.getState().settings
-      const latestSourceControlAi = normalizeSourceControlAiSettings(
-        latestSettings?.sourceControlAi,
-        latestSettings?.commitMessageAi
-      )
-      await updateSettings({
-        sourceControlAi: {
-          ...latestSourceControlAi,
-          actions: setSourceControlActionDefault(latestSourceControlAi.actions, actionId, recipe)
-        }
+      const state = useAppStore.getState()
+      const latestSettings = state.settings
+      if (!latestSettings) {
+        throw new Error('Settings are not loaded.')
+      }
+      const latestRepo =
+        target.type === 'repo'
+          ? (state.repos.find((candidate) => candidate.id === target.repoId) ?? null)
+          : null
+      const result = saveSourceControlActionRecipe({
+        target,
+        settings: latestSettings,
+        repo: latestRepo,
+        actionId,
+        recipe
       })
+      if ('sourceControlAi' in result) {
+        await updateSettings({ sourceControlAi: result.sourceControlAi })
+        return
+      }
+      await updateRepo(result.target.repoId, result.update)
     },
-    [updateSettings]
+    [updateRepo, updateSettings]
   )
   const asyncResultKeyRef = useRef<string>('')
   const refreshRequestKeyRef = useRef<string | null>(null)
@@ -398,6 +411,10 @@ export default function ChecksPanel(): React.JSX.Element {
   const branch = gitIdentityDisplay?.kind === 'branch' ? gitIdentityDisplay.branchName : ''
   const activeWorktreePath = activeWorktree?.path ?? null
   const activeWorktreePushTarget = activeWorktree?.pushTarget ?? null
+  const activeSourceControlLaunchPlatform = resolveSourceControlLaunchPlatform({
+    connectionId: repo?.connectionId ?? null,
+    worktreePath: activeWorktreePath
+  })
   const runtimeEnvironmentId = settings?.activeRuntimeEnvironmentId?.trim() || null
   const repoConnectionId = repo?.connectionId?.trim() || null
   const sshConnectionStatus = useAppStore((s) =>
@@ -2589,7 +2606,9 @@ export default function ChecksPanel(): React.JSX.Element {
         worktreeId={activeWorktreeId}
         groupId={activeWorktreeId}
         connectionId={activeWorktreeId ? getConnectionId(activeWorktreeId) : null}
+        repoId={repo?.id ?? null}
         promptDelivery="submit-after-ready"
+        launchPlatform={activeSourceControlLaunchPlatform}
         launchSource={agentComposerState?.launchSource ?? 'task_page'}
         savedAgentId={
           agentComposerState

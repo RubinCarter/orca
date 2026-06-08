@@ -19,7 +19,6 @@ import { normalizeHostedReviewBaseRef } from '../../../../shared/hosted-review-r
 import type { BaseRefSearchResult } from '../../../../shared/types'
 import {
   DEFAULT_SOURCE_CONTROL_AI_PR_CREATION_DEFAULTS,
-  normalizeSourceControlAiSettings,
   resolveSourceControlAiForOperation
 } from '../../../../shared/source-control-ai'
 import type { SourceControlAiPrCreationDefaults } from '../../../../shared/source-control-ai-types'
@@ -108,13 +107,6 @@ export function useCreatePullRequestDialogFields({
   onBranchChangedByGeneration,
   generation
 }: UseCreatePullRequestDialogFieldsOptions) {
-  const normalizedSourceControlAi = normalizeSourceControlAiSettings(
-    settings?.sourceControlAi,
-    settings?.commitMessageAi
-  )
-  const sourceControlAi = settings
-    ? normalizedSourceControlAi
-    : { ...normalizedSourceControlAi, enabled: false }
   const resolvedPullRequestAi = settings
     ? resolveSourceControlAiForOperation({
         settings,
@@ -459,7 +451,7 @@ export function useCreatePullRequestDialogFields({
   ])
 
   return {
-    aiGenerationEnabled: sourceControlAi.enabled === true,
+    aiGenerationEnabled: resolvedPullRequestAi?.ok === true,
     base,
     setBase: setUserBase,
     title,

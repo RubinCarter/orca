@@ -45,6 +45,8 @@ export type SourceControlAiSettingsPatch =
   | ((current: SourceControlAiSettings) => Partial<SourceControlAiSettings>)
 
 export type RepoSourceControlAiOverrides = {
+  enabled?: boolean
+  customAgentCommand?: string
   modelOverridesByOperation?: Partial<Record<SourceControlAiOperation, SourceControlAiModelChoice>>
   instructionsByOperation?: Partial<Record<SourceControlAiOperation, string | null>>
   actionOverrides?: Partial<
@@ -63,4 +65,19 @@ export type RepoSourceControlAiOverrides = {
     generateDetailsOnOpen?: boolean | null
     openAfterCreate?: boolean | null
   }
+}
+
+export type CompleteSourceControlActionRecipe = {
+  agentId: TuiAgent | CustomAgentId | null
+  commandInputTemplate: string
+  agentArgs?: string
+}
+
+export type WritableRepoSourceControlAiOverrides = {
+  enabled?: boolean
+  customAgentCommand?: string
+  modelOverridesByOperation?: Partial<Record<SourceControlAiOperation, SourceControlAiModelChoice>>
+  instructionsByOperation?: Partial<Record<SourceControlAiOperation, string>>
+  actionOverrides?: Partial<Record<SourceControlActionId, CompleteSourceControlActionRecipe>>
+  prCreationDefaults?: SourceControlAiPrCreationDefaults
 }

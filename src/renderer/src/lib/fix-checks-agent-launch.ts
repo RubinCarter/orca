@@ -8,6 +8,7 @@ import {
   pickSourceControlLaunchAgent,
   readSourceControlLaunchRecipeAgentId
 } from '@/lib/source-control-launch-agent-selection'
+import { resolveSourceControlLaunchPlatform } from '@/lib/source-control-launch-platform'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { useAppStore } from '@/store'
 import { resolveSourceControlActionRecipe } from '../../../shared/source-control-ai'
@@ -119,6 +120,7 @@ export async function startFixChecksAgent(args: StartFixChecksAgentArgs): Promis
       : findGithubPrWorkspaceAttachment(store.allWorktrees(), args.repoId, args.item.number)
   const targetWorktreeId = args.worktreeId ?? attachedWorkspace?.id ?? null
   if (targetWorktreeId) {
+    const targetWorktree = store.allWorktrees().find((worktree) => worktree.id === targetWorktreeId)
     const agent = await pickExistingWorktreeAgent(targetWorktreeId, savedAgentId)
     if (!agent) {
       return false
@@ -134,13 +136,19 @@ export async function startFixChecksAgent(args: StartFixChecksAgentArgs): Promis
       prompt: commandInput,
       agentArgs: recipe.agentArgs,
       promptDelivery: 'submit-after-ready',
+      launchPlatform: resolveSourceControlLaunchPlatform({
+        connectionId: repo?.connectionId ?? null,
+        worktreePath: targetWorktree?.path
+      }),
       launchSource: args.launchSource
     })
     if (!result) {
       toast.error('Could not build the agent launch command.')
       return false
     }
-    focusTerminalTabSurface(result.tabId)
+    if (result.tabId) {
+      focusTerminalTabSurface(result.tabId)
+    }
     return true
   }
 
