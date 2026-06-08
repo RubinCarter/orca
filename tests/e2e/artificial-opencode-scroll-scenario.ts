@@ -154,7 +154,8 @@ export async function measureActiveTerminalWheelScroll(page: Page): Promise<Scro
       }
     }
     if (afterViewportY >= target.beforeViewportY) {
-      const remainingMs = Math.max(0, 500 - (performance.now() - start))
+      const fallbackStart = performance.now()
+      const remainingMs = Math.max(0, 500 - (fallbackStart - start))
       const finalState = await waitForActiveTerminalViewportChange(
         page,
         target.beforeViewportY,
@@ -165,6 +166,11 @@ export async function measureActiveTerminalWheelScroll(page: Page): Promise<Scro
       if (lastAttempt) {
         lastAttempt.afterViewportY = finalState.viewportY
         lastAttempt.afterScrollTop = finalState.scrollTop
+        // Why: the viewport only moved during this extended fallback wait, so
+        // the attempt's observe window must include it. Otherwise
+        // getResponsiveScrollPath credits this path with its stale ~75ms timeout
+        // and the gate passes on a scroll that actually took ~500ms to respond.
+        lastAttempt.observeMs += performance.now() - fallbackStart
       }
       if (afterViewportY < target.beforeViewportY) {
         scrollLatencyMs = performance.now() - start
