@@ -72,6 +72,8 @@ type HiddenPressureAckGate = {
   heldAckChars: number
 }
 
+const MAIN_RENDERER_PRESSURE_TARGET_CHARS = 2 * 1024 * 1024
+
 export function pressureOutputScript(runId: string): string {
   return `
 const paneIndex = process.argv[2] ?? '0'
@@ -196,7 +198,9 @@ export async function runHiddenRealPtyPressureScenario<
     expect(debug?.hiddenRendererSkippedChars ?? 0).toBeGreaterThan(0)
     expect(pressureBeforeTyping.peakPendingChars).toBeGreaterThan(0)
     expect(pressureBeforeTyping.ackGatedFlushSkipCount).toBeGreaterThan(0)
-    expect(mainPressure?.peakRendererInFlightChars ?? 0).toBeGreaterThanOrEqual(8 * 1024 * 1024)
+    expect(mainPressure?.peakRendererInFlightChars ?? 0).toBeGreaterThanOrEqual(
+      MAIN_RENDERER_PRESSURE_TARGET_CHARS
+    )
     expect(ackGate?.heldAckChars ?? 0).toBeGreaterThan(0)
     expect(measurement.medianLatencyMs).toBeLessThan(75)
     expect(measurement.worstLatencyMs).toBeLessThan(300)

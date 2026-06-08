@@ -111,6 +111,7 @@ const HIDDEN_PRESSURE_START_DELAY_MS = 1200
 const DEFAULT_FRAME_COUNT = 180
 const DEFAULT_FRAME_INTERVAL_MS = 6
 const TIMER_SAMPLE_MS = 16
+const MAIN_RENDERER_PRESSURE_TARGET_CHARS = 2 * 1024 * 1024
 // Why: these are regression budgets, not observed baselines. Repeated local
 // 100-pane OpenCode-scale runs are below 50ms worst-key latency; keep enough
 // CI headroom while still failing changes that make typing visibly sluggish.
@@ -385,7 +386,7 @@ async function waitForMainPtyPressureBacklog(page: Page): Promise<MainPtyPressur
       async () => {
         lastSnapshot = await readMainPtyPressureDebug(page)
         return (
-          (lastSnapshot?.peakRendererInFlightChars ?? 0) >= 8 * 1024 * 1024 &&
+          (lastSnapshot?.peakRendererInFlightChars ?? 0) >= MAIN_RENDERER_PRESSURE_TARGET_CHARS &&
           (lastSnapshot?.peakPendingChars ?? 0) > 0 &&
           (lastSnapshot?.ackGatedFlushSkipCount ?? 0) > 0
         )

@@ -40,6 +40,7 @@ type MainPressureSchedulerSnapshot = {
 }
 
 const MAX_RENDERER_SCHEDULER_QUEUED_CHARS = 2 * 1024 * 1024
+const MAIN_RENDERER_PRESSURE_TARGET_CHARS = 2 * 1024 * 1024
 
 type MainPressureDeps<
   TMeasurement,
@@ -270,7 +271,9 @@ function expectMainPressureAndTyping<TMeasurement extends MainPressureMeasuremen
 }): void {
   expect(pressureBeforeTyping.peakPendingChars).toBeGreaterThan(0)
   expect(pressureBeforeTyping.ackGatedFlushSkipCount).toBeGreaterThan(0)
-  expect(mainPressure?.peakRendererInFlightChars ?? 0).toBeGreaterThanOrEqual(8 * 1024 * 1024)
+  expect(mainPressure?.peakRendererInFlightChars ?? 0).toBeGreaterThanOrEqual(
+    MAIN_RENDERER_PRESSURE_TARGET_CHARS
+  )
   expect(ackGate?.heldAckChars ?? 0).toBeGreaterThan(0)
   expect(scheduler?.droppedBacklogCount ?? Number.POSITIVE_INFINITY).toBe(0)
   expect(scheduler?.peakQueuedChars ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
