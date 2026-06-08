@@ -1868,6 +1868,20 @@ export class Store {
         if (!visibleTaskProvidersDefaultedForJira) {
           this.loadNeedsSave = true
         }
+        const claudeAgentTeamsDefaultDisabledMigrated =
+          parsed.settings?.claudeAgentTeamsDefaultDisabledMigrated === true
+        if (!claudeAgentTeamsDefaultDisabledMigrated) {
+          this.loadNeedsSave = true
+        }
+        const migratedDisabledTuiAgents = normalizeDisabledTuiAgents(
+          parsed.settings?.disabledTuiAgents
+        )
+        if (
+          !claudeAgentTeamsDefaultDisabledMigrated &&
+          !migratedDisabledTuiAgents.includes('claude-agent-teams')
+        ) {
+          migratedDisabledTuiAgents.push('claude-agent-teams')
+        }
         if (!autoRenameBranchFromWorkDefaultedOn) {
           this.loadNeedsSave = true
         }
@@ -1923,7 +1937,8 @@ export class Store {
             terminalShortcutPolicy: normalizeTerminalShortcutPolicy(
               parsed.settings?.terminalShortcutPolicy
             ),
-            disabledTuiAgents: normalizeDisabledTuiAgents(parsed.settings?.disabledTuiAgents),
+            disabledTuiAgents: migratedDisabledTuiAgents,
+            claudeAgentTeamsDefaultDisabledMigrated: true,
             openInApplications: normalizeOpenInApplications(parsed.settings?.openInApplications, {
               seedDefaults: true
             }),

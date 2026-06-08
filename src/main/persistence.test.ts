@@ -2398,7 +2398,7 @@ describe('Store', () => {
     )
     const store = await createStore()
 
-    expect(store.getSettings().disabledTuiAgents).toEqual(['codex', 'claude'])
+    expect(store.getSettings().disabledTuiAgents).toEqual(['codex', 'claude', 'claude-agent-teams'])
 
     const updated = store.updateSettings({
       disabledTuiAgents: ['gemini', 'not-real', 'gemini', 'opencode'] as never

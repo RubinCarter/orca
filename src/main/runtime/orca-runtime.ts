@@ -182,6 +182,16 @@ import { serveSimStateWatcher } from '../emulator/serve-sim-state-watcher'
 import type { EmulatorBridge } from '../emulator/emulator-bridge'
 import { RuntimeFileCommands } from './orca-runtime-files'
 import { RuntimeGitCommands } from './orca-runtime-git'
+import { ClaudeAgentTeamsService } from './claude-agent-teams-service'
+import type {
+  AgentTeamsTmuxCompatRequest,
+  AgentTeamsTmuxCompatResponse
+} from './claude-agent-teams-service'
+import {
+  buildClaudeAgentTeamsLaunchPlan,
+  ensureClaudeAgentTeamsShimDir,
+  resolveClaudeAgentTeamsShimBin
+} from './claude-agent-teams-shim-env'
 import { joinWorktreeRelativePath } from './runtime-relative-paths'
 import { collectMemorySnapshot } from '../memory/collector'
 import { BrowserWindow, ipcMain } from 'electron'
@@ -559,6 +569,7 @@ type RuntimeStore = {
     mobileEmulatorEnabled?: boolean
     mobileEmulatorDefaultDeviceUdid?: string | null
     voice?: VoiceSettings
+    claudeAgentTeamsMode?: GlobalSettings['claudeAgentTeamsMode']
   }
   // Why: narrow to `unknown` return so test mocks can return void without
   // a cast. The runtime never reads the return value — the persisted value
@@ -720,6 +731,7 @@ type RuntimePtyController = {
     cwd?: string
     command?: string
     env?: Record<string, string>
+    envToDelete?: string[]
     telemetry?: WorktreeStartupLaunch['telemetry']
     connectionId?: string | null
     worktreeId?: string
@@ -1570,6 +1582,7 @@ export class OrcaRuntimeService {
   private accountServices: RuntimeAccountServices | null = null
   private commitMessageAgentEnv: CommitMessageAgentEnvironmentResolvers | null = null
   private automationService: AutomationService | null = null
+  private readonly claudeAgentTeams = new ClaudeAgentTeamsService()
   private mobileDictation: {
     id: string
     owner: string
@@ -10766,8 +10779,28 @@ export class OrcaRuntimeService {
       const tabId = canAdoptPaneIdentity ? (hintedTabId as string) : randomUUID()
       const leafId = canAdoptPaneIdentity ? (opts.leafId as string) : randomUUID()
       const paneKey = makePaneKey(tabId, leafId)
+      const baseEnv = opts.env ?? {}
+      const agentTeamsPlan = await buildClaudeAgentTeamsLaunchPlan({
+        command: opts.command,
+        mode: this.store?.getSettings?.().claudeAgentTeamsMode,
+        baseEnv: {
+          ...process.env,
+          ...baseEnv
+        },
+        createTeamEnv: (shimDir, shimBin) =>
+          this.claudeAgentTeams.createLaunchEnv({
+            leaderHandle: preAllocatedHandle,
+            baseEnv: {
+              ...process.env,
+              ...baseEnv
+            },
+            shimDir,
+            shimBin
+          }).env
+      })
       const env = {
-        ...opts.env,
+        ...baseEnv,
+        ...agentTeamsPlan?.env,
         ORCA_PANE_KEY: paneKey,
         ORCA_TAB_ID: tabId,
         ORCA_WORKTREE_ID: worktree.id
@@ -10776,8 +10809,9 @@ export class OrcaRuntimeService {
         cols: 120,
         rows: 40,
         cwd: worktree.path,
-        command: opts.command,
+        command: agentTeamsPlan?.command ?? opts.command,
         env,
+        envToDelete: agentTeamsPlan?.envToDelete,
         telemetry: opts.telemetry,
         connectionId: repo?.connectionId ?? null,
         worktreeId: worktree.id,
@@ -11291,6 +11325,7 @@ export class OrcaRuntimeService {
   async closeTerminal(handle: string): Promise<RuntimeTerminalClose> {
     this.assertGraphReady()
     const pty = this.getLivePtyForHandle(handle)
+    this.claudeAgentTeams.removeTeamForLeaderHandle(handle)
     if (pty) {
       const ptyKilled = this.ptyController?.kill(pty.pty.ptyId) ?? false
       return { handle, tabId: pty.record.tabId, ptyKilled }
@@ -11320,6 +11355,7 @@ export class OrcaRuntimeService {
       direction?: 'horizontal' | 'vertical'
       command?: string
       env?: Record<string, string>
+      envToDelete?: string[]
       activate?: boolean
       telemetrySource?: TerminalPaneSplitSource
     } = {}
@@ -11357,6 +11393,7 @@ export class OrcaRuntimeService {
       direction?: 'horizontal' | 'vertical'
       command?: string
       env?: Record<string, string>
+      envToDelete?: string[]
       activate?: boolean
       telemetrySource?: TerminalPaneSplitSource
     } = {}
@@ -11389,6 +11426,7 @@ export class OrcaRuntimeService {
         ORCA_TAB_ID: parentTabId,
         ORCA_WORKTREE_ID: worktree.id
       },
+      envToDelete: opts.envToDelete,
       connectionId: repo?.connectionId ?? null,
       worktreeId: worktree.id,
       preAllocatedHandle
@@ -11418,6 +11456,41 @@ export class OrcaRuntimeService {
     }
 
     return { handle: this.issuePtyHandle(createdPty ?? pty), tabId: parentTabId, paneRuntimeId: -1 }
+  }
+
+  async handleAgentTeamsTmuxCompat(
+    request: AgentTeamsTmuxCompatRequest
+  ): Promise<AgentTeamsTmuxCompatResponse> {
+    return await this.claudeAgentTeams.handleTmuxCompat(request, {
+      splitTerminal: (handle, opts) => this.splitTerminal(handle, opts),
+      readTerminal: (handle, opts) => this.readTerminal(handle, opts),
+      sendTerminal: (handle, action) => this.sendTerminal(handle, action),
+      focusTerminal: (handle) => this.focusTerminal(handle),
+      closeTerminal: (handle) => this.closeTerminal(handle),
+      showTerminal: (handle) => this.showTerminal(handle)
+    })
+  }
+
+  async prepareClaudeAgentTeamsLeader(args: {
+    paneKey: string
+    baseEnv?: Record<string, string>
+  }): Promise<{ env: Record<string, string> }> {
+    const handle = this.getTerminalHandleForPaneKey(args.paneKey)
+    if (!handle) {
+      throw new Error('claude_agent_teams_requires_orca_terminal')
+    }
+    const baseEnv = {
+      ...process.env,
+      ...args.baseEnv
+    }
+    const shimDir = await ensureClaudeAgentTeamsShimDir()
+    const shimBin = resolveClaudeAgentTeamsShimBin(baseEnv)
+    return this.claudeAgentTeams.createLaunchEnv({
+      leaderHandle: handle,
+      baseEnv,
+      shimDir,
+      shimBin
+    })
   }
 
   private waitForNewLeafInTab(

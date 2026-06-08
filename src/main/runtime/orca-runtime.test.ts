@@ -3852,6 +3852,59 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('enables Claude Agent Teams only for direct Claude launches when configured in-process', async () => {
+    const spawn = vi.fn().mockResolvedValue({ id: 'pty-bg' })
+    const runtimeStore = {
+      ...store,
+      getSettings: () => ({
+        ...store.getSettings(),
+        claudeAgentTeamsMode: 'in-process' as const
+      })
+    }
+    const runtime = new OrcaRuntimeService(runtimeStore)
+    runtime.setPtyController({
+      spawn,
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null
+    })
+
+    await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+      command: "claude 'hello'"
+    })
+    await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+      command: "echo ok; claude 'hello'"
+    })
+    await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+      command: 'codex'
+    })
+
+    const directClaude = spawn.mock.calls[0]?.[0] as {
+      command?: string
+      env?: Record<string, string>
+    }
+    const compoundClaude = spawn.mock.calls[1]?.[0] as {
+      command?: string
+      env?: Record<string, string>
+    }
+    const normalAgent = spawn.mock.calls[2]?.[0] as {
+      command?: string
+      env?: Record<string, string>
+    }
+
+    expect(directClaude.command).toBe("claude --teammate-mode in-process 'hello'")
+    expect(directClaude.env?.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS).toBe('1')
+    expect(directClaude.env?.TMUX).toBeUndefined()
+
+    expect(compoundClaude.command).toBe("echo ok; claude 'hello'")
+    expect(compoundClaude.env?.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS).toBeUndefined()
+    expect(compoundClaude.env?.TMUX).toBeUndefined()
+
+    expect(normalAgent.command).toBe('codex')
+    expect(normalAgent.env?.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS).toBeUndefined()
+    expect(normalAgent.env?.TMUX).toBeUndefined()
+  })
+
   it('adopts renderer pane identity for remote runtime terminal creates', async () => {
     const spawn = vi.fn().mockResolvedValue({ id: 'pty-bg' })
     const runtime = new OrcaRuntimeService(store)
