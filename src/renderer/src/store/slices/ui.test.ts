@@ -1507,6 +1507,37 @@ describe('createUISlice setup guide sidebar dismissal', () => {
   })
 })
 
+describe('createUISlice browser import hint dismissal', () => {
+  it('persists browser import hint dismissal changes once', () => {
+    const setMock = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('window', {
+      api: {
+        ui: {
+          set: setMock
+        }
+      }
+    })
+    const store = createUIStore()
+
+    store.getState().setBrowserImportHintHidden(true)
+    store.getState().setBrowserImportHintHidden(true)
+
+    expect(store.getState().browserImportHintHidden).toBe(true)
+    expect(setMock).toHaveBeenCalledTimes(1)
+    expect(setMock).toHaveBeenCalledWith({ browserImportHintHidden: true })
+  })
+
+  it('hydrates only explicit browser import hint dismissals as hidden', () => {
+    const store = createUIStore()
+
+    store.getState().hydratePersistedUI(makePersistedUI({ browserImportHintHidden: true }))
+    expect(store.getState().browserImportHintHidden).toBe(true)
+
+    store.getState().hydratePersistedUI(makePersistedUI({ browserImportHintHidden: undefined }))
+    expect(store.getState().browserImportHintHidden).toBe(false)
+  })
+})
+
 describe('createUISlice feature interactions', () => {
   it('normalizes persisted feature interaction records during hydration', () => {
     const store = createUIStore()

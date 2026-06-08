@@ -24,6 +24,7 @@ import type {
   SourceControlAiSettings
 } from './source-control-ai-types'
 import type { AgentKind, LaunchSource, RequestKind } from './telemetry-events'
+import type { SleepingAgentSessionRecord } from './agent-session-resume'
 
 // Re-exported for backward compat with renderer call sites that import
 // `WorkspaceCreateTelemetrySource` from '../../../shared/types'.
@@ -298,6 +299,8 @@ export type GitHubPrStartPoint = {
   headSha?: string
   /** Exact local branch name to create/reuse when the PR head is a safe same-repo branch. */
   branchNameOverride?: string
+  /** Fork PRs: false when "Allow edits from maintainers" is off; a push to the fork may be rejected. */
+  maintainerCanModify?: boolean
 }
 
 // ─── Worktree metadata (persisted user-authored fields only) ─────────
@@ -732,6 +735,8 @@ export type WorkspaceSessionState = {
    *  considered. Persisted so closing all tabs and re-opening the workspace
    *  does not recreate the template. */
   defaultTerminalTabsAppliedByWorktreeId?: Record<string, true>
+  /** Provider-session resume records captured when workspaces sleep. */
+  sleepingAgentSessionsByPaneKey?: Record<string, SleepingAgentSessionRecord>
 }
 
 export type WorkspaceSessionPatch = Partial<WorkspaceSessionState>
@@ -2545,6 +2550,8 @@ export type TaskResumeState = {
 
 export type RightSidebarTab = 'explorer' | 'search' | 'source-control' | 'checks' | 'ports'
 
+export type ProjectOrderBy = 'manual' | 'recent'
+
 export type PersistedUIState = {
   lastActiveRepoId: string | null
   lastActiveWorktreeId: string | null
@@ -2554,6 +2561,11 @@ export type PersistedUIState = {
   rightSidebarWidth: number
   groupBy: 'none' | 'workspace-status' | 'repo' | 'pr-status'
   sortBy: 'name' | 'smart' | 'recent' | 'repo' | 'manual'
+  /** Project header ordering in `groupBy: 'repo'`, independent of workspace
+   *  `sortBy`. 'manual' (default) uses the persisted repo order and enables
+   *  header drag; 'recent' orders by each project's most recent visible
+   *  workspace activity. */
+  projectOrderBy: ProjectOrderBy
   /** Deprecated; the Active only filter is retired and ignored on hydration. */
   showActiveOnly: boolean
   /** Hide sleeping/inactive workspaces from workspace navigation. Off by default. */
@@ -2617,6 +2629,9 @@ export type PersistedUIState = {
   /** User-hidden sidebar entry for the setup guide. The Help menu remains
    *  available so this is a reversible declutter preference, not completion. */
   setupGuideSidebarDismissed?: boolean
+  /** User-dismissed browser import hint in the browser toolbar. Import remains
+   *  available from Settings > Browser and the toolbar overflow menu. */
+  browserImportHintHidden?: boolean
   /** URL to navigate to when a new browser tab is opened. Null means blank tab.
    *  Phase 3 will expand this to a full BrowserSessionProfile per workspace. */
   browserDefaultUrl?: string | null

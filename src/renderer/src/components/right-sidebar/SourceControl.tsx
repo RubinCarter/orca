@@ -18,6 +18,7 @@ import {
   Copy,
   Folder,
   FolderOpen,
+  GitFork,
   GitMerge,
   GitPullRequestArrow,
   MessageSquare,
@@ -86,6 +87,7 @@ import {
   type PendingDiscardConfirmation
 } from './source-control-discard-dialog'
 import { refreshGitStatusForWorktree } from './git-status-refresh'
+import { describeForkPushTarget } from './fork-push-target-label'
 import { toast } from 'sonner'
 import {
   ContextMenu,
@@ -1002,7 +1004,7 @@ export function HostedReviewHeaderLink({
 }): React.JSX.Element {
   const label = hostedReviewLabel(review)
   const className =
-    'shrink-0 border-0 bg-transparent p-0 text-left font-medium leading-none text-foreground opacity-80 hover:text-foreground hover:underline'
+    'shrink-0 border-0 bg-transparent p-0 text-left font-medium leading-none text-foreground underline decoration-border underline-offset-2 opacity-80 hover:text-foreground hover:decoration-foreground'
 
   if (review.provider === 'github' || review.provider === 'gitlab') {
     return (
@@ -4393,6 +4395,18 @@ function SourceControlInner(): React.JSX.Element {
               clears. Active merge/rebase/cherry-pick operations are the
               exception: commits would be misleading before the user continues
               or aborts the operation. */}
+          {activeWorktree?.pushTarget && activeWorktree.pushTarget.remoteName !== 'origin' ? (
+            <div
+              className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground"
+              title={`Pushes to the fork at ${activeWorktree.pushTarget.remoteName} (not origin)`}
+            >
+              <GitFork className="size-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">
+                Pushes to fork {describeForkPushTarget(activeWorktree.pushTarget)}
+              </span>
+            </div>
+          ) : null}
+
           {shouldRenderCommitArea(scope, unresolvedConflicts.length, conflictOperation) &&
             (primaryAction.kind === 'create_pr' ? (
               <PullRequestComposer

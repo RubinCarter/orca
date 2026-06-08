@@ -1777,6 +1777,55 @@
   border-width: 1.5px;
 }
 
+/* Cmd+J feature tip — JS-driven sequence (keypress → palette → typing → results).
+   The keypress press-down and palette entrance are handled inline by React state
+   transitions; this file only defines the caret blink and the results fade-in. */
+
+/* Blinking caret for the simulated command-palette input while "typing". */
+@keyframes cmd-j-tip-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.animate-cmd-j-tip-caret {
+  animation: cmd-j-tip-caret 1s step-end infinite;
+}
+
+/* Worktree rows fade in when the palette opens — mirrors the real palette,
+   which shows recent worktrees on empty query and filters synchronously. */
+@keyframes cmd-j-tip-result-in {
+  0% {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-cmd-j-tip-result-in {
+  animation: cmd-j-tip-result-in 120ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-cmd-j-tip-caret {
+    animation: none;
+    opacity: 1;
+  }
+
+  .animate-cmd-j-tip-result-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* ── Feature wall: agents-orchestration animations ───────────────── */
 
 /* Why: drives the supported-agents marquee on page 1 of the agents tile.
@@ -2837,12 +2886,12 @@ html.onboarding-tour-start-transition::view-transition-new(root) {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin: 4px 0 6px 0;
+  margin: 2px 0 4px 0;
   padding-left: 8px;
   border-left: 2px solid color-mix(in srgb, #e7b10a 35%, transparent);
   color: var(--muted-foreground);
   font-size: 12.5px;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .orca-diff-comment-quote-text {
@@ -2850,10 +2899,7 @@ html.onboarding-tour-start-transition::view-transition-new(root) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  word-break: break-all;
+  white-space: nowrap;
 }
 
 /* Comment Body */

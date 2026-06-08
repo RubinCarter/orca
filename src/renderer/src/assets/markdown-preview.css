@@ -281,7 +281,7 @@
 .markdown-annotation-list-block {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, min(34cqw, 360px));
+  grid-template-columns: minmax(0, 1fr) minmax(220px, min(28cqw, 300px));
   column-gap: 32px;
   align-items: start;
 }
@@ -367,8 +367,8 @@
 }
 
 .markdown-annotation-card.is-active > .orca-diff-comment-card {
-  border-color: color-mix(in srgb, var(--foreground) 32%, transparent);
-  background: color-mix(in srgb, var(--foreground) 8%, var(--editor-surface));
+  border-color: color-mix(in srgb, var(--foreground) 18%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, var(--editor-surface));
 }
 
 .markdown-annotation-card.is-attention > .orca-diff-comment-card {
