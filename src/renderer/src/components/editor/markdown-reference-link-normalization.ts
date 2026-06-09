@@ -1,3 +1,5 @@
+import { parseMarkdownDocLink } from './markdown-doc-links'
+
 type ReferenceLinkDefinition = {
   label: string
   title: string | null
@@ -125,6 +127,20 @@ function replaceReferenceLinks(
       isLineStart = nextChar === '\n'
       index += 1
       continue
+    }
+
+    // Why: a doc/wiki link [[target]] must pass through verbatim, mirroring the
+    // encoder's own doc-link guard. Without this, an inner shortcut reference
+    // (e.g. [[H-279]] colliding with a [H-279]: url definition) gets rewritten
+    // to [[H-279](url)], destroying the doc-link node.
+    if (markdown[index + 1] === '[') {
+      const closingDocLinkIndex = markdown.indexOf(']]', index + 2)
+      if (closingDocLinkIndex !== -1 && parseMarkdownDocLink(markdown.slice(index + 2, closingDocLinkIndex))) {
+        result += markdown.slice(index, closingDocLinkIndex + 2)
+        isLineStart = false
+        index = closingDocLinkIndex + 2
+        continue
+      }
     }
 
     const closingTextIndex = findClosingBracket(markdown, index + 1)
