@@ -120,7 +120,7 @@ describe('AddRepoLocalStartStep', () => {
     expect(markup).toContain('Clone from URL')
     expect(markup).toContain('Remote project')
     expect(markup).toContain('Create new project')
-    expect(markup).toContain('Or add from')
+    expect(markup).toContain('Other ways to add')
     expect(markup).not.toContain('More options')
   })
 
@@ -177,6 +177,52 @@ describe('AddRepoLocalStartStep', () => {
     expect(findButton(container, 'Clone from URL').disabled).toBe(false)
     expect(findButton(container, 'Remote project').disabled).toBe(false)
     expect(findButton(container, 'Create new project').disabled).toBe(false)
+
+    await act(async () => {
+      root.unmount()
+    })
+  })
+
+  it('marks the autofocused Browse action as selected with the ⏎ chip', async () => {
+    const { container, root } = await renderLocalStartStepDom(false)
+
+    expect(findButton(container, 'Browse folder').textContent).toContain('⏎')
+    expect(findButton(container, 'Clone from URL').textContent).not.toContain('⏎')
+
+    await act(async () => {
+      root.unmount()
+    })
+  })
+
+  it('moves the ⏎ selection to whichever action receives focus', async () => {
+    const { container, root } = await renderLocalStartStepDom(false)
+    const cloneButton = findButton(container, 'Clone from URL')
+
+    await act(async () => {
+      cloneButton.focus()
+    })
+
+    expect(findButton(container, 'Clone from URL').textContent).toContain('⏎')
+    expect(findButton(container, 'Browse folder').textContent).not.toContain('⏎')
+
+    await act(async () => {
+      root.unmount()
+    })
+  })
+
+  it('roves selection down the action list with the ArrowDown key', async () => {
+    const { container, root } = await renderLocalStartStepDom(false)
+
+    await act(async () => {
+      findButton(container, 'Browse folder').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+      )
+    })
+
+    // ArrowDown from Browse moves focus — and the ⏎ chip — to the first secondary action.
+    const firstSecondary = findButton(container, 'Clone from URL')
+    expect(document.activeElement).toBe(firstSecondary)
+    expect(firstSecondary.textContent).toContain('⏎')
 
     await act(async () => {
       root.unmount()
