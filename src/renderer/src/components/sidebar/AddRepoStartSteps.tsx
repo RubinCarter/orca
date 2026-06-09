@@ -178,8 +178,9 @@ export function AddRepoLocalStartStep({
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             {translate('auto.components.sidebar.AddRepoStartSteps.87596c1446', 'Other ways to add')}
           </p>
-          {/* Match the primary card's surface (bg-background) so the group reads as the same family, not a recessed panel. */}
-          <div className="overflow-hidden rounded-md border border-border/80 bg-background">
+          {/* Outline uses the `input` token (white-ish in dark mode) to match Browse's visible outline variant;
+              primary-foreground is near-black in dark mode and rendered the border invisible. */}
+          <div className="overflow-hidden rounded-md border border-input bg-background">
             {secondaryActions.map((action, index) => (
               <AddRepoSecondaryStartAction
                 key={action.kind}
@@ -253,25 +254,24 @@ const AddRepoPrimaryStartAction = ({
     disabled={disabled}
     data-add-repo-action
     className={cn(
-      'h-auto min-h-20 w-full justify-start gap-4 whitespace-normal px-4 py-4 text-left',
-      // Transparent border holds the box size steady across the outline↔default variant swap,
-      // and dropping the focus ring keeps the selected card borderless like the filled rows
-      // (the fill + ⏎ chip already mark focus, since focus drives selection here).
+      'h-auto min-h-[3.75rem] w-full justify-start gap-3 whitespace-normal px-3 py-2.5 text-left',
+      // The subtle selected border keeps Browse and secondary rows feeling like one roving set.
+      // Focus ring stays off because the fill + ⏎ chip already mark the focused action.
       selected
-        ? 'border border-transparent focus-visible:border-transparent focus-visible:ring-0'
+        ? 'border border-primary-foreground/20 focus-visible:border-primary-foreground/30 focus-visible:ring-0'
         : 'bg-background shadow-none dark:bg-background'
     )}
   >
     <span
       className={cn(
-        'grid size-11 shrink-0 place-items-center rounded-md',
+        'grid size-7 shrink-0 place-items-center rounded-md',
         selected ? 'bg-primary-foreground/10 text-primary-foreground' : 'text-foreground'
       )}
     >
-      <Icon className="size-5" />
+      <Icon className="size-4" />
     </span>
     <span className="min-w-0 flex-1">
-      <span className="block text-sm font-semibold leading-5">{title}</span>
+      <span className="block text-sm font-medium leading-5">{title}</span>
       <span
         className={cn(
           'mt-0.5 block text-xs font-normal leading-5',
@@ -303,12 +303,12 @@ function AddRepoSecondaryStartAction({
       onClick={onClick}
       onFocus={onFocus}
       className={cn(
-        'flex min-h-[3.25rem] w-full items-center gap-3 px-3 py-2.5 text-left transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:cursor-default disabled:opacity-40',
+        'flex min-h-[3.25rem] w-full items-center gap-3 border border-transparent px-3 py-2.5 text-left transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:cursor-default disabled:opacity-40',
+        className,
         // Selected mirrors the primary card's filled white surface so the highlight moves between rows.
         selected
-          ? 'bg-primary text-primary-foreground'
-          : 'hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50',
-        className
+          ? 'border-primary-foreground/30 bg-primary text-primary-foreground focus-visible:border-primary-foreground/40'
+          : 'hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50'
       )}
     >
       <span
