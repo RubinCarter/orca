@@ -192,10 +192,19 @@ describe('useCreateProjectDefaults', () => {
       activeRuntimeEnvironmentId: 'env-1',
       createParent: '/Users/alice/orca/projects'
     })
+
+    expect(runtime.setCreateParent).toHaveBeenCalledWith('')
+    expect(mocks.stateValues[RUNTIME_PARENT_STATUS_STATE]).toBe('checking')
+    expect(mocks.browseRuntimeServerDirectory).not.toHaveBeenCalled()
+
+    const resolvedRuntime = useHarness({
+      activeRuntimeEnvironmentId: 'env-1',
+      createParent: ''
+    })
     await flushAsync()
 
     expect(mocks.browseRuntimeServerDirectory).toHaveBeenCalledWith('env-1', '~')
-    expect(runtime.setCreateParent).toHaveBeenCalledWith('/home/alice/orca/projects')
+    expect(resolvedRuntime.setCreateParent).toHaveBeenCalledWith('/home/alice/orca/projects')
     expect(mocks.stateValues[DEFAULT_PARENT_STATE]).toBe('/home/alice/orca/projects')
   })
 

@@ -115,6 +115,15 @@ export function useCreateProjectDefaults({
       return
     }
     if (
+      createParent.trim() &&
+      autoFilledCreateParentRef.current?.runtimeEnvironmentId !== null &&
+      autoFilledCreateParentRef.current?.parent === createParent.trim()
+    ) {
+      setCreateDefaultParent('')
+      setCreateParent('')
+      return
+    }
+    if (
       autoFilledCreateParentRef.current?.runtimeEnvironmentId === null &&
       autoFilledCreateParentRef.current.parent === createParent.trim()
     ) {
@@ -158,6 +167,16 @@ export function useCreateProjectDefaults({
     }
     if (!canReplaceCreateParentDefault(createParent)) {
       setCreateRuntimeParentStatus('idle')
+      return
+    }
+    if (
+      createParent.trim() &&
+      autoFilledCreateParentRef.current?.runtimeEnvironmentId !== runtimeEnvironmentId &&
+      autoFilledCreateParentRef.current?.parent === createParent.trim()
+    ) {
+      setCreateDefaultParent('')
+      setCreateRuntimeParentStatus('checking')
+      setCreateParent('')
       return
     }
     if (
