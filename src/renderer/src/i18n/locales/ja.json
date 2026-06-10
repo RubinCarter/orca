@@ -3005,13 +3005,17 @@
           "038729c107": "フォルダ",
           "11fd2a7db8": "Gitリポジトリ",
           "180e9b5e48": "プロジェクトの種類",
-          "d877ece0d6": "Git リポジトリまたはプレーン フォルダーを作成し、Orca で開きます。",
-          "db9be12229": "新規プロジェクトを開始する",
           "5e97f0c4b9": "プロジェクトが作成されました",
           "2c12db1511": "プロジェクトはすでに追加されています",
           "875dda0995": "サーバーの親パスを入力します。",
           "45b7c26034": "プロジェクトの作成",
-          "85085d74d2": "作成…"
+          "85085d74d2": "作成…",
+          "c7b9f94456": "Create a new project",
+          "b100311784": "Name it and Orca will create a real project with sensible defaults.",
+          "685b5eefe1": "{{kind}} in {{parent}}",
+          "2a762f3b19": "Checking Git on this host...",
+          "fe1e616c5b": "Git isn't installed, so a plain folder is the default.",
+          "c234df77f7": "Choose or enter a server parent folder before creating."
         },
         "AddRepoNestedImportStep": {
           "496f68cf8c": "リポジトリをスキャンしています。クリックして停止します。",

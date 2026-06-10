@@ -3005,13 +3005,17 @@
           "038729c107": "접는 사람",
           "11fd2a7db8": "힘내 저장소",
           "180e9b5e48": "프로젝트 종류",
-          "d877ece0d6": "Git 저장소 또는 일반 폴더를 생성하고 Orca에서 엽니다.",
-          "db9be12229": "새 프로젝트 시작",
           "5e97f0c4b9": "프로젝트가 생성되었습니다.",
           "2c12db1511": "프로젝트가 이미 추가되었습니다.",
           "875dda0995": "서버 상위 경로를 입력하세요.",
           "45b7c26034": "프로젝트 생성",
-          "85085d74d2": "만드는 중…"
+          "85085d74d2": "만드는 중…",
+          "c7b9f94456": "Create a new project",
+          "b100311784": "Name it and Orca will create a real project with sensible defaults.",
+          "685b5eefe1": "{{kind}} in {{parent}}",
+          "2a762f3b19": "Checking Git on this host...",
+          "fe1e616c5b": "Git isn't installed, so a plain folder is the default.",
+          "c234df77f7": "Choose or enter a server parent folder before creating."
         },
         "AddRepoNestedImportStep": {
           "496f68cf8c": "저장소를 스캔하는 중입니다. 중지하려면 클릭하세요.",
@@ -5190,7 +5194,11 @@
           "fac59213fc": "내장 테마 검색",
           "cb330ef7f8": "{{value0}} 중",
           "c822571b2e": "\"{{value0}}\"과 일치",
-          "3119c012a5": "문자열"
+          "3119c012a5": "문자열",
+          "builtin_themes": "Built-in",
+          "imported_from": "Imported from {{value0}}",
+          "imported_themes": "Imported",
+          "search_terminal_themes": "Search terminal themes"
         },
         "SettingsSidebar": {
           "e0900f83e7": "SSH",
@@ -5567,7 +5575,9 @@
           "b739d2abfe": "다크 디바이더 색상",
           "7add204bd5": "다크 모드에서 사용되는 터미널 테마를 선택하세요.",
           "9499ad1dc4": "어두운 테마",
-          "f012172e21": "어두운 모드에서 터미널 패널에 사용되는 테마를 선택합니다."
+          "f012172e21": "어두운 모드에서 터미널 패널에 사용되는 테마를 선택합니다.",
+          "import_themes_title": "Import Themes",
+          "import_themes_description": "Imported themes are available in both the dark and light theme pickers."
         },
         "TerminalWindowSection": {
           "1705318506": "ANSI 마젠타색",
@@ -7102,7 +7112,20 @@
             "e989914ad6": "글꼴군",
             "33031c1465": "텍스트 크기",
             "0fe0073f0c": "새 창 및 라이브 업데이트의 기본 터미널 글꼴 크기입니다.",
-            "5930244899": "글꼴 크기"
+            "5930244899": "글꼴 크기",
+            "warp_import": {
+              "title": "Import themes from Warp",
+              "description": "Import Warp themes as Orca terminal themes.",
+              "keyword_warp": "warp",
+              "keyword_themes": "themes",
+              "keyword_yaml": "yaml"
+            },
+            "yaml_import": {
+              "title": "Import from YAML",
+              "description": "Import theme YAML files as Orca terminal themes.",
+              "keyword_yaml": "yaml",
+              "keyword_custom": "custom"
+            }
           },
           "windows": {
             "search": {
@@ -7213,6 +7236,42 @@
               }
             }
           }
+        },
+        "WarpThemeImportModal": {
+          "title": "Import themes from Warp",
+          "description": "Import Warp themes as Orca terminal themes.",
+          "yaml_title": "Import theme YAML",
+          "yaml_description": "Import theme YAML files (Warp format) as Orca terminal themes.",
+          "yaml_no_themes_found": "No themes found in the selected files.",
+          "choose_file": "Choose File",
+          "choose_folder": "Choose Folder",
+          "loading": "Loading Warp themes...",
+          "found_theme_one": "Found 1 theme",
+          "found_theme_other": "Found {{value0}} themes",
+          "found_in_source": " in {{value0}}",
+          "clear_all": "Clear all",
+          "select_all": "Select all",
+          "colors_only": "Colors only",
+          "no_themes_found": "No custom Warp themes found.",
+          "builtin_themes_hint": "Warp's preloaded themes are part of the Warp app and can't be read from disk. Orca already includes most of them, like Dracula, Gruvbox, Solarized, and Tokyo Night.",
+          "choose_manually": "Choose a theme YAML file or folder to import manually.",
+          "skipped_files": "Skipped files",
+          "more_skipped_files": "{{value0}} more skipped files.",
+          "cancel": "Cancel",
+          "import_theme_one": "Import 1 Theme",
+          "import_theme_other": "Import {{value0}} Themes",
+          "import_themes": "Import Themes"
+        },
+        "useWarpThemeImport": {
+          "unknown_error": "Unknown error",
+          "imported_one": "Imported 1 theme",
+          "imported_other": "Imported {{value0}} themes",
+          "import_failed": "Failed to import themes",
+          "over_limit_one": "Importing these themes would exceed the {{value0}} custom terminal theme limit. Deselect 1 new theme and try again.",
+          "over_limit_other": "Importing these themes would exceed the {{value0}} custom terminal theme limit. Deselect {{value1}} new themes and try again."
+        },
+        "YamlThemeImportButton": {
+          "label": "Import from YAML"
         }
       },
       "right": {
