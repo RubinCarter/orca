@@ -170,7 +170,6 @@ export function FloatingTerminalWindowControls({
               'auto.components.floating.terminal.FloatingTerminalWindowControls.1bbaa0302f',
               'Minimize floating workspace'
             )}
-            data-contextual-tour-target="floating-workspace-minimize"
             onClick={onMinimize}
           >
             <Minus className="size-3.5" />

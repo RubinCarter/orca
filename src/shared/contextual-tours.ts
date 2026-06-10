@@ -176,10 +176,11 @@ export const CONTEXTUAL_TOURS = [
         preferredPlacement: 'left'
       },
       {
-        title: 'Out of the way, still running',
-        body: 'Minimize the panel and your terminals, notes, and browser tabs keep running. Bring it back anytime with {floatingTerminal.toggle}.',
-        targetSelector: '[data-contextual-tour-target="floating-workspace-minimize"]',
-        preferredPlacement: 'bottom'
+        title: 'Park side work here',
+        body: 'Open agents, scratch terminals, notes, and browser tabs without cluttering the worktree you’re focused on.',
+        targetSelector:
+          '[data-contextual-tour-target="floating-workspace-actions"], [data-contextual-tour-target="floating-workspace-surface"]',
+        preferredPlacement: 'left'
       }
     ]
   },

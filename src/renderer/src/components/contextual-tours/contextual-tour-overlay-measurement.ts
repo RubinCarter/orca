@@ -162,18 +162,12 @@ export function getContextualTourCleanupOutcome(
     : 'cancelled'
 }
 
-const SHORTCUT_PLACEHOLDER_ACTION_IDS = [
-  'terminal.splitRight',
-  'floatingTerminal.toggle'
-] satisfies readonly Parameters<typeof formatShortcutLabel>[0][]
-
 function formatContextualTourStepCopy(
   copy: string,
   keybindings: Parameters<typeof formatShortcutLabel>[1]
 ): string {
-  return SHORTCUT_PLACEHOLDER_ACTION_IDS.reduce(
-    (formatted, actionId) =>
-      formatted.replace(`{${actionId}}`, formatShortcutLabel(actionId, keybindings)),
-    copy
+  return copy.replace(
+    '{terminal.splitRight}',
+    formatShortcutLabel('terminal.splitRight', keybindings)
   )
 }
