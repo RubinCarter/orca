@@ -1109,12 +1109,6 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
     [computeWorktreeDropForGroup]
   )
   const renderRows = useMemo(() => buildRenderableRows(rows), [rows])
-  // Why: rows inside a host section get a left inset so projects and
-  // workspaces visibly belong to the machine card above them.
-  const hostSectionIndentClass = useMemo(
-    () => (renderRows.some((row) => row.type === 'host-header') ? 'pl-3' : undefined),
-    [renderRows]
-  )
   const firstHeaderIndex = useMemo(
     () => renderRows.findIndex((row) => row.type === 'header' || row.type === 'host-header'),
     [renderRows]
@@ -2984,7 +2978,6 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   ref={measureVirtualRowElement}
                   className={cn(
                     'left-0 right-0',
-                    hostSectionIndentClass,
                     // Why: the inter-group spacer only applies while the header
                     // scrolls in normally; the pinned header drops it to sit
                     // flush at the top. The swap fires when the header row
@@ -3551,7 +3544,6 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   ref={measureVirtualRowElement}
                   className={cn(
                     'absolute left-0 right-0 top-0',
-                    hostSectionIndentClass,
                     worktreeDragState.draggingWorktreeId !== null &&
                       'transition-transform duration-150 ease-out will-change-transform'
                   )}
@@ -3584,7 +3576,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   data-worktree-virtual-row-start={vItem.start}
                   data-index={vItem.index}
                   ref={measureVirtualRowElement}
-                  className={cn('absolute left-0 right-0 top-0', hostSectionIndentClass)}
+                  className="absolute left-0 right-0 top-0"
                   style={{ transform: getVirtualRowTransform(vItem.start) }}
                 >
                   <ImportedWorktreesVisibilityLine
@@ -3614,10 +3606,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   data-worktree-virtual-row-start={vItem.start}
                   data-index={vItem.index}
                   ref={measureVirtualRowElement}
-                  className={cn(
-                    'absolute left-0 right-0 top-0 px-2 pb-1.5',
-                    hostSectionIndentClass
-                  )}
+                  className="absolute left-0 right-0 top-0 px-2 pb-1.5"
                   style={{ transform: getVirtualRowTransform(vItem.start) }}
                 >
                   <PendingWorktreeRow creationId={row.creationId} />
@@ -3645,7 +3634,6 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                 data-workspace-status={itemWorkspaceStatus ?? undefined}
                 className={cn(
                   'absolute left-0 right-0 top-0',
-                  hostSectionIndentClass,
                   worktreeDragState.draggingWorktreeId !== null &&
                     'transition-transform duration-150 ease-out will-change-transform'
                 )}
