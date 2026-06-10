@@ -1,250 +1,25 @@
 // Step for AddRepoDialog (orca#763), split out so create-project state stays scoped.
-import React, { useCallback, useRef, useState } from 'react'
-import { toast } from 'sonner'
-import { Folder, GitBranch } from 'lucide-react'
-import { useAppStore } from '@/store'
-import { useMountedRef } from '@/hooks/useMountedRef'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Folder, GitBranch, Loader2 } from 'lucide-react'
 import { DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { activateAndRevealWorktree } from '@/lib/worktree-activation'
-import { markOnboardingProjectAdded } from '@/lib/onboarding-project-checklist'
-import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
-import { isGitRepoKind } from '../../../../shared/repo-kind'
-import type { Repo } from '../../../../shared/types'
+import { cn } from '@/lib/utils'
 import {
   CreateProjectLocationField,
   CreateProjectParentBrowser
 } from './CreateProjectLocationField'
 import { translate } from '@/i18n/i18n'
-import { AddRepoCreateKindCard, type AddRepoCreateKind } from './AddRepoCreateKindCard'
+import {
+  formatCreateProjectParentSummary,
+  joinCreateProjectPath,
+  type GitAvailability,
+  type RepoKind
+} from './create-project-defaults'
 
-type RepoKind = AddRepoCreateKind
+// ── UI helpers ───────────────────────────────────────────────────────
 
-export function useCreateRepo(
-  fetchWorktrees: (
-    repoId: string,
-    options?: { requireAuthoritative?: boolean }
-  ) => Promise<boolean>,
-  closeModal: () => void,
-  onGitRepoReady?: (repoId: string) => void | Promise<void>,
-  options: { hostId?: string | null; sshTargetId?: string | null } = {}
-) {
-  const [createName, setCreateName] = useState('')
-  const [createParent, setCreateParent] = useState('')
-  const [createKind, setCreateKind] = useState<RepoKind>('git')
-  const [createError, setCreateError] = useState<string | null>(null)
-  const [isCreating, setIsCreating] = useState(false)
-  const mountedRef = useMountedRef()
-  const hostToken = options.hostId ?? options.sshTargetId ?? ''
-  const hostTokenRef = useRef(hostToken)
-  hostTokenRef.current = hostToken
-
-  // Why: monotonic ID so stale create callbacks can detect they were superseded
-  // when the user clicks Back or closes the dialog mid-create. Mirrors the
-  // cloneGenRef pattern in AddRepoDialog.
-  const createGenRef = useRef(0)
-
-  const resetCreateState = useCallback(() => {
-    createGenRef.current++
-    setCreateName('')
-    setCreateParent('')
-    setCreateKind('git')
-    setCreateError(null)
-    setIsCreating(false)
-  }, [])
-
-  const handlePickParent = useCallback(async () => {
-    if (options.sshTargetId) {
-      // Why: the native picker can only browse the client machine. SSH create
-      // uses a host path typed by the user until remote folder picking exists.
-      toast.error(
-        translate(
-          'auto.components.sidebar.AddRepoCreateStep.ssh_parent_manual',
-          'Enter an SSH parent path.'
-        )
-      )
-      return
-    }
-    if (useAppStore.getState().settings?.activeRuntimeEnvironmentId?.trim()) {
-      // Why: the native folder picker returns a client-local path. Runtime
-      // project creation needs an explicit server parent path.
-      toast.error(
-        translate(
-          'auto.components.sidebar.AddRepoCreateStep.875dda0995',
-          'Enter a server parent path.'
-        )
-      )
-      return
-    }
-    const gen = createGenRef.current
-    const dir = await window.api.repos.pickDirectory()
-    if (dir && gen === createGenRef.current && mountedRef.current) {
-      setCreateParent(dir)
-      setCreateError(null)
-    }
-  }, [mountedRef, options.sshTargetId])
-
-  const handleCreate = useCallback(async () => {
-    const name = createName.trim()
-    const parentPath = createParent.trim()
-    if (!name || !parentPath) {
-      return
-    }
-    const requestHostToken = hostTokenRef.current
-    const gen = ++createGenRef.current
-    setIsCreating(true)
-    setCreateError(null)
-    try {
-      const target = getActiveRuntimeTarget(useAppStore.getState().settings)
-      const result = options.sshTargetId
-        ? await window.api.repos.createRemote({
-            connectionId: options.sshTargetId,
-            parentPath,
-            name,
-            kind: createKind
-          })
-        : target.kind === 'environment'
-          ? await callRuntimeRpc<{ repo: Repo } | { error: string }>(
-              target,
-              'repo.create',
-              {
-                parentPath,
-                name,
-                kind: createKind
-              },
-              { timeoutMs: 60_000 }
-            )
-          : await window.api.repos.create({
-              parentPath,
-              name,
-              kind: createKind
-            })
-      // Why: if the user closed the dialog or clicked Back mid-create,
-      // createGenRef was bumped by resetCreateState. Ignore stale results.
-      if (
-        gen !== createGenRef.current ||
-        requestHostToken !== hostTokenRef.current ||
-        !mountedRef.current
-      ) {
-        return
-      }
-      if ('error' in result) {
-        setCreateError(result.error)
-        return
-      }
-      const repo = result.repo
-      // Upsert into the store before the repos:changed event round-trips,
-      // so the next step can find the repo immediately.
-      const state = useAppStore.getState()
-      const existingIdx = state.repos.findIndex((r) => r.id === repo.id)
-      // Why: the IPC handler dedupes by path (see repos:create) and returns
-      // the existing repo unchanged. If its ID is already in our store, the
-      // handler took the dedup path — no new project was created, so don't
-      // claim one was.
-      const wasDeduped = existingIdx !== -1
-      if (existingIdx === -1) {
-        useAppStore.setState({ repos: [...state.repos, repo] })
-      } else {
-        const updated = [...state.repos]
-        updated[existingIdx] = repo
-        useAppStore.setState({ repos: updated })
-      }
-      if (wasDeduped) {
-        toast.info(
-          translate(
-            'auto.components.sidebar.AddRepoCreateStep.2c12db1511',
-            'Project already added'
-          ),
-          {
-            description: repo.displayName
-          }
-        )
-      } else {
-        toast.success(
-          translate('auto.components.sidebar.AddRepoCreateStep.5e97f0c4b9', 'Project created'),
-          {
-            description: repo.displayName
-          }
-        )
-      }
-      if (isGitRepoKind(repo)) {
-        // Why: Git repos use the shared default-checkout completion path.
-        // Why: if refresh is temporarily non-authoritative, the shared opener
-        // still reveals the project so the user is not left in a completed add flow.
-        await fetchWorktrees(repo.id, { requireAuthoritative: true })
-        if (
-          gen !== createGenRef.current ||
-          requestHostToken !== hostTokenRef.current ||
-          !mountedRef.current
-        ) {
-          return
-        }
-        await onGitRepoReady?.(repo.id)
-      } else {
-        // Why: folder repos skip the Git default-checkout handoff, so activate the synthetic
-        // root workspace before closing. Matches addNonGitFolder's behavior.
-        await fetchWorktrees(repo.id)
-        if (
-          gen !== createGenRef.current ||
-          requestHostToken !== hostTokenRef.current ||
-          !mountedRef.current
-        ) {
-          return
-        }
-        const folderWorktree = useAppStore.getState().worktreesByRepo[repo.id]?.[0]
-        if (folderWorktree) {
-          activateAndRevealWorktree(folderWorktree.id, { sidebarRevealBehavior: 'auto' })
-        }
-        await markOnboardingProjectAdded('addedFolder')
-        closeModal()
-      }
-    } catch (err) {
-      if (
-        gen !== createGenRef.current ||
-        requestHostToken !== hostTokenRef.current ||
-        !mountedRef.current
-      ) {
-        return
-      }
-      setCreateError(err instanceof Error ? err.message : String(err))
-    } finally {
-      // Why: only clear the loading state if this invocation is still current;
-      // a superseded create must not flip the flag back off for a new flow.
-      if (
-        gen === createGenRef.current &&
-        requestHostToken === hostTokenRef.current &&
-        mountedRef.current
-      ) {
-        setIsCreating(false)
-      }
-    }
-  }, [
-    createName,
-    createParent,
-    createKind,
-    fetchWorktrees,
-    mountedRef,
-    closeModal,
-    onGitRepoReady,
-    options.sshTargetId
-  ])
-
-  return {
-    createName,
-    createParent,
-    createKind,
-    createError,
-    isCreating,
-    setCreateName,
-    setCreateParent,
-    setCreateKind,
-    setCreateError,
-    resetCreateState,
-    handlePickParent,
-    handleCreate
-  }
-}
+const CREATE_PROJECT_NAME_PLACEHOLDER = 'project-name'
 
 type CreateStepProps = {
   createName: string
@@ -252,6 +27,10 @@ type CreateStepProps = {
   createKind: RepoKind
   createError: string | null
   isCreating: boolean
+  defaultParent?: string
+  gitAvailability?: GitAvailability
+  runtimeParentStatus?: 'idle' | 'checking' | 'failed'
+  parentDefaultPending?: boolean
   manualParentEntry?: boolean
   runtimeEnvironmentId?: string | null
   onNameChange: (value: string) => void
@@ -267,6 +46,10 @@ export function CreateStep({
   createKind,
   createError,
   isCreating,
+  defaultParent = '',
+  gitAvailability = 'unknown',
+  runtimeParentStatus = 'idle',
+  parentDefaultPending = false,
   manualParentEntry = false,
   runtimeEnvironmentId,
   onNameChange,
@@ -278,6 +61,7 @@ export function CreateStep({
   const radioGroupRef = useRef<HTMLDivElement>(null)
   const radioFocusFrameRef = useRef<number | null>(null)
   const [browsingParent, setBrowsingParent] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const cancelRadioFocusFrame = useCallback((): void => {
     if (radioFocusFrameRef.current === null) {
@@ -312,7 +96,50 @@ export function CreateStep({
     })
   }, [cancelRadioFocusFrame, createKind, onKindChange])
 
-  const canSubmit = createName.trim().length > 0 && createParent.trim().length > 0 && !isCreating
+  const canSubmit =
+    createName.trim().length > 0 &&
+    createParent.trim().length > 0 &&
+    gitAvailability !== 'checking' &&
+    !parentDefaultPending &&
+    !isCreating
+  const missingLocationLabel = translate(
+    'auto.components.sidebar.AddRepoCreateStep.3a13f6e88b',
+    'location not selected'
+  )
+  const missingServerLocationLabel = translate(
+    'auto.components.sidebar.AddRepoCreateStep.6ed14c0281',
+    'server folder not selected'
+  )
+
+  const summaryParent = useMemo(
+    () =>
+      formatCreateProjectParentSummary({
+        parent: createParent,
+        defaultParent,
+        runtimeEnvironmentId,
+        missingLocationLabel,
+        missingServerLocationLabel
+      }),
+    [
+      createParent,
+      defaultParent,
+      missingLocationLabel,
+      missingServerLocationLabel,
+      runtimeEnvironmentId
+    ]
+  )
+  const targetPathPreview = useMemo(() => {
+    const name = createName.trim() || CREATE_PROJECT_NAME_PLACEHOLDER
+    return createParent.trim() ? joinCreateProjectPath(createParent, name) : ''
+  }, [createName, createParent])
+  const kindLabel =
+    createKind === 'git'
+      ? translate('auto.components.sidebar.AddRepoCreateStep.11fd2a7db8', 'Git repository')
+      : translate('auto.components.sidebar.AddRepoCreateStep.038729c107', 'Folder')
+  const showGitFallback = gitAvailability === 'unavailable'
+  const showGitChecking = gitAvailability === 'checking'
+  const showRuntimeMissingParent =
+    runtimeEnvironmentId && !createParent.trim() && runtimeParentStatus !== 'checking'
 
   if (browsingParent && runtimeEnvironmentId) {
     return (
@@ -329,12 +156,15 @@ export function CreateStep({
     <>
       <DialogHeader>
         <DialogTitle>
-          {translate('auto.components.sidebar.AddRepoCreateStep.db9be12229', 'Start a new project')}
+          {translate(
+            'auto.components.sidebar.AddRepoCreateStep.c7b9f94456',
+            'Create a new project'
+          )}
         </DialogTitle>
         <DialogDescription>
           {translate(
-            'auto.components.sidebar.AddRepoCreateStep.d877ece0d6',
-            'Create a Git repository or a plain folder and open it in Orca.'
+            'auto.components.sidebar.AddRepoCreateStep.b100311784',
+            'Name it and Orca will create a real project with sensible defaults.'
           )}
         </DialogDescription>
       </DialogHeader>
@@ -344,41 +174,6 @@ export function CreateStep({
         the dialog width even with flex + truncate on the row itself. min-w-0
         here caps the grid track at the dialog's max-width. */}
       <div className="space-y-3.5 pt-1 min-w-0">
-        {/* Kind toggle. Real radiogroup so screen readers announce it as a choice. */}
-        <div
-          ref={setRadioGroupNode}
-          role="radiogroup"
-          aria-label={translate(
-            'auto.components.sidebar.AddRepoCreateStep.180e9b5e48',
-            'Project kind'
-          )}
-          className="grid grid-cols-2 gap-2"
-        >
-          <AddRepoCreateKindCard
-            kind="git"
-            selected={createKind === 'git'}
-            disabled={isCreating}
-            onSelect={() => onKindChange('git')}
-            onArrowNav={cycleKind}
-            icon={<GitBranch className="size-4" />}
-            title={translate(
-              'auto.components.sidebar.AddRepoCreateStep.11fd2a7db8',
-              'Git repository'
-            )}
-            caption="Initializes an empty Git repo"
-          />
-          <AddRepoCreateKindCard
-            kind="folder"
-            selected={createKind === 'folder'}
-            disabled={isCreating}
-            onSelect={() => onKindChange('folder')}
-            onArrowNav={cycleKind}
-            icon={<Folder className="size-4" />}
-            title={translate('auto.components.sidebar.AddRepoCreateStep.038729c107', 'Folder')}
-            caption="Create a new folder"
-          />
-        </div>
-
         {/* Name. Monospaced because it ends up as a directory name. */}
         <div className="space-y-1">
           <label
@@ -403,16 +198,174 @@ export function CreateStep({
           />
         </div>
 
-        {/* The local picker returns client paths; runtime servers browse host paths via RPC. */}
-        <CreateProjectLocationField
-          createParent={createParent}
-          isCreating={isCreating}
-          manualParentEntry={manualParentEntry}
-          runtimeEnvironmentId={runtimeEnvironmentId}
-          onParentChange={onParentChange}
-          onPickParent={onPickParent}
-          onBrowseServer={() => setBrowsingParent(true)}
-        />
+        {/* Summary card doubles as the disclosure for the uncommon settings, so the
+          defaults and the controls to change them live in one place. */}
+        <div className="min-w-0 rounded-md border border-border bg-muted/30">
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((open) => !open)}
+            aria-expanded={advancedOpen}
+            className="flex w-full min-w-0 items-start gap-2.5 rounded-md px-3 py-2.5 text-left transition-colors cursor-pointer hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-background/60 text-muted-foreground">
+              {createKind === 'git' ? (
+                <GitBranch className="size-3.5" />
+              ) : (
+                <Folder className="size-3.5" />
+              )}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">
+                {translate(
+                  'auto.components.sidebar.AddRepoCreateStep.685b5eefe1',
+                  '{{kind}} in {{parent}}',
+                  {
+                    kind: kindLabel,
+                    parent: summaryParent
+                  }
+                )}
+              </p>
+              {showGitChecking ? (
+                <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  {translate(
+                    'auto.components.sidebar.AddRepoCreateStep.2a762f3b19',
+                    'Checking Git on this host...'
+                  )}
+                </p>
+              ) : showGitFallback ? (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {translate(
+                    'auto.components.sidebar.AddRepoCreateStep.fe1e616c5b',
+                    "Git isn't installed, so a plain folder is the default."
+                  )}
+                </p>
+              ) : showRuntimeMissingParent ? (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {translate(
+                    'auto.components.sidebar.AddRepoCreateStep.c234df77f7',
+                    'Choose or enter a server parent folder before creating.'
+                  )}
+                </p>
+              ) : targetPathPreview ? (
+                <p
+                  className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground"
+                  title={targetPathPreview}
+                >
+                  {targetPathPreview}
+                </p>
+              ) : null}
+            </div>
+            <ChevronDown
+              className={cn(
+                'size-4 shrink-0 self-center text-muted-foreground transition-transform',
+                advancedOpen && 'rotate-180'
+              )}
+            />
+          </button>
+
+          {advancedOpen && (
+            <div className="space-y-3 border-t border-border px-3 py-3">
+              {/* Real radiogroup so screen readers announce the segmented choice. */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-medium text-muted-foreground block">
+                  {translate(
+                    'auto.components.sidebar.AddRepoCreateStep.180e9b5e48',
+                    'Project kind'
+                  )}
+                </span>
+                <div
+                  ref={setRadioGroupNode}
+                  role="radiogroup"
+                  aria-label={translate(
+                    'auto.components.sidebar.AddRepoCreateStep.180e9b5e48',
+                    'Project kind'
+                  )}
+                  className="grid grid-cols-2 rounded-md border border-border bg-muted/30 p-0.5"
+                >
+                  {(['git', 'folder'] as const).map((kind) => {
+                    const selected = createKind === kind
+                    const label =
+                      kind === 'git'
+                        ? translate(
+                            'auto.components.sidebar.AddRepoCreateStep.11fd2a7db8',
+                            'Git repository'
+                          )
+                        : translate(
+                            'auto.components.sidebar.AddRepoCreateStep.038729c107',
+                            'Folder'
+                          )
+                    const Icon = kind === 'git' ? GitBranch : Folder
+                    return (
+                      <button
+                        key={kind}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        tabIndex={selected ? 0 : -1}
+                        onClick={() => onKindChange(kind)}
+                        onKeyDown={(e) => {
+                          // Why: keep keyboard radio navigation intact inside the compact segmented control.
+                          if (
+                            e.key === 'ArrowLeft' ||
+                            e.key === 'ArrowRight' ||
+                            e.key === 'ArrowUp' ||
+                            e.key === 'ArrowDown'
+                          ) {
+                            e.preventDefault()
+                            cycleKind()
+                          } else if (e.key === ' ' || e.key === 'Enter') {
+                            e.preventDefault()
+                            onKindChange(kind)
+                          }
+                        }}
+                        disabled={isCreating}
+                        data-kind={kind}
+                        className={cn(
+                          'inline-flex min-w-0 items-center justify-center gap-1.5 rounded-sm border px-2.5 py-2 text-xs font-medium outline-none transition-colors',
+                          // Why: the segment sits on a muted card, so bg-background alone
+                          // is too subtle; the border makes the selected state legible.
+                          selected
+                            ? 'border-border bg-background text-foreground shadow-xs'
+                            : 'border-transparent text-muted-foreground hover:text-foreground',
+                          'focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60'
+                        )}
+                      >
+                        <Icon className="size-3.5 shrink-0" />
+                        <span className="truncate">{label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {showGitFallback && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {translate(
+                      'auto.components.sidebar.AddRepoCreateStep.fe1e616c5b',
+                      "Git isn't installed, so a plain folder is the default."
+                    )}
+                  </p>
+                )}
+              </div>
+
+              {/* The local picker returns client paths; runtime servers browse host paths via RPC. */}
+              <CreateProjectLocationField
+                createParent={createParent}
+                isCreating={isCreating}
+                manualParentEntry={manualParentEntry}
+                runtimeEnvironmentId={runtimeEnvironmentId}
+                onParentChange={onParentChange}
+                onPickParent={onPickParent}
+                onBrowseServer={() => setBrowsingParent(true)}
+              />
+
+              {targetPathPreview && (
+                <p className="min-w-0 break-all rounded-md border border-border bg-background/40 px-2.5 py-2 font-mono text-[11px] text-muted-foreground">
+                  {targetPathPreview}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
 
         {createError && (
           <p className="text-[11px] text-destructive" role="alert">

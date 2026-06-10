@@ -3,7 +3,7 @@ import { useAppStore } from '@/store'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { track } from '@/lib/telemetry'
 import { useRemoteRepo } from './AddRepoSteps'
-import { useCreateRepo } from './AddRepoCreateStep'
+import { useCreateRepo } from './useCreateRepo'
 import { buildNestedRepoScanTelemetry } from '../../../../shared/nested-repo-telemetry'
 import { AddRepoStepIndicator } from './AddRepoStepIndicator'
 import { AddRepoDialogStepContent } from './AddRepoDialogStepContent'
@@ -16,6 +16,7 @@ import { useAddRepoNestedImportFlow } from './useAddRepoNestedImportFlow'
 import { AddRepoHostSelector } from './AddRepoHostSelector'
 import { useAddRepoHostSelection } from './use-add-repo-host-selection'
 import { useCompleteGitRepoAdd } from './use-complete-git-repo-add'
+import { useCreateProjectDefaults } from './useCreateProjectDefaults'
 
 const AddRepoDialog = React.memo(function AddRepoDialog() {
   const activeModal = useAppStore((s) => s.activeModal)
@@ -140,6 +141,22 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
   )
 
   const {
+    createDefaultParent,
+    createGitAvailability,
+    createRuntimeParentStatus,
+    createParentDefaultPending,
+    resetCreateDefaultState,
+    markCreateParentTouched,
+    markCreateKindTouched
+  } = useCreateProjectDefaults({
+    step,
+    activeRuntimeEnvironmentId: settings?.activeRuntimeEnvironmentId,
+    createParent,
+    setCreateParent,
+    setCreateKind
+  })
+
+  const {
     cloneUrl,
     cloneDestination,
     cloneError,
@@ -226,12 +243,14 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
     resetCloneFlow()
     resetNestedImportFlow()
     resetNestedRepoReviewState()
+    resetCreateDefaultState()
     resetCreateState()
     resetRemoteState()
   }, [
     resetCloneFlow,
     resetLocalFolderFlow,
     resetNestedRepoReviewState,
+    resetCreateDefaultState,
     resetServerPathFlow,
     resetNestedImportFlow,
     resetRemoteState,
@@ -315,6 +334,10 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
           isCreating={isCreating}
           hostSelector={hostSelector}
           showRemoteAction={false}
+          createDefaultParent={createDefaultParent}
+          createGitAvailability={createGitAvailability}
+          createRuntimeParentStatus={createRuntimeParentStatus}
+          createParentDefaultPending={createParentDefaultPending}
           manualCreateParentEntry={isRuntimeEnvironmentActive || selectedParsedHost?.kind === 'ssh'}
           onBrowse={
             selectedParsedHost?.kind === 'ssh'
@@ -367,14 +390,22 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
             setCreateError(null)
           }}
           onCreateParentChange={(value) => {
+            markCreateParentTouched(value)
             setCreateParent(value)
             setCreateError(null)
           }}
           onCreateKindChange={(kind) => {
+            markCreateKindTouched()
             setCreateKind(kind)
             setCreateError(null)
           }}
-          onPickCreateParent={handlePickParent}
+          onPickCreateParent={() => {
+            void handlePickParent().then((dir) => {
+              if (dir) {
+                markCreateParentTouched(dir)
+              }
+            })
+          }}
           onCreate={handleCreate}
         />
       </DialogContent>

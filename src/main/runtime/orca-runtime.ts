@@ -6650,6 +6650,15 @@ export class OrcaRuntimeService {
     return { resolvedPath: dirPath, entries: mapped }
   }
 
+  async isGitAvailable(): Promise<boolean> {
+    try {
+      await gitExecFileAsync(['--version'], { cwd: process.cwd(), timeout: 3000 })
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async importNestedRepos(args: {
     parentPath: string
     groupName: string
@@ -6847,6 +6856,9 @@ export class OrcaRuntimeService {
 
     let createdDir = false
     try {
+      // Why: default create-project parents are host-home based and may not exist
+      // before the first project is created on a fresh runtime.
+      await mkdir(trimmedParentPath, { recursive: true })
       const existingStat = await stat(targetPath).catch((error: unknown) => {
         if (isENOENT(error)) {
           return null
