@@ -15,6 +15,7 @@ import {
   FolderInput,
   FolderPlus,
   Plus,
+  Server,
   Shapes,
   SlidersHorizontal,
   Trash2
@@ -526,17 +527,23 @@ function HostSectionHeader({
   row: HostHeaderRow
   onToggle: () => void
 }): React.JSX.Element {
+  const isBlocked = row.health === 'blocked'
   const detail = getHostHeaderDetail(row)
   return (
     <div className="px-2 pt-1">
-      {/* Why: host headers are quiet group labels, one tier below workspace
-          cards — uppercase muted type, no icon, status mark only when the
-          host needs attention (matches the design doc's sidebar mock). */}
+      {/* Why: hosts are machines, not just groups — the outlined card with a
+          server glyph keeps that distinction visible. Status stays quiet: a
+          mark renders only when the host needs attention. */}
       <div
         role="button"
         tabIndex={0}
         aria-expanded={!row.collapsed}
-        className="group/host-header flex h-6 w-full cursor-pointer items-center gap-1.5 pr-1 text-left"
+        className={cn(
+          'group/host-header flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border px-2 text-left',
+          isBlocked
+            ? 'border-destructive/40 bg-destructive/10'
+            : 'border-worktree-sidebar-border bg-worktree-sidebar-accent/70'
+        )}
         onClick={onToggle}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -545,23 +552,24 @@ function HostSectionHeader({
           }
         }}
       >
+        <Server className="size-3.5 shrink-0 text-muted-foreground" />
         <HostHeaderHealthIcon health={row.health} />
         <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <div className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="min-w-0 truncate text-[12px] font-semibold leading-none text-foreground">
             {row.label}
-          </div>
+          </span>
           {detail ? (
             <span
               className={cn(
                 'shrink-0 truncate text-[10px] leading-none',
-                detail.isWarning ? 'text-destructive' : 'text-muted-foreground/60'
+                detail.isWarning ? 'text-destructive' : 'text-muted-foreground/70'
               )}
             >
-              · {detail.text}
+              {detail.text}
             </span>
           ) : null}
-          <SectionMetricsBadge count={row.count} />
         </div>
+        <SectionMetricsBadge count={row.count} />
         <div className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/60 opacity-0 transition-opacity group-hover/host-header:opacity-100">
           <ChevronDown
             className={cn('size-3.5 transition-transform', row.collapsed && '-rotate-90')}
