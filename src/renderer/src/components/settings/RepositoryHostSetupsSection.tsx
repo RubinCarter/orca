@@ -1,12 +1,9 @@
 import { useMemo, useState } from 'react'
 import { getExecutionHostLabel } from '../../../../shared/execution-host'
 import { type ExecutionHostId } from '../../../../shared/execution-host'
-import {
-  buildExecutionHostRegistry,
-  type ExecutionHostRegistryEntry
-} from '../../../../shared/execution-host-registry'
+import { buildExecutionHostRegistry } from '../../../../shared/execution-host-registry'
 import { getHostDisplayLabelOverrides } from '../../../../shared/host-setting-overrides'
-import type { ProjectHostSetup, ProjectHostSetupState, Repo } from '../../../../shared/types'
+import type { Repo } from '../../../../shared/types'
 import { useAppStore } from '../../store'
 import { getProjectHostSetupProjectionFromState } from '../../store/selectors'
 import { cn } from '../../lib/utils'
@@ -19,57 +16,13 @@ import { SettingsBadge } from './SettingsFormControls'
 import { matchesSettingsSearch } from './settings-search'
 import type { SettingsSearchEntry } from './settings-search'
 import { translate } from '@/i18n/i18n'
+import { buildSetupHostOptions, getSetupStateLabel } from './repository-host-setup-options'
 
 type RepositoryHostSetupsSectionProps = {
   repo: Repo
   forceVisible: boolean
   searchQuery: string
   searchEntries: SettingsSearchEntry[]
-}
-
-type SetupHostOption = {
-  id: ExecutionHostId
-  label: string
-}
-
-function getSetupStateLabel(setupState: ProjectHostSetupState): string {
-  switch (setupState) {
-    case 'ready':
-      return translate('auto.components.settings.RepositoryPane.hostSetupStateReady', 'Ready')
-    case 'not-set-up':
-      return translate(
-        'auto.components.settings.RepositoryPane.hostSetupStateNotSetUp',
-        'Not set up'
-      )
-    case 'setting-up':
-      return translate(
-        'auto.components.settings.RepositoryPane.hostSetupStateSettingUp',
-        'Setting up'
-      )
-    case 'error':
-      return translate('auto.components.settings.RepositoryPane.hostSetupStateError', 'Error')
-    case 'unsupported':
-      return translate(
-        'auto.components.settings.RepositoryPane.hostSetupStateUnsupported',
-        'Unsupported'
-      )
-  }
-}
-
-function buildSetupHostOptions({
-  projectHostSetups,
-  hostOptions
-}: {
-  projectHostSetups: ProjectHostSetup[]
-  hostOptions: readonly ExecutionHostRegistryEntry[]
-}): SetupHostOption[] {
-  const setupHostIds = new Set(projectHostSetups.map((setup) => setup.hostId))
-  return hostOptions
-    .filter((host) => !setupHostIds.has(host.id))
-    .map((host) => ({
-      id: host.id,
-      label: host.label || getExecutionHostLabel(host.id)
-    }))
 }
 
 export function RepositoryHostSetupsSection({
@@ -81,6 +34,7 @@ export function RepositoryHostSetupsSection({
   const openSettingsPage = useAppStore((state) => state.openSettingsPage)
   const openSettingsTarget = useAppStore((state) => state.openSettingsTarget)
   const setupProjectExistingFolder = useAppStore((state) => state.setupProjectExistingFolder)
+  const setupProjectClone = useAppStore((state) => state.setupProjectClone)
   const createProjectHostSetup = useAppStore((state) => state.createProjectHostSetup)
   const deleteProjectHostSetup = useAppStore((state) => state.deleteProjectHostSetup)
   const repos = useAppStore((state) => state.repos)
@@ -126,7 +80,10 @@ export function RepositoryHostSetupsSection({
   const [selectedSetupHostId, setSelectedSetupHostId] = useState<ExecutionHostId | null>(null)
   const [setupPath, setSetupPath] = useState('')
   const [setupKind, setSetupKind] = useState<'git' | 'folder'>('git')
+  const [cloneUrl, setCloneUrl] = useState('')
+  const [cloneDestination, setCloneDestination] = useState('')
   const [isSettingUp, setIsSettingUp] = useState(false)
+  const [isCloning, setIsCloning] = useState(false)
   const [isCreatingPendingSetup, setIsCreatingPendingSetup] = useState(false)
   const [deletingSetupId, setDeletingSetupId] = useState<string | null>(null)
   const setupTargetHostId = selectedSetupHostId ?? setupHostOptions[0]?.id ?? null
@@ -231,18 +188,18 @@ export function RepositoryHostSetupsSection({
           <div className="space-y-1">
             <Label className="text-sm font-semibold">
               {translate(
-                'auto.components.settings.RepositoryPane.setupExistingFolder',
-                'Import existing folder'
+                'auto.components.settings.RepositoryPane.setupProjectOnHost',
+                'Set up on another host'
               )}
             </Label>
             <p className="text-xs text-muted-foreground">
               {translate(
-                'auto.components.settings.RepositoryPane.setupExistingFolderHelp',
-                'Make this project available on another host by linking a checkout that already exists there.'
+                'auto.components.settings.RepositoryPane.setupProjectOnHostHelp',
+                'Choose a host, then import an existing checkout, clone the repository there, or track a setup that will be provisioned later.'
               )}
             </p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+          <div className="max-w-48">
             <Select
               value={setupTargetHostId ?? undefined}
               onValueChange={(value) => setSelectedSetupHostId(value as ExecutionHostId)}
@@ -258,6 +215,8 @@ export function RepositoryHostSetupsSection({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
             <Input
               value={setupPath}
               onChange={(event) => setSetupPath(event.target.value)}
@@ -267,13 +226,11 @@ export function RepositoryHostSetupsSection({
               )}
               className="h-9 min-w-0"
             />
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2">
             <Select
               value={setupKind}
               onValueChange={(value) => setSetupKind(value as 'git' | 'folder')}
             >
-              <SelectTrigger className="h-8 w-32 text-xs">
+              <SelectTrigger className="h-9 w-32 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -314,6 +271,65 @@ export function RepositoryHostSetupsSection({
                 ? translate('auto.components.settings.RepositoryPane.settingUpHost', 'Importing...')
                 : translate('auto.components.settings.RepositoryPane.setupHost', 'Import')}
             </Button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <Input
+              value={cloneUrl}
+              onChange={(event) => setCloneUrl(event.target.value)}
+              placeholder={translate(
+                'auto.components.settings.RepositoryPane.cloneUrlPlaceholder',
+                'Repository URL'
+              )}
+              className="h-9 min-w-0"
+            />
+            <Input
+              value={cloneDestination}
+              onChange={(event) => setCloneDestination(event.target.value)}
+              placeholder={translate(
+                'auto.components.settings.RepositoryPane.cloneDestinationPlaceholder',
+                '/destination/on/host'
+              )}
+              className="h-9 min-w-0"
+            />
+            <Button
+              type="button"
+              size="sm"
+              disabled={
+                !setupTargetHostId || !cloneUrl.trim() || !cloneDestination.trim() || isCloning
+              }
+              onClick={async () => {
+                if (
+                  !setupTargetHostId ||
+                  !selectedProjectHostSetup ||
+                  !cloneUrl.trim() ||
+                  !cloneDestination.trim()
+                ) {
+                  return
+                }
+                setIsCloning(true)
+                const result = await setupProjectClone({
+                  projectId: selectedProjectHostSetup.projectId,
+                  hostId: setupTargetHostId,
+                  url: cloneUrl.trim(),
+                  destination: cloneDestination.trim(),
+                  displayName: repo.displayName
+                })
+                setIsCloning(false)
+                if (result) {
+                  setCloneUrl('')
+                  setCloneDestination('')
+                  setSelectedSetupHostId(null)
+                  openSettingsPage()
+                  openSettingsTarget({ pane: 'repo', repoId: result.repo.id })
+                }
+              }}
+            >
+              {isCloning
+                ? translate('auto.components.settings.RepositoryPane.cloningHost', 'Cloning...')
+                : translate('auto.components.settings.RepositoryPane.cloneHost', 'Clone')}
+            </Button>
+          </div>
+          <div className="flex justify-end">
             <Button
               type="button"
               variant="outline"

@@ -267,6 +267,80 @@ describe('RepositoryHostSetupsSection', () => {
     expect(openSettingsTarget).toHaveBeenCalledWith({ pane: 'repo', repoId: 'remote-repo' })
   })
 
+  it('clones the project onto another known host from settings', async () => {
+    const openSettingsPage = vi.fn()
+    const openSettingsTarget = vi.fn()
+    const setupProjectClone = vi.fn().mockResolvedValue({
+      project: makeProject({ id: 'github:stablyai/orca' }),
+      setup: makeSetup({
+        id: 'remote-repo',
+        projectId: 'github:stablyai/orca',
+        repoId: 'remote-repo',
+        hostId: toSshExecutionHostId('openclaw 2'),
+        path: '/home/alice/orca'
+      }),
+      repo: makeRepo({
+        id: 'remote-repo',
+        displayName: 'Orca',
+        path: '/home/alice/orca',
+        connectionId: 'openclaw 2'
+      })
+    })
+    const localRepo = makeRepo({
+      id: 'local-repo',
+      displayName: 'Orca',
+      path: '/Users/alice/orca'
+    })
+    useAppStore.setState({
+      repos: [localRepo],
+      projects: [makeProject({ id: 'github:stablyai/orca' })],
+      projectHostSetups: [
+        makeSetup({
+          id: 'local-repo',
+          projectId: 'github:stablyai/orca',
+          repoId: 'local-repo',
+          hostId: 'local',
+          path: '/Users/alice/orca'
+        })
+      ],
+      sshTargetLabels: new Map([['openclaw 2', 'openclaw 2']]),
+      openSettingsPage,
+      openSettingsTarget,
+      setupProjectClone
+    })
+
+    renderSection(localRepo)
+    const urlInput = container.querySelector<HTMLInputElement>(
+      'input[placeholder="Repository URL"]'
+    )
+    const destinationInput = container.querySelector<HTMLInputElement>(
+      'input[placeholder="/destination/on/host"]'
+    )
+    expect(urlInput).toBeTruthy()
+    expect(destinationInput).toBeTruthy()
+    typeIntoInput(urlInput!, 'https://github.com/stablyai/orca.git')
+    typeIntoInput(destinationInput!, '/home/alice')
+
+    const cloneButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Clone'
+    )
+    expect(cloneButton).toBeTruthy()
+
+    await act(async () => {
+      cloneButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(setupProjectClone).toHaveBeenCalledWith({
+      projectId: 'github:stablyai/orca',
+      hostId: 'ssh:openclaw%202',
+      url: 'https://github.com/stablyai/orca.git',
+      destination: '/home/alice',
+      displayName: 'Orca'
+    })
+    expect(openSettingsPage).toHaveBeenCalledTimes(1)
+    expect(openSettingsTarget).toHaveBeenCalledWith({ pane: 'repo', repoId: 'remote-repo' })
+  })
+
   it('creates pending setup metadata for a known host without requiring a path', async () => {
     const createProjectHostSetup = vi.fn().mockResolvedValue({
       project: makeProject({ id: 'github:stablyai/orca' }),
