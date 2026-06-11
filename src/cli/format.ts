@@ -23,6 +23,7 @@ export {
 } from './computer-format'
 export type { ComputerActionFollowUpTarget } from './computer-format'
 export {
+  formatProjectHostSetupDeleteResult,
   formatProjectHostSetupList,
   formatProjectHostSetupResult,
   formatProjectHostSetupUpdateResult,

@@ -11,6 +11,8 @@ import type {
   Repo,
   ProjectGroup,
   ProjectGroupImportResult,
+  ProjectHostSetupDeleteArgs,
+  ProjectHostSetupDeleteResult,
   ProjectHostSetupExistingFolderArgs,
   ProjectHostSetupResult,
   ProjectHostSetupUpdateArgs,
@@ -468,6 +470,10 @@ const ProjectHostSetupUpdateIpcArgs = z.object({
   })
 })
 
+const ProjectHostSetupDeleteIpcArgs = z.object({
+  setupId: z.string().min(1)
+})
+
 const ProjectGroupScanNestedArgs = z.object({
   path: z.string().min(1),
   connectionId: z.string().min(1).optional(),
@@ -758,6 +764,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.removeHandler('projectHostSetups:list')
   ipcMain.removeHandler('projectHostSetups:setupExistingFolder')
   ipcMain.removeHandler('projectHostSetups:update')
+  ipcMain.removeHandler('projectHostSetups:delete')
   ipcMain.removeHandler('projectGroups:list')
   ipcMain.removeHandler('projectGroups:create')
   ipcMain.removeHandler('projectGroups:update')
@@ -798,6 +805,23 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
         'project_host_setup_update_invalid_args'
       )
       const result = store.updateProjectHostSetup(args)
+      if (!result) {
+        throw new Error(`Project host setup not found: ${args.setupId}`)
+      }
+      notifyReposChanged(mainWindow)
+      return result
+    }
+  )
+
+  ipcMain.handle(
+    'projectHostSetups:delete',
+    (_event, rawArgs: ProjectHostSetupDeleteArgs): ProjectHostSetupDeleteResult => {
+      const args = parseProjectGroupIpcArgs(
+        ProjectHostSetupDeleteIpcArgs,
+        rawArgs,
+        'project_host_setup_delete_invalid_args'
+      )
+      const result = store.deleteProjectHostSetup(args)
       if (!result) {
         throw new Error(`Project host setup not found: ${args.setupId}`)
       }

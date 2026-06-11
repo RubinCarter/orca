@@ -32,6 +32,10 @@ const ProjectHostSetupUpdate = z.object({
   })
 })
 
+const ProjectHostSetupDelete = z.object({
+  setupId: requiredString('Missing setup ID')
+})
+
 export const PROJECT_RUNTIME_METHODS: RpcMethod[] = [
   defineMethod({
     name: 'project.list',
@@ -55,6 +59,13 @@ export const PROJECT_RUNTIME_METHODS: RpcMethod[] = [
     params: ProjectHostSetupUpdate,
     handler: (params, { runtime }) => ({
       result: runtime.updateProjectHostSetup(params)
+    })
+  }),
+  defineMethod({
+    name: 'projectHostSetup.delete',
+    params: ProjectHostSetupDelete,
+    handler: (params, { runtime }) => ({
+      result: runtime.deleteProjectHostSetup(params)
     })
   })
 ]

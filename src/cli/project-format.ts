@@ -1,6 +1,7 @@
 import type {
   Project,
   ProjectHostSetup,
+  ProjectHostSetupDeleteResult,
   ProjectHostSetupResult,
   ProjectHostSetupUpdateResult
 } from '../shared/types'
@@ -41,6 +42,16 @@ export function formatProjectHostSetupUpdateResult(result: {
 }): string {
   const { project, setup, repo } = result.result
   return formatProjectHostSetupResultFields(project, setup, repo?.id)
+}
+
+export function formatProjectHostSetupDeleteResult(result: {
+  result: ProjectHostSetupDeleteResult
+}): string {
+  const { project, setup, repo } = result.result
+  return [
+    `deleted: ${setup.id}`,
+    formatProjectHostSetupResultFields(project, setup, repo?.id)
+  ].join('\n')
 }
 
 function formatProjectHostSetupResultFields(

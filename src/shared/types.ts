@@ -158,6 +158,10 @@ export type ProjectHostSetupUpdateArgs = {
   >
 }
 
+export type ProjectHostSetupDeleteArgs = {
+  setupId: string
+}
+
 export type ProjectHostSetupResult = {
   project: Project
   setup: ProjectHostSetup
@@ -165,6 +169,12 @@ export type ProjectHostSetupResult = {
 }
 
 export type ProjectHostSetupUpdateResult = {
+  project: Project
+  setup: ProjectHostSetup
+  repo?: Repo
+}
+
+export type ProjectHostSetupDeleteResult = {
   project: Project
   setup: ProjectHostSetup
   repo?: Repo

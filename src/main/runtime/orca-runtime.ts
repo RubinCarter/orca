@@ -52,6 +52,8 @@ import type {
   PersistedUIState,
   Project,
   ProjectHostSetup,
+  ProjectHostSetupDeleteArgs,
+  ProjectHostSetupDeleteResult,
   ProjectHostSetupExistingFolderArgs,
   ProjectHostSetupResult,
   ProjectHostSetupUpdateArgs,
@@ -532,6 +534,7 @@ type RuntimeStore = {
   getProjects?: Store['getProjects']
   getProjectHostSetups?: Store['getProjectHostSetups']
   updateProjectHostSetup?: Store['updateProjectHostSetup']
+  deleteProjectHostSetup?: Store['deleteProjectHostSetup']
   getProjectGroups?: Store['getProjectGroups']
   createProjectGroup?: Store['createProjectGroup']
   updateProjectGroup?: Store['updateProjectGroup']
@@ -6508,6 +6511,17 @@ export class OrcaRuntimeService {
       throw new Error('runtime_unavailable')
     }
     const result = this.store.updateProjectHostSetup(args)
+    if (!result) {
+      throw new Error(`Project host setup not found: ${args.setupId}`)
+    }
+    return result
+  }
+
+  deleteProjectHostSetup(args: ProjectHostSetupDeleteArgs): ProjectHostSetupDeleteResult {
+    if (!this.store?.deleteProjectHostSetup) {
+      throw new Error('runtime_unavailable')
+    }
+    const result = this.store.deleteProjectHostSetup(args)
     if (!result) {
       throw new Error(`Project host setup not found: ${args.setupId}`)
     }

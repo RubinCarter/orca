@@ -1,6 +1,7 @@
 import type {
   Project,
   ProjectHostSetup,
+  ProjectHostSetupDeleteResult,
   ProjectHostSetupExistingFolderArgs,
   ProjectHostSetupResult,
   ProjectHostSetupUpdateArgs,
@@ -9,6 +10,7 @@ import type {
 } from '../../shared/types'
 import type { CommandHandler } from '../dispatch'
 import {
+  formatProjectHostSetupDeleteResult,
   formatProjectHostSetupList,
   formatProjectHostSetupResult,
   formatProjectHostSetupUpdateResult,
@@ -83,6 +85,15 @@ export const PROJECT_HANDLERS: Record<string, CommandHandler> = {
       args
     )
     printResult(result, json, formatProjectHostSetupUpdateResult)
+  },
+  'project setup-delete': async ({ flags, client, json }) => {
+    const result = await client.call<{ result: ProjectHostSetupDeleteResult }>(
+      'projectHostSetup.delete',
+      {
+        setupId: getRequiredStringFlag(flags, 'setup')
+      }
+    )
+    printResult(result, json, formatProjectHostSetupDeleteResult)
   }
 }
 

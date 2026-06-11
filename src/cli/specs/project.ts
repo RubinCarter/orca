@@ -57,5 +57,16 @@ export const PROJECT_COMMAND_SPECS: CommandSpec[] = [
       'orca project setup-update --setup github:stablyai/orca::gpu --display-name "GPU VM"',
       'orca project setup-update --setup github:stablyai/orca::gpu --path /srv/orca --state ready --json'
     ]
+  },
+  {
+    path: ['project', 'setup-delete'],
+    summary: 'Remove a project host setup',
+    usage: 'orca project setup-delete --setup <setup-id> [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'setup'],
+    notes: [
+      'Independent setups are removed directly.',
+      'Repo-backed setups remove the registered repo compatibility record.'
+    ],
+    examples: ['orca project setup-delete --setup github:stablyai/orca::gpu --json']
   }
 ]

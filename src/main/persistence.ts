@@ -36,6 +36,8 @@ import type {
   PersistedState,
   Project,
   ProjectHostSetup,
+  ProjectHostSetupDeleteArgs,
+  ProjectHostSetupDeleteResult,
   ProjectHostSetupUpdateArgs,
   ProjectHostSetupUpdateResult,
   ProjectHostSetupMethod,
@@ -2586,6 +2588,29 @@ export class Store {
     }
     const updatedSetup = this.updateIndependentProjectHostSetup(setup, args.updates)
     return { project, setup: updatedSetup }
+  }
+
+  deleteProjectHostSetup(args: ProjectHostSetupDeleteArgs): ProjectHostSetupDeleteResult | null {
+    const setup = this.state.projectHostSetups.find((entry) => entry.id === args.setupId)
+    if (!setup) {
+      return null
+    }
+    const project = this.state.projects.find((entry) => entry.id === setup.projectId)
+    if (!project) {
+      return null
+    }
+    const repo = setup.repoId
+      ? this.state.repos.find((entry) => entry.id === setup.repoId)
+      : undefined
+    if (repo) {
+      this.removeProject(repo.id)
+      return { project, setup, repo: this.hydrateRepo(repo) }
+    }
+    this.state.projectHostSetups = this.state.projectHostSetups.filter(
+      (entry) => entry.id !== setup.id
+    )
+    this.scheduleSave()
+    return { project, setup }
   }
 
   /**

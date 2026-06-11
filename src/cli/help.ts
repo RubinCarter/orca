@@ -34,6 +34,7 @@ Projects:
   project setups            List project host setups
   project setup-existing-folder Make a project available on a host by importing an existing folder
   project setup-update      Update project host setup metadata
+  project setup-delete      Remove a project host setup
 
 Repos:
   repo list                 List repos registered in Orca
@@ -211,6 +212,7 @@ Common Commands:
   orca project setups [--project <id>] [--host <host-id>] [--json]
   orca project setup-existing-folder --project <id> --host <host-id> --path <path> [--kind git|folder] [--display-name <name>] [--json]
   orca project setup-update --setup <setup-id> [--display-name <name>] [--path <path>] [--worktree-base-path <path>] [--git-username <name>] [--kind git|folder] [--state ready|not-set-up|setting-up|error|unsupported] [--method legacy-repo|imported-existing-folder|cloned] [--json]
+  orca project setup-delete --setup <setup-id> [--json]
   orca repo list [--json]
   orca repo add --path <path> [--json]
   orca repo show --repo <selector> [--json]

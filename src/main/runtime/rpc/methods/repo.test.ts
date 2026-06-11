@@ -454,6 +454,45 @@ describe('repo RPC methods', () => {
     expect(response).toMatchObject({ ok: true, result: { result } })
   })
 
+  it('routes project-host setup deletes to the runtime server', async () => {
+    const result = {
+      project: {
+        id: 'project-1',
+        displayName: 'Project',
+        badgeColor: '#737373',
+        sourceRepoIds: [],
+        createdAt: 1,
+        updatedAt: 1
+      },
+      setup: {
+        id: 'setup-1',
+        projectId: 'project-1',
+        hostId: 'runtime:env-1',
+        repoId: '',
+        path: '/srv/project',
+        displayName: 'GPU VM',
+        setupState: 'ready',
+        setupMethod: 'imported-existing-folder',
+        createdAt: 1,
+        updatedAt: 2
+      }
+    }
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      deleteProjectHostSetup: vi.fn().mockReturnValue(result)
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('projectHostSetup.delete', {
+        setupId: 'setup-1'
+      })
+    )
+
+    expect(runtime.deleteProjectHostSetup).toHaveBeenCalledWith({ setupId: 'setup-1' })
+    expect(response).toMatchObject({ ok: true, result: { result } })
+  })
+
   it('allows separate nested-repo imports without a group name', async () => {
     const runtime = {
       getRuntimeId: () => 'test-runtime',

@@ -2512,6 +2512,49 @@ describe('Store', () => {
     ).toThrow('Repo-backed project host setup paths must be changed by re-importing the project.')
   })
 
+  it('deletes independent project host setup records without deleting the project', async () => {
+    const independentProject = makeProject({
+      id: 'cloud-project',
+      displayName: 'Cloud Project'
+    })
+    const independentSetup = makeProjectHostSetup({
+      id: 'cloud-project::gpu-vm',
+      projectId: independentProject.id,
+      hostId: 'runtime:gpu-vm',
+      repoId: '',
+      path: '/srv/cloud-project',
+      displayName: 'GPU VM'
+    })
+    writeDataFile({
+      ...getDefaultPersistedState(testState.dir),
+      projects: [independentProject],
+      projectHostSetups: [independentSetup]
+    })
+    const store = await createStore()
+
+    const result = store.deleteProjectHostSetup({ setupId: independentSetup.id })
+
+    expect(result).toEqual({ project: independentProject, setup: independentSetup })
+    expect(store.getProjects()).toEqual([independentProject])
+    expect(store.getProjectHostSetups()).toEqual([])
+  })
+
+  it('deletes repo-backed project host setups by removing the compatibility repo', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'r1', path: '/repo' }))
+    store.setWorktreeMeta('r1::/path/wt1', { displayName: 'wt1' })
+
+    const result = store.deleteProjectHostSetup({ setupId: 'r1' })
+
+    expect(result?.project).toMatchObject({ id: 'repo:r1' })
+    expect(result?.setup).toMatchObject({ id: 'r1', repoId: 'r1' })
+    expect(result?.repo).toMatchObject({ id: 'r1' })
+    expect(store.getRepo('r1')).toBeUndefined()
+    expect(store.getProjects()).toEqual([])
+    expect(store.getProjectHostSetups()).toEqual([])
+    expect(store.getWorktreeMeta('r1::/path/wt1')).toBeUndefined()
+  })
+
   it('updateRepo preserves repo-backed project host setup method', async () => {
     const store = await createStore()
     store.addRepo(makeRepo())

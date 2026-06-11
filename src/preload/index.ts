@@ -510,7 +510,8 @@ const api = {
     listHostSetups: () => ipcRenderer.invoke('projectHostSetups:list'),
     setupExistingFolder: (args) =>
       ipcRenderer.invoke('projectHostSetups:setupExistingFolder', args),
-    updateHostSetup: (args) => ipcRenderer.invoke('projectHostSetups:update', args)
+    updateHostSetup: (args) => ipcRenderer.invoke('projectHostSetups:update', args),
+    deleteHostSetup: (args) => ipcRenderer.invoke('projectHostSetups:delete', args)
   } satisfies PreloadApi['projects'],
 
   projectGroups: {

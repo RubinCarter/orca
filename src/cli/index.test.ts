@@ -147,6 +147,9 @@ describe('orca root help', () => {
     expect(logSpy.mock.calls[0][0]).toContain(
       'project setup-update      Update project host setup metadata'
     )
+    expect(logSpy.mock.calls[0][0]).toContain(
+      'project setup-delete      Remove a project host setup'
+    )
     expect(callMock).not.toHaveBeenCalled()
   })
 })
@@ -3134,6 +3137,43 @@ describe('orca cli worktree awareness', () => {
         setupState: 'ready',
         setupMethod: 'imported-existing-folder'
       }
+    })
+  })
+
+  it('deletes project host setup metadata through the project-first runtime API', async () => {
+    queueFixtures(
+      callMock,
+      okFixture('req_project_setup_delete', {
+        result: {
+          project: {
+            id: 'github:stablyai/orca',
+            displayName: 'Orca',
+            badgeColor: '#7c3aed',
+            sourceRepoIds: [],
+            createdAt: 1,
+            updatedAt: 1
+          },
+          setup: {
+            id: 'setup-gpu',
+            projectId: 'github:stablyai/orca',
+            hostId: 'runtime:gpu',
+            repoId: '',
+            path: '/srv/orca',
+            displayName: 'GPU VM',
+            setupState: 'ready',
+            setupMethod: 'imported-existing-folder',
+            createdAt: 1,
+            updatedAt: 2
+          }
+        }
+      })
+    )
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await main(['project', 'setup-delete', '--setup', 'setup-gpu', '--json'], '/tmp/repo')
+
+    expect(callMock).toHaveBeenCalledWith('projectHostSetup.delete', {
+      setupId: 'setup-gpu'
     })
   })
 })
