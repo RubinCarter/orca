@@ -34,6 +34,9 @@ export default function ProjectHostSetupCombobox({
         return
       }
       if (option.kind === 'needs-setup') {
+        if (!option.isAvailable) {
+          return
+        }
         onNeedsSetupHostSelect?.(option)
         setOpen(false)
         return
@@ -90,6 +93,7 @@ export default function ProjectHostSetupCombobox({
                 key={option.id}
                 value={option.id}
                 onSelect={() => handleSelect(option.id)}
+                disabled={option.kind === 'needs-setup' && !option.isAvailable}
                 className="items-center gap-2 px-3 py-2"
               >
                 <Check

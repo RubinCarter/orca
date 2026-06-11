@@ -4,6 +4,7 @@ import {
   type ExecutionHostId
 } from '../../../shared/execution-host'
 import type { ExecutionHostRegistryEntry } from '../../../shared/execution-host-registry'
+import { PROJECT_HOST_SETUP_RUNTIME_CAPABILITY } from '../../../shared/protocol-version'
 import type { ProjectHostSetup, Repo } from '../../../shared/types'
 
 export type ProjectHostSetupOption =
@@ -24,6 +25,7 @@ export type ProjectHostSetupOption =
       hostId: ExecutionHostId
       label: string
       detail: string
+      isAvailable: boolean
     }
 
 export type ReadyProjectHostSetupOption = Extract<ProjectHostSetupOption, { kind: 'ready' }>
@@ -124,17 +126,46 @@ function buildNeedsSetupOptions({
     .filter((host) => !readySetupByHost.has(host.id))
     .map((host) => {
       const pendingSetup = pendingSetupByHost.get(host.id)
+      const availability = getHostSetupAvailability(host)
       return {
         id: `needs-setup:${host.id}`,
         kind: 'needs-setup' as const,
         projectId,
         hostId: host.id,
         label: host.label || getExecutionHostLabel(host.id),
-        detail: pendingSetup
-          ? getPendingSetupDetail(pendingSetup)
-          : 'Project not set up on this host'
+        detail: availability.isAvailable
+          ? pendingSetup
+            ? getPendingSetupDetail(pendingSetup)
+            : 'Project not set up on this host'
+          : availability.detail,
+        isAvailable: availability.isAvailable
       }
     })
+}
+
+function getHostSetupAvailability(host: ExecutionHostRegistryEntry): {
+  isAvailable: boolean
+  detail: string
+} {
+  if (host.health === 'blocked') {
+    return {
+      isAvailable: false,
+      detail: 'Orca server version is incompatible'
+    }
+  }
+  if (
+    host.kind === 'runtime' &&
+    !host.capabilities?.includes(PROJECT_HOST_SETUP_RUNTIME_CAPABILITY)
+  ) {
+    return {
+      isAvailable: false,
+      detail: 'Update Orca on this host to set up projects'
+    }
+  }
+  return {
+    isAvailable: true,
+    detail: ''
+  }
 }
 
 function getPendingSetupDetail(setup: ProjectHostSetup): string {

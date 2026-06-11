@@ -21,14 +21,21 @@ vi.mock('@/components/ui/command', () => ({
   CommandList: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   CommandItem: ({
     children,
+    disabled,
     onSelect,
     value
   }: {
     children: React.ReactNode
+    disabled?: boolean
     onSelect?: (value: string) => void
     value: string
   }) => (
-    <button type="button" data-command-value={value} onClick={() => onSelect?.(value)}>
+    <button
+      type="button"
+      data-command-value={value}
+      disabled={disabled}
+      onClick={() => onSelect?.(value)}
+    >
       {children}
     </button>
   )
@@ -54,7 +61,18 @@ const needsSetupOption: NeedsSetupProjectHostOption = {
   projectId: 'project-1',
   hostId: 'ssh:builder',
   label: 'Builder',
-  detail: 'Project not set up on this host'
+  detail: 'Project not set up on this host',
+  isAvailable: true
+}
+
+const unavailableOption: NeedsSetupProjectHostOption = {
+  id: 'needs-setup:runtime:old',
+  kind: 'needs-setup',
+  projectId: 'project-1',
+  hostId: 'runtime:old',
+  label: 'Old server',
+  detail: 'Update Orca on this host to set up projects',
+  isAvailable: false
 }
 
 beforeEach(() => {
@@ -120,5 +138,34 @@ describe('ProjectHostSetupCombobox', () => {
 
     expect(onValueChange).not.toHaveBeenCalled()
     expect(onNeedsSetupHostSelect).toHaveBeenCalledWith(needsSetupOption)
+  })
+
+  it('keeps unavailable setup rows visible but not selectable', () => {
+    const onValueChange = vi.fn()
+    const onNeedsSetupHostSelect = vi.fn()
+
+    act(() => {
+      root.render(
+        <ProjectHostSetupCombobox
+          options={[readyOption, unavailableOption]}
+          value={readyOption.id}
+          onValueChange={onValueChange}
+          onNeedsSetupHostSelect={onNeedsSetupHostSelect}
+        />
+      )
+    })
+
+    const unavailableButton = container.querySelector<HTMLButtonElement>(
+      '[data-command-value="needs-setup:runtime:old"]'
+    )
+    expect(unavailableButton?.textContent).toContain('Update Orca on this host')
+    expect(unavailableButton?.disabled).toBe(true)
+
+    act(() => {
+      unavailableButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onValueChange).not.toHaveBeenCalled()
+    expect(onNeedsSetupHostSelect).not.toHaveBeenCalled()
   })
 })

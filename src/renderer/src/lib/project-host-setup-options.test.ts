@@ -96,7 +96,8 @@ describe('buildProjectHostSetupOptions', () => {
         id: 'needs-setup:ssh:builder',
         kind: 'needs-setup',
         label: 'Builder',
-        detail: 'Project not set up on this host'
+        detail: 'Project not set up on this host',
+        isAvailable: true
       })
     ])
   })
@@ -105,7 +106,10 @@ describe('buildProjectHostSetupOptions', () => {
     const options = buildProjectHostSetupOptions({
       projectId: 'project-1',
       eligibleRepos: [repo('local-repo')],
-      hosts: [host('local'), host('runtime:gpu', { label: 'GPU VM' })],
+      hosts: [
+        host('local'),
+        host('runtime:gpu', { label: 'GPU VM', capabilities: ['project-host-setup.v1'] })
+      ],
       projectHostSetups: [
         setup('local', 'project-1', 'local', 'local-repo'),
         setup('gpu-pending', 'project-1', 'runtime:gpu', '', {
@@ -122,7 +126,8 @@ describe('buildProjectHostSetupOptions', () => {
         id: 'needs-setup:runtime:gpu',
         kind: 'needs-setup',
         label: 'GPU VM',
-        detail: 'Project setup is in progress'
+        detail: 'Project setup is in progress',
+        isAvailable: true
       })
     ])
   })
@@ -137,7 +142,7 @@ describe('buildProjectHostSetupOptions', () => {
     expect(
       buildProjectHostSetupOptions({
         ...base,
-        hosts: [host('runtime:gpu', { label: 'GPU VM' })],
+        hosts: [host('runtime:gpu', { label: 'GPU VM', capabilities: ['project-host-setup.v1'] })],
         projectHostSetups: [
           ...base.projectHostSetups,
           setup('gpu-pending', 'project-1', 'runtime:gpu', '', {
@@ -152,7 +157,7 @@ describe('buildProjectHostSetupOptions', () => {
     expect(
       buildProjectHostSetupOptions({
         ...base,
-        hosts: [host('runtime:gpu', { label: 'GPU VM' })],
+        hosts: [host('runtime:gpu', { label: 'GPU VM', capabilities: ['project-host-setup.v1'] })],
         projectHostSetups: [
           ...base.projectHostSetups,
           setup('gpu-pending', 'project-1', 'runtime:gpu', '', {
@@ -167,7 +172,7 @@ describe('buildProjectHostSetupOptions', () => {
     expect(
       buildProjectHostSetupOptions({
         ...base,
-        hosts: [host('runtime:gpu', { label: 'GPU VM' })],
+        hosts: [host('runtime:gpu', { label: 'GPU VM', capabilities: ['project-host-setup.v1'] })],
         projectHostSetups: [
           ...base.projectHostSetups,
           setup('gpu-pending', 'project-1', 'runtime:gpu', '', {
@@ -178,5 +183,48 @@ describe('buildProjectHostSetupOptions', () => {
         ]
       }).at(-1)
     ).toMatchObject({ detail: 'Project is unsupported on this host' })
+  })
+
+  it('marks incompatible runtime hosts as visible but unavailable', () => {
+    const options = buildProjectHostSetupOptions({
+      projectId: 'project-1',
+      eligibleRepos: [repo('local-repo')],
+      hosts: [
+        host('local'),
+        host('runtime:gpu', {
+          label: 'GPU VM',
+          health: 'blocked',
+          capabilities: ['project-host-setup.v1']
+        })
+      ],
+      projectHostSetups: [setup('local', 'project-1', 'local', 'local-repo')]
+    })
+
+    expect(options).toEqual([
+      expect.objectContaining({ id: 'local', kind: 'ready', label: 'Local Mac' }),
+      expect.objectContaining({
+        id: 'needs-setup:runtime:gpu',
+        kind: 'needs-setup',
+        label: 'GPU VM',
+        detail: 'Orca server version is incompatible',
+        isAvailable: false
+      })
+    ])
+  })
+
+  it('marks runtime hosts without project setup capability as unavailable', () => {
+    const options = buildProjectHostSetupOptions({
+      projectId: 'project-1',
+      eligibleRepos: [repo('local-repo')],
+      hosts: [host('local'), host('runtime:gpu', { label: 'GPU VM', capabilities: [] })],
+      projectHostSetups: [setup('local', 'project-1', 'local', 'local-repo')]
+    })
+
+    expect(options.at(-1)).toMatchObject({
+      id: 'needs-setup:runtime:gpu',
+      kind: 'needs-setup',
+      detail: 'Update Orca on this host to set up projects',
+      isAvailable: false
+    })
   })
 })
