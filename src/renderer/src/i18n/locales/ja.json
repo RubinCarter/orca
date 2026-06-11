@@ -3781,6 +3781,24 @@
               }
             }
           }
+        },
+        "LinearAgentSkillSetupPrompt": {
+          "missingBoth": "Orca CLI and Linear agent skill setup are missing.",
+          "missingCli": "Orca CLI setup is missing.",
+          "missingSkill": "Linear agent skill setup is missing.",
+          "title": "Set up Linear agent skill",
+          "remoteCopy": "This installs host setup; remote agent environments may need separate setup.",
+          "hostCopy": "Install it for host agent handoffs from linked Linear work.",
+          "dismiss": "Dismiss Linear agent skill setup",
+          "setup": "Set up",
+          "recheck": "Re-check",
+          "panelTitle": "Linear agent skill",
+          "panelDescription": "Install the host agent skill for linked Linear task handoffs.",
+          "terminalTitle": "Install Linear agent skill",
+          "terminalAria": "Linear agent skill installer terminal",
+          "install": "Install",
+          "wslCopy": "Install it for WSL agent handoffs from linked Linear work.",
+          "wslLabel": "WSL default"
         }
       },
       "shared": {
@@ -7362,7 +7380,15 @@
                 "eae4a9f16b": "Add Linear access to browse and link issues.",
                 "fe9231215b": "Checking Linear access before showing setup actions.",
                 "e1f5e6424c": "{{value0}} workspace{{value1}} connected",
-                "disconnect_all": "Disconnect"
+                "disconnect_all": "Disconnect",
+                "linearSkillTitle": "Linear agent skill",
+                "linearSkillDescription": "Install the host agent skill agents use for richer linked Linear task handoffs.",
+                "linearSkillTerminalTitle": "Install Linear agent skill",
+                "linearSkillTerminalAria": "Linear agent skill installer terminal",
+                "linearSkillOptionalHint": "Optional next step: install the Linear agent skill for ticket-aware agent handoffs.",
+                "linearSkillDismissHint": "Dismiss optional Linear agent skill setup note",
+                "linearSkillWslDescription": "Install the WSL agent skill agents use for richer linked Linear task handoffs.",
+                "linearSkillWslLabel": "WSL default"
               }
             }
           }
@@ -8194,7 +8220,9 @@
           "c5292c409d": "Agents は、要求に応じてアプリ ウィンドウを検査し、ローカル アプリを操作できます。",
           "1ecfb490ac": "コンピュータ操作",
           "01426f3a23": "Agents はサイトを移動し、ページを検査し、ブラウザーのタスクを実行できます。",
-          "ea85d9e628": "Agent ブラウザの使用"
+          "ea85d9e628": "Agent ブラウザの使用",
+          "linearTicketsTitle": "Linear agent skill",
+          "linearTicketsDescription": "Agents can use linked Linear tasks for richer ticket-aware handoffs."
         },
         "FeatureSetupInlineTerminal": {
           "789b59936e": "Enter キーを押してコマンドを実行し、要求されたら npx を確認します。これは、後で [設定] で設定することもできます。",
@@ -8609,7 +8637,9 @@
             "3a59452a67": "スキル コマンドをコピーして確認のために以下に挿入しました。",
             "c605f51f2b": "機能セットアップの準備完了",
             "1aa657d8f4": "一部の機能の設定には注意が必要です",
-            "c89534cbe9": "CLIとスキルのインストール"
+            "c89534cbe9": "CLIとスキルのインストール",
+            "linearTicketsTitle": "Linear agent skill",
+            "linearTicketsDescription": "Recommended when agents work from linked Linear tasks."
           },
           "AiCommitPrSettingsCard": {
             "8d4152701a": "例えばオラマはラマ3.1 {{value0}}を実行します",

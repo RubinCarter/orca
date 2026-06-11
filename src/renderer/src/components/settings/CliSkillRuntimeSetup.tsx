@@ -11,6 +11,7 @@ import { translate } from '@/i18n/i18n'
 
 export type LocalAgentRuntime = {
   runtime: 'host' | 'wsl'
+  wslDistro?: string | null
   label: string
 }
 
@@ -31,9 +32,14 @@ export function getSelectedAgentRuntime(
     selectedRuntime === 'wsl' &&
     (wslAvailable || wslCapabilitiesLoading)
   ) {
+    const selectedDistro =
+      settings.localAgentWslDistro?.trim() || settings.terminalWindowsWslDistro?.trim() || null
     return {
       runtime: 'wsl',
-      label: translate('auto.components.settings.CliSkillRuntimeSetup.c47127f222', 'WSL default')
+      wslDistro: selectedDistro,
+      label: selectedDistro
+        ? `WSL ${selectedDistro}`
+        : translate('auto.components.settings.CliSkillRuntimeSetup.c47127f222', 'WSL default')
     }
   }
   return { runtime: 'host', label: getHostRuntimeLabel() }
@@ -43,13 +49,25 @@ function quotePowerShellSingle(value: string): string {
   return `'${value.replaceAll("'", "''")}'`
 }
 
+export function getWslCliDistroRequest(
+  runtime?: LocalAgentRuntime
+): { distro: string } | undefined {
+  return runtime?.runtime === 'wsl' && runtime.wslDistro?.trim()
+    ? { distro: runtime.wslDistro.trim() }
+    : undefined
+}
+
 export function buildSkillInstallCommandForRuntime(
   command: string,
   runtime: LocalAgentRuntime
 ): string {
-  return runtime.runtime === 'wsl'
-    ? `wsl.exe -- bash -lc ${quotePowerShellSingle(command)}`
-    : command
+  if (runtime.runtime !== 'wsl') {
+    return command
+  }
+  const distroArg = runtime.wslDistro?.trim()
+    ? ` -d ${quotePowerShellSingle(runtime.wslDistro.trim())}`
+    : ''
+  return `wsl.exe${distroArg} -- bash -lc ${quotePowerShellSingle(command)}`
 }
 
 export function getAgentSkillTerminalShellOverride(
@@ -66,9 +84,12 @@ export function getAgentSkillTerminalShellOverride(
   return settings.terminalWindowsShell.toLowerCase() === 'wsl.exe' ? 'powershell.exe' : undefined
 }
 
-export async function ensureWslCliAvailableForAgentSkillTerminal(): Promise<CliInstallStatus | null> {
+export async function ensureWslCliAvailableForAgentSkillTerminal(
+  runtime?: LocalAgentRuntime
+): Promise<CliInstallStatus | null> {
+  const args = getWslCliDistroRequest(runtime)
   try {
-    const status = await window.api.cli.getWslInstallStatus()
+    const status = await window.api.cli.getWslInstallStatus(args)
     if (!status.supported) {
       toast.warning(
         translate(
@@ -88,7 +109,7 @@ export async function ensureWslCliAvailableForAgentSkillTerminal(): Promise<CliI
     }
     if (status.state !== 'installed' || !status.pathConfigured) {
       await showOrcaCliRegistrationPromptToast()
-      const next = await window.api.cli.installWsl()
+      const next = await window.api.cli.installWsl(args)
       if (!isOrcaCliAvailableOnPath(next)) {
         toast.warning(
           translate(
