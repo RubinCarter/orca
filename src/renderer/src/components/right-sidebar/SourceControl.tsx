@@ -2576,7 +2576,8 @@ function SourceControlInner(): React.JSX.Element {
       inFlightRemoteOpKind,
       hostedReviewCreation,
       branchCommitsAhead:
-        branchSummary?.status === 'ready' ? (branchSummary.commitsAhead ?? 0) : undefined
+        branchSummary?.status === 'ready' ? (branchSummary.commitsAhead ?? 0) : undefined,
+      hasCurrentBranch: Boolean(branchName)
     })
     return isCreatingPr && action.kind === 'create_pr'
       ? {
@@ -2606,6 +2607,7 @@ function SourceControlInner(): React.JSX.Element {
     isCreatingPr,
     branchSummary?.commitsAhead,
     branchSummary?.status,
+    branchName,
     remoteStatus,
     unresolvedConflicts.length
   ])
@@ -2630,6 +2632,7 @@ function SourceControlInner(): React.JSX.Element {
         isPullRequestOperationActive: prGenerating || isCreatingPr,
         branchCommitsAhead:
           branchSummary?.status === 'ready' ? (branchSummary.commitsAhead ?? 0) : undefined,
+        hasCurrentBranch: Boolean(branchName),
         rebaseBaseRef: effectiveBaseRef
       }),
     [
@@ -2650,6 +2653,7 @@ function SourceControlInner(): React.JSX.Element {
       prGenerating,
       branchSummary?.commitsAhead,
       branchSummary?.status,
+      branchName,
       effectiveBaseRef,
       remoteStatus,
       unresolvedConflicts.length
