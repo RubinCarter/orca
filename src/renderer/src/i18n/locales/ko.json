@@ -7314,7 +7314,7 @@
           "choose_manually": "Choose a theme YAML file or folder to import manually.",
           "skipped_files": "Skipped files",
           "more_skipped_files": "{{value0}} more skipped files.",
-          "cancel": "Cancel",
+          "cancel": "취소",
           "import_theme_one": "Import 1 Theme",
           "import_theme_other": "Import {{value0}} Themes",
           "import_themes": "Import Themes"
@@ -7845,7 +7845,7 @@
             "6cefcdfba1": "You can change it later in Source Control AI settings.",
             "c29f9cf266": "Save this prompt and don't show this review next time",
             "d8f40128ee": "{basePrompt} is Orca's default prompt.",
-            "ea4788705e": "Cancel"
+            "ea4788705e": "취소"
           },
           "SourceControlTextGenerationDialog": {
             "c5b7fa7cb6": "전역 기본값으로 저장",
@@ -10310,7 +10310,7 @@
           "dialog": {
             "63ce735809": "Connect",
             "4a2ab52781": "Verifying…",
-            "79e7aaed39": "Cancel",
+            "79e7aaed39": "취소",
             "fdd26d81cc": "Atlassian account settings",
             "8090504a3e": "Create a token in",
             "7b3967c12f": "Atlassian API token",

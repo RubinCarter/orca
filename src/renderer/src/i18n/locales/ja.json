@@ -7845,7 +7845,7 @@
             "6cefcdfba1": "You can change it later in Source Control AI settings.",
             "c29f9cf266": "Save this prompt and don't show this review next time",
             "d8f40128ee": "{basePrompt} is Orca's default prompt.",
-            "ea4788705e": "Cancel"
+            "ea4788705e": "キャンセル"
           },
           "SourceControlTextGenerationDialog": {
             "c5b7fa7cb6": "グローバルデフォルトとして保存",
@@ -10310,7 +10310,7 @@
           "dialog": {
             "63ce735809": "Connect",
             "4a2ab52781": "Verifying…",
-            "79e7aaed39": "Cancel",
+            "79e7aaed39": "キャンセル",
             "fdd26d81cc": "Atlassian account settings",
             "8090504a3e": "Create a token in",
             "7b3967c12f": "Atlassian API token",
