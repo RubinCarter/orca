@@ -1,6 +1,8 @@
 import type {
   Project,
   ProjectHostSetup,
+  ProjectHostSetupCreateArgs,
+  ProjectHostSetupCreateResult,
   ProjectHostSetupDeleteResult,
   ProjectHostSetupExistingFolderArgs,
   ProjectHostSetupResult,
@@ -10,6 +12,7 @@ import type {
 } from '../../shared/types'
 import type { CommandHandler } from '../dispatch'
 import {
+  formatProjectHostSetupCreateResult,
   formatProjectHostSetupDeleteResult,
   formatProjectHostSetupList,
   formatProjectHostSetupResult,
@@ -62,6 +65,29 @@ export const PROJECT_HANDLERS: Record<string, CommandHandler> = {
       args
     )
     printResult(result, json, formatProjectHostSetupResult)
+  },
+  'project setup-create': async ({ flags, client, cwd, json }) => {
+    const path = getOptionalStringFlag(flags, 'path')
+    const args: ProjectHostSetupCreateArgs = {
+      projectId: getRequiredStringFlag(flags, 'project'),
+      hostId: getRequiredStringFlag(flags, 'host') as ProjectHostSetupCreateArgs['hostId'],
+      setupId: getOptionalStringFlag(flags, 'setup-id'),
+      path:
+        path === undefined
+          ? undefined
+          : resolveRepoPathArgument(path, cwd, client.isRemote, 'Project setup create'),
+      kind: getOptionalRepoKind(flags),
+      displayName: getOptionalStringFlag(flags, 'display-name'),
+      worktreeBasePath: getOptionalStringFlag(flags, 'worktree-base-path'),
+      gitUsername: getOptionalStringFlag(flags, 'git-username'),
+      setupState: getOptionalSetupState(flags),
+      setupMethod: getOptionalIndependentSetupMethod(flags)
+    }
+    const result = await client.call<{ result: ProjectHostSetupCreateResult }>(
+      'projectHostSetup.create',
+      args
+    )
+    printResult(result, json, formatProjectHostSetupCreateResult)
   },
   'project setup-update': async ({ flags, client, cwd, json }) => {
     const path = getOptionalStringFlag(flags, 'path')
@@ -119,6 +145,22 @@ function getOptionalSetupState(
   )
 }
 
+function getOptionalIndependentSetupMethod(
+  flags: Map<string, string | boolean>
+): ProjectHostSetupCreateArgs['setupMethod'] {
+  const method = getOptionalStringFlag(flags, 'method')
+  if (method === undefined) {
+    return undefined
+  }
+  if (method === 'imported-existing-folder' || method === 'cloned' || method === 'provisioned') {
+    return method
+  }
+  throw new RuntimeClientError(
+    'invalid_argument',
+    '--method must be imported-existing-folder, cloned, or provisioned'
+  )
+}
+
 function getOptionalSetupMethod(
   flags: Map<string, string | boolean>
 ): ProjectHostSetupUpdateArgs['updates']['setupMethod'] {
@@ -126,11 +168,16 @@ function getOptionalSetupMethod(
   if (method === undefined) {
     return undefined
   }
-  if (method === 'legacy-repo' || method === 'imported-existing-folder' || method === 'cloned') {
+  if (
+    method === 'legacy-repo' ||
+    method === 'imported-existing-folder' ||
+    method === 'cloned' ||
+    method === 'provisioned'
+  ) {
     return method
   }
   throw new RuntimeClientError(
     'invalid_argument',
-    '--method must be legacy-repo, imported-existing-folder, or cloned'
+    '--method must be legacy-repo, imported-existing-folder, cloned, or provisioned'
   )
 }

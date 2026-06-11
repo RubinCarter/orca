@@ -1,6 +1,7 @@
 import type {
   Project,
   ProjectHostSetup,
+  ProjectHostSetupCreateResult,
   ProjectHostSetupDeleteResult,
   ProjectHostSetupResult,
   ProjectHostSetupUpdateResult
@@ -35,6 +36,13 @@ export function formatProjectHostSetupList(result: { setups: ProjectHostSetup[] 
 export function formatProjectHostSetupResult(result: { result: ProjectHostSetupResult }): string {
   const { project, setup, repo } = result.result
   return formatProjectHostSetupResultFields(project, setup, repo.id)
+}
+
+export function formatProjectHostSetupCreateResult(result: {
+  result: ProjectHostSetupCreateResult
+}): string {
+  const { project, setup } = result.result
+  return formatProjectHostSetupResultFields(project, setup, undefined)
 }
 
 export function formatProjectHostSetupUpdateResult(result: {

@@ -130,18 +130,27 @@ describe('repo slice runtime routing', () => {
     }
     const projectsList = vi.fn().mockResolvedValue([project])
     const listHostSetups = vi.fn().mockResolvedValue([setup])
+    const createHostSetup = vi.fn()
+    const updateHostSetup = vi.fn()
+    const deleteHostSetup = vi.fn()
     ;(
       window.api as typeof window.api & {
         projects?: {
           list: typeof projectsList
           listHostSetups: typeof listHostSetups
+          createHostSetup: typeof createHostSetup
           setupExistingFolder: typeof projectsSetupExistingFolder
+          updateHostSetup: typeof updateHostSetup
+          deleteHostSetup: typeof deleteHostSetup
         }
       }
     ).projects = {
       list: projectsList,
       listHostSetups,
-      setupExistingFolder: projectsSetupExistingFolder
+      createHostSetup,
+      setupExistingFolder: projectsSetupExistingFolder,
+      updateHostSetup,
+      deleteHostSetup
     }
     reposList.mockResolvedValue([localRepo])
     const store = createTestStore()

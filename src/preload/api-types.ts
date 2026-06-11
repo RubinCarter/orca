@@ -124,6 +124,8 @@ import type {
   Repo,
   ProjectGroup,
   ProjectHostSetup,
+  ProjectHostSetupCreateArgs,
+  ProjectHostSetupCreateResult,
   ProjectHostSetupDeleteArgs,
   ProjectHostSetupDeleteResult,
   ProjectHostSetupExistingFolderArgs,
@@ -784,6 +786,7 @@ export type PreloadApi = {
   projects: {
     list: () => Promise<Project[]>
     listHostSetups: () => Promise<ProjectHostSetup[]>
+    createHostSetup: (args: ProjectHostSetupCreateArgs) => Promise<ProjectHostSetupCreateResult>
     setupExistingFolder: (
       args: ProjectHostSetupExistingFolderArgs
     ) => Promise<ProjectHostSetupResult>

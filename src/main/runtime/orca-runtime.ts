@@ -52,6 +52,8 @@ import type {
   PersistedUIState,
   Project,
   ProjectHostSetup,
+  ProjectHostSetupCreateArgs,
+  ProjectHostSetupCreateResult,
   ProjectHostSetupDeleteArgs,
   ProjectHostSetupDeleteResult,
   ProjectHostSetupExistingFolderArgs,
@@ -533,6 +535,7 @@ type RuntimeStore = {
   updateRepo: Store['updateRepo']
   getProjects?: Store['getProjects']
   getProjectHostSetups?: Store['getProjectHostSetups']
+  createProjectHostSetup?: Store['createProjectHostSetup']
   updateProjectHostSetup?: Store['updateProjectHostSetup']
   deleteProjectHostSetup?: Store['deleteProjectHostSetup']
   getProjectGroups?: Store['getProjectGroups']
@@ -6457,6 +6460,17 @@ export class OrcaRuntimeService {
 
   listProjectHostSetups(): ProjectHostSetup[] {
     return this.store?.getProjectHostSetups?.() ?? []
+  }
+
+  createProjectHostSetup(args: ProjectHostSetupCreateArgs): ProjectHostSetupCreateResult {
+    if (!this.store?.createProjectHostSetup) {
+      throw new Error('runtime_unavailable')
+    }
+    const result = this.store.createProjectHostSetup(args)
+    if (!result) {
+      throw new Error(`Project not found: ${args.projectId}`)
+    }
+    return result
   }
 
   async setupProjectExistingFolder(

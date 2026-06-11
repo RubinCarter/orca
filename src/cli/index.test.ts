@@ -145,6 +145,9 @@ describe('orca root help', () => {
       'project setup-existing-folder Make a project available on a host by importing an existing folder'
     )
     expect(logSpy.mock.calls[0][0]).toContain(
+      'project setup-create      Create independent project host setup metadata'
+    )
+    expect(logSpy.mock.calls[0][0]).toContain(
       'project setup-update      Update project host setup metadata'
     )
     expect(logSpy.mock.calls[0][0]).toContain(
@@ -3137,6 +3140,71 @@ describe('orca cli worktree awareness', () => {
         setupState: 'ready',
         setupMethod: 'imported-existing-folder'
       }
+    })
+  })
+
+  it('creates independent project host setup metadata through the project-first runtime API', async () => {
+    queueFixtures(
+      callMock,
+      okFixture('req_project_setup_create', {
+        result: {
+          project: {
+            id: 'github:stablyai/orca',
+            displayName: 'Orca',
+            badgeColor: '#7c3aed',
+            sourceRepoIds: [],
+            createdAt: 1,
+            updatedAt: 1
+          },
+          setup: {
+            id: 'setup-gpu',
+            projectId: 'github:stablyai/orca',
+            hostId: 'runtime:gpu',
+            repoId: '',
+            path: '',
+            displayName: 'GPU VM',
+            setupState: 'setting-up',
+            setupMethod: 'provisioned',
+            createdAt: 1,
+            updatedAt: 2
+          }
+        }
+      })
+    )
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await main(
+      [
+        'project',
+        'setup-create',
+        '--project',
+        'github:stablyai/orca',
+        '--host',
+        'runtime:gpu',
+        '--setup-id',
+        'setup-gpu',
+        '--display-name',
+        'GPU VM',
+        '--state',
+        'setting-up',
+        '--method',
+        'provisioned',
+        '--json'
+      ],
+      '/tmp/repo'
+    )
+
+    expect(callMock).toHaveBeenCalledWith('projectHostSetup.create', {
+      projectId: 'github:stablyai/orca',
+      hostId: 'runtime:gpu',
+      setupId: 'setup-gpu',
+      path: undefined,
+      kind: undefined,
+      displayName: 'GPU VM',
+      worktreeBasePath: undefined,
+      gitUsername: undefined,
+      setupState: 'setting-up',
+      setupMethod: 'provisioned'
     })
   })
 

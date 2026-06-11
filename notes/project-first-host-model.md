@@ -778,6 +778,10 @@ Landed so far:
   preload, runtime RPC, and CLI. Independent setup rows are removed directly,
   while repo-backed setup rows remove the existing repo compatibility record so
   legacy cleanup semantics stay centralized.
+- Added a first-class `projectHostSetup.create` mutation through local IPC,
+  preload, runtime RPC, and CLI. This creates independent, non-repo-backed
+  setup metadata for setup/provisioning states without registering a repo
+  compatibility record.
 - Added tests for local repos, SSH repos, same-provider multi-host grouping,
   no-identity same-name non-grouping, selector cache behavior, persistence
   backfill, repo mutation synchronization, renderer hydration, runtime RPC
@@ -807,16 +811,16 @@ Important limitation:
   compatibility records. Independently persisted setup records are now preserved
   across load and repo mutations, but the UI/API still mostly creates setups
   through repo-backed import/clone paths. First-class setup update now exists,
-  and first-class setup delete now exists, but independent setup creation,
-  provisioning, and full UI flows are still future work.
+  first-class setup create/update/delete now exist for independent metadata, but
+  actual provisioning execution and full UI flows are still future work.
 
 Remaining end-to-end work:
 
 - broaden setup-on-host flows beyond known local, SSH, and active runtime hosts
 - finish SSH clone streamed-progress parity, provisioning, and bulk setup-on-host
   flows
-- add first-class independent project-host setup creation and provisioning APIs
-  instead of routing most setup changes through repo import/update compatibility
+- add actual provisioning execution APIs instead of only recording independent
+  setup/provisioning metadata
 - split settings into explicit client, host, project, and project-host setup
   scopes
 - validate the default project-first sidebar view in Electron and continue

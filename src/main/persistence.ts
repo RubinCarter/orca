@@ -36,11 +36,13 @@ import type {
   PersistedState,
   Project,
   ProjectHostSetup,
+  ProjectHostSetupCreateArgs,
+  ProjectHostSetupCreateResult,
   ProjectHostSetupDeleteArgs,
   ProjectHostSetupDeleteResult,
   ProjectHostSetupUpdateArgs,
   ProjectHostSetupUpdateResult,
-  ProjectHostSetupMethod,
+  RepoProjectHostSetupMethod,
   Repo,
   ProjectGroup,
   SparsePreset,
@@ -748,7 +750,7 @@ function sanitizeRepoUpstream(value: unknown): Repo['upstream'] | undefined {
 
 function sanitizeRepoProjectHostSetupMethod(
   value: unknown
-): Exclude<ProjectHostSetupMethod, 'legacy-repo'> | undefined {
+): RepoProjectHostSetupMethod | undefined {
   return value === 'imported-existing-folder' || value === 'cloned' ? value : undefined
 }
 
@@ -1639,6 +1641,25 @@ function mergeProjectHostSetupCompatibilityState(
     projects: [...projection.projects, ...independentProjects],
     projectHostSetups: [...projection.setups, ...independentSetups]
   }
+}
+
+function makeProjectHostSetupId(
+  projectId: string,
+  hostId: ExecutionHostId,
+  existingIds: ReadonlySet<string>,
+  requestedId?: string
+): string {
+  const baseId = requestedId?.trim() || `${projectId}::${hostId}`
+  if (!existingIds.has(baseId)) {
+    return baseId
+  }
+  let suffix = 2
+  let candidate = `${baseId}::${suffix}`
+  while (existingIds.has(candidate)) {
+    suffix++
+    candidate = `${baseId}::${suffix}`
+  }
+  return candidate
 }
 
 function createMinimalPersistedTerminalTab(args: {
@@ -2565,6 +2586,45 @@ export class Store {
     return [...this.state.projectHostSetups]
   }
 
+  createProjectHostSetup(args: ProjectHostSetupCreateArgs): ProjectHostSetupCreateResult | null {
+    const project = this.state.projects.find((entry) => entry.id === args.projectId)
+    if (!project) {
+      return null
+    }
+    const hostId = normalizeExecutionHostId(args.hostId)
+    if (!hostId) {
+      throw new Error(`Invalid host ID: ${args.hostId}`)
+    }
+    const duplicateSetup = this.state.projectHostSetups.find(
+      (entry) => entry.projectId === project.id && entry.hostId === hostId
+    )
+    if (duplicateSetup) {
+      throw new Error(`Project host setup already exists: ${duplicateSetup.id}`)
+    }
+    const now = Date.now()
+    const existingIds = new Set(this.state.projectHostSetups.map((entry) => entry.id))
+    const setup: ProjectHostSetup = {
+      id: makeProjectHostSetupId(project.id, hostId, existingIds, args.setupId),
+      projectId: project.id,
+      hostId,
+      repoId: '',
+      path: args.path?.trim() ?? '',
+      displayName: args.displayName?.trim() || project.displayName,
+      ...(args.kind ? { kind: args.kind } : {}),
+      ...(args.worktreeBasePath?.trim() ? { worktreeBasePath: args.worktreeBasePath.trim() } : {}),
+      ...(args.gitUsername?.trim() ? { gitUsername: args.gitUsername.trim() } : {}),
+      setupState: args.setupState ?? 'not-set-up',
+      setupMethod: args.setupMethod ?? 'provisioned',
+      createdAt: now,
+      updatedAt: now
+    }
+    // Why: this is the first non-repo-backed setup creation path; it must
+    // persist independently so future repo projection sync does not erase it.
+    this.state.projectHostSetups.push(setup)
+    this.scheduleSave()
+    return { project, setup }
+  }
+
   updateProjectHostSetup(args: ProjectHostSetupUpdateArgs): ProjectHostSetupUpdateResult | null {
     const setup = this.state.projectHostSetups.find((entry) => entry.id === args.setupId)
     if (!setup) {
@@ -2899,6 +2959,9 @@ export class Store {
     }
     if (updates.kind !== undefined) {
       repoUpdates.kind = updates.kind
+    }
+    if (updates.setupMethod === 'provisioned') {
+      throw new Error('Repo-backed project host setups cannot be marked provisioned.')
     }
     if (updates.setupMethod !== undefined && updates.setupMethod !== 'legacy-repo') {
       repoUpdates.projectHostSetupMethod = updates.setupMethod

@@ -403,6 +403,57 @@ describe('repo RPC methods', () => {
     expect(response).toMatchObject({ ok: true, result: { result } })
   })
 
+  it('routes project-host setup creates to the runtime server', async () => {
+    const result = {
+      project: {
+        id: 'project-1',
+        displayName: 'Project',
+        badgeColor: '#737373',
+        sourceRepoIds: [],
+        createdAt: 1,
+        updatedAt: 1
+      },
+      setup: {
+        id: 'setup-1',
+        projectId: 'project-1',
+        hostId: 'runtime:env-1',
+        repoId: '',
+        path: '',
+        displayName: 'GPU VM',
+        setupState: 'setting-up',
+        setupMethod: 'provisioned',
+        createdAt: 1,
+        updatedAt: 2
+      }
+    }
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      createProjectHostSetup: vi.fn().mockReturnValue(result)
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('projectHostSetup.create', {
+        projectId: 'project-1',
+        hostId: 'runtime:env-1',
+        setupId: 'setup-1',
+        displayName: 'GPU VM',
+        setupState: 'setting-up',
+        setupMethod: 'provisioned'
+      })
+    )
+
+    expect(runtime.createProjectHostSetup).toHaveBeenCalledWith({
+      projectId: 'project-1',
+      hostId: 'runtime:env-1',
+      setupId: 'setup-1',
+      displayName: 'GPU VM',
+      setupState: 'setting-up',
+      setupMethod: 'provisioned'
+    })
+    expect(response).toMatchObject({ ok: true, result: { result } })
+  })
+
   it('routes project-host setup updates to the runtime server', async () => {
     const result = {
       project: {

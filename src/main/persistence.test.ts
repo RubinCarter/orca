@@ -2469,6 +2469,69 @@ describe('Store', () => {
     })
   })
 
+  it('creates independent project host setup records for provisioning flows', async () => {
+    const store = await createStore()
+    store.addRepo({
+      ...makeRepo({ id: 'r1', displayName: 'Cloud Project' }),
+      upstream: { owner: 'stablyai', repo: 'cloud-project' }
+    })
+
+    const result = store.createProjectHostSetup({
+      projectId: 'github:stablyai/cloud-project',
+      hostId: 'runtime:gpu-vm',
+      setupId: 'cloud-project::gpu-vm',
+      displayName: 'GPU VM',
+      setupState: 'setting-up',
+      setupMethod: 'provisioned'
+    })
+
+    expect(result?.project).toMatchObject({
+      id: 'github:stablyai/cloud-project',
+      displayName: 'Cloud Project'
+    })
+    expect(result?.setup).toMatchObject({
+      id: 'cloud-project::gpu-vm',
+      projectId: 'github:stablyai/cloud-project',
+      hostId: 'runtime:gpu-vm',
+      repoId: '',
+      path: '',
+      displayName: 'GPU VM',
+      setupState: 'setting-up',
+      setupMethod: 'provisioned'
+    })
+    expect(store.getRepos()).toHaveLength(1)
+    expect(store.getProjectHostSetups()).toEqual([
+      expect.objectContaining({ id: 'r1', repoId: 'r1' }),
+      result?.setup
+    ])
+  })
+
+  it('rejects duplicate project host setup creation for the same host', async () => {
+    const store = await createStore()
+    store.addRepo({
+      ...makeRepo({ id: 'r1', displayName: 'Cloud Project' }),
+      upstream: { owner: 'stablyai', repo: 'cloud-project' }
+    })
+    const independentSetup = makeProjectHostSetup({
+      id: 'cloud-project::gpu-vm',
+      projectId: 'github:stablyai/cloud-project',
+      hostId: 'runtime:gpu-vm'
+    })
+    store.createProjectHostSetup({
+      projectId: independentSetup.projectId,
+      hostId: independentSetup.hostId,
+      setupId: independentSetup.id
+    })
+
+    expect(() =>
+      store.createProjectHostSetup({
+        projectId: 'github:stablyai/cloud-project',
+        hostId: 'runtime:gpu-vm',
+        setupId: 'duplicate'
+      })
+    ).toThrow('Project host setup already exists: cloud-project::gpu-vm')
+  })
+
   it('updates repo-backed project host setup metadata through the repo record', async () => {
     const store = await createStore()
     store.addRepo(makeRepo({ id: 'r1', displayName: 'Repo', worktreeBasePath: '../old' }))

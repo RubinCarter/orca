@@ -11,6 +11,8 @@ import type {
   Repo,
   ProjectGroup,
   ProjectGroupImportResult,
+  ProjectHostSetupCreateArgs,
+  ProjectHostSetupCreateResult,
   ProjectHostSetupDeleteArgs,
   ProjectHostSetupDeleteResult,
   ProjectHostSetupExistingFolderArgs,
@@ -73,7 +75,7 @@ import { getCohortAtEmit } from '../telemetry/cohort-classifier'
 import type { RepoMethod } from '../../shared/telemetry-events'
 import { detectRepoIconAndUpstream } from '../repo-icon-autodetect'
 import { getProjectHostSetupForRepo } from '../../shared/project-host-setup-projection'
-import { parseExecutionHostId } from '../../shared/execution-host'
+import { normalizeExecutionHostId, parseExecutionHostId } from '../../shared/execution-host'
 import { joinRemotePath } from '../ssh/ssh-remote-platform'
 
 // Why: `method` answers "which entry point did the user take?", not "what did
@@ -457,6 +459,29 @@ const ProjectHostSetupExistingFolderIpcArgs = z.object({
   setupMethod: z.enum(['imported-existing-folder', 'cloned']).optional()
 })
 
+const ProjectHostSetupCreateIpcArgs = z.object({
+  projectId: z.string().min(1),
+  hostId: z
+    .string()
+    .min(1)
+    .transform((value, ctx) => {
+      const hostId = normalizeExecutionHostId(value)
+      if (!hostId) {
+        ctx.addIssue({ code: 'custom', message: 'Invalid host ID' })
+        return z.NEVER
+      }
+      return hostId
+    }),
+  setupId: z.string().min(1).optional(),
+  path: z.string().optional(),
+  kind: z.enum(['git', 'folder']).optional(),
+  displayName: z.string().min(1).optional(),
+  worktreeBasePath: z.string().optional(),
+  gitUsername: z.string().optional(),
+  setupState: z.enum(['ready', 'not-set-up', 'setting-up', 'error', 'unsupported']).optional(),
+  setupMethod: z.enum(['imported-existing-folder', 'cloned', 'provisioned']).optional()
+})
+
 const ProjectHostSetupUpdateIpcArgs = z.object({
   setupId: z.string().min(1),
   updates: z.object({
@@ -464,7 +489,9 @@ const ProjectHostSetupUpdateIpcArgs = z.object({
     path: z.string().optional(),
     worktreeBasePath: z.string().optional(),
     setupState: z.enum(['ready', 'not-set-up', 'setting-up', 'error', 'unsupported']).optional(),
-    setupMethod: z.enum(['legacy-repo', 'imported-existing-folder', 'cloned']).optional(),
+    setupMethod: z
+      .enum(['legacy-repo', 'imported-existing-folder', 'cloned', 'provisioned'])
+      .optional(),
     gitUsername: z.string().optional(),
     kind: z.enum(['git', 'folder']).optional()
   })
@@ -762,6 +789,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.removeHandler('repos:update')
   ipcMain.removeHandler('projects:list')
   ipcMain.removeHandler('projectHostSetups:list')
+  ipcMain.removeHandler('projectHostSetups:create')
   ipcMain.removeHandler('projectHostSetups:setupExistingFolder')
   ipcMain.removeHandler('projectHostSetups:update')
   ipcMain.removeHandler('projectHostSetups:delete')
@@ -795,6 +823,23 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.handle('projects:list', () => store.getProjects())
 
   ipcMain.handle('projectHostSetups:list', () => store.getProjectHostSetups())
+
+  ipcMain.handle(
+    'projectHostSetups:create',
+    (_event, rawArgs: ProjectHostSetupCreateArgs): ProjectHostSetupCreateResult => {
+      const args = parseProjectGroupIpcArgs(
+        ProjectHostSetupCreateIpcArgs,
+        rawArgs,
+        'project_host_setup_create_invalid_args'
+      )
+      const result = store.createProjectHostSetup(args)
+      if (!result) {
+        throw new Error(`Project not found: ${args.projectId}`)
+      }
+      notifyReposChanged(mainWindow)
+      return result
+    }
+  )
 
   ipcMain.handle(
     'projectHostSetups:update',

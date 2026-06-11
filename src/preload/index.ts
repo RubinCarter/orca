@@ -508,6 +508,7 @@ const api = {
   projects: {
     list: () => ipcRenderer.invoke('projects:list'),
     listHostSetups: () => ipcRenderer.invoke('projectHostSetups:list'),
+    createHostSetup: (args) => ipcRenderer.invoke('projectHostSetups:create', args),
     setupExistingFolder: (args) =>
       ipcRenderer.invoke('projectHostSetups:setupExistingFolder', args),
     updateHostSetup: (args) => ipcRenderer.invoke('projectHostSetups:update', args),

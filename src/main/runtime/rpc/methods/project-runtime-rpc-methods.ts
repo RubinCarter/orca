@@ -19,6 +19,26 @@ const ProjectHostSetupExistingFolder = z.object({
   setupMethod: z.enum(['imported-existing-folder', 'cloned']).optional()
 })
 
+const ProjectHostSetupCreate = z.object({
+  projectId: requiredString('Missing project ID'),
+  hostId: requiredString('Missing host ID').transform((value, ctx) => {
+    const hostId = normalizeExecutionHostId(value)
+    if (!hostId) {
+      ctx.addIssue({ code: 'custom', message: 'Invalid host ID' })
+      return z.NEVER
+    }
+    return hostId
+  }),
+  setupId: OptionalString,
+  path: OptionalString,
+  kind: z.enum(['git', 'folder']).optional(),
+  displayName: OptionalString,
+  worktreeBasePath: OptionalString,
+  gitUsername: OptionalString,
+  setupState: z.enum(['ready', 'not-set-up', 'setting-up', 'error', 'unsupported']).optional(),
+  setupMethod: z.enum(['imported-existing-folder', 'cloned', 'provisioned']).optional()
+})
+
 const ProjectHostSetupUpdate = z.object({
   setupId: requiredString('Missing setup ID'),
   updates: z.object({
@@ -26,7 +46,9 @@ const ProjectHostSetupUpdate = z.object({
     path: OptionalString,
     worktreeBasePath: OptionalString,
     setupState: z.enum(['ready', 'not-set-up', 'setting-up', 'error', 'unsupported']).optional(),
-    setupMethod: z.enum(['legacy-repo', 'imported-existing-folder', 'cloned']).optional(),
+    setupMethod: z
+      .enum(['legacy-repo', 'imported-existing-folder', 'cloned', 'provisioned'])
+      .optional(),
     gitUsername: OptionalString,
     kind: z.enum(['git', 'folder']).optional()
   })
@@ -46,6 +68,13 @@ export const PROJECT_RUNTIME_METHODS: RpcMethod[] = [
     name: 'projectHostSetup.list',
     params: null,
     handler: (_params, { runtime }) => ({ setups: runtime.listProjectHostSetups() })
+  }),
+  defineMethod({
+    name: 'projectHostSetup.create',
+    params: ProjectHostSetupCreate,
+    handler: (params, { runtime }) => ({
+      result: runtime.createProjectHostSetup(params)
+    })
   }),
   defineMethod({
     name: 'projectHostSetup.setupExistingFolder',

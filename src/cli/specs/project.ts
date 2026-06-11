@@ -34,10 +34,36 @@ export const PROJECT_COMMAND_SPECS: CommandSpec[] = [
     ]
   },
   {
+    path: ['project', 'setup-create'],
+    summary: 'Create independent project host setup metadata',
+    usage:
+      'orca project setup-create --project <id> --host <host-id> [--setup-id <id>] [--path <path>] [--kind git|folder] [--display-name <name>] [--worktree-base-path <path>] [--git-username <name>] [--state ready|not-set-up|setting-up|error|unsupported] [--method imported-existing-folder|cloned|provisioned] [--json]',
+    allowedFlags: [
+      ...GLOBAL_FLAGS,
+      'project',
+      'host',
+      'setup-id',
+      'path',
+      'kind',
+      'display-name',
+      'worktree-base-path',
+      'git-username',
+      'state',
+      'method'
+    ],
+    notes: [
+      'Creates setup metadata without registering a repo compatibility record.',
+      'Use setup-existing-folder when Orca should import and manage an actual checkout path now.'
+    ],
+    examples: [
+      'orca project setup-create --project github:stablyai/orca --host runtime:gpu --state setting-up --method provisioned --json'
+    ]
+  },
+  {
     path: ['project', 'setup-update'],
     summary: 'Update project host setup metadata',
     usage:
-      'orca project setup-update --setup <setup-id> [--display-name <name>] [--path <path>] [--worktree-base-path <path>] [--git-username <name>] [--kind git|folder] [--state ready|not-set-up|setting-up|error|unsupported] [--method legacy-repo|imported-existing-folder|cloned] [--json]',
+      'orca project setup-update --setup <setup-id> [--display-name <name>] [--path <path>] [--worktree-base-path <path>] [--git-username <name>] [--kind git|folder] [--state ready|not-set-up|setting-up|error|unsupported] [--method legacy-repo|imported-existing-folder|cloned|provisioned] [--json]',
     allowedFlags: [
       ...GLOBAL_FLAGS,
       'setup',

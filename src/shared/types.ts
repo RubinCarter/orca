@@ -103,7 +103,15 @@ export type Project = {
 }
 
 export type ProjectHostSetupState = 'ready' | 'not-set-up' | 'setting-up' | 'error' | 'unsupported'
-export type ProjectHostSetupMethod = 'legacy-repo' | 'imported-existing-folder' | 'cloned'
+export type ProjectHostSetupMethod =
+  | 'legacy-repo'
+  | 'imported-existing-folder'
+  | 'cloned'
+  | 'provisioned'
+export type RepoProjectHostSetupMethod = Extract<
+  ProjectHostSetupMethod,
+  'imported-existing-folder' | 'cloned'
+>
 
 export type ProjectHostSetup = {
   id: string
@@ -131,6 +139,19 @@ export type ProjectHostSetupExistingFolderArgs = {
   path: string
   kind?: RepoKind
   displayName?: string
+  setupMethod?: RepoProjectHostSetupMethod
+}
+
+export type ProjectHostSetupCreateArgs = {
+  projectId: string
+  hostId: ExecutionHostId
+  setupId?: string
+  path?: string
+  kind?: RepoKind
+  displayName?: string
+  worktreeBasePath?: string
+  gitUsername?: string
+  setupState?: ProjectHostSetupState
   setupMethod?: Exclude<ProjectHostSetupMethod, 'legacy-repo'>
 }
 
@@ -166,6 +187,11 @@ export type ProjectHostSetupResult = {
   project: Project
   setup: ProjectHostSetup
   repo: Repo
+}
+
+export type ProjectHostSetupCreateResult = {
+  project: Project
+  setup: ProjectHostSetup
 }
 
 export type ProjectHostSetupUpdateResult = {
@@ -227,7 +253,7 @@ export type Repo = {
   /** Repo-specific source-control AI overrides. Missing fields inherit global settings. */
   sourceControlAi?: RepoSourceControlAiOverrides
   /** Transitional source for ProjectHostSetup.setupMethod while Repo remains compatibility storage. */
-  projectHostSetupMethod?: Exclude<ProjectHostSetupMethod, 'legacy-repo'>
+  projectHostSetupMethod?: RepoProjectHostSetupMethod
 }
 
 export type ProjectGroupCreatedFrom = 'manual' | 'folder-scan' | 'migration'

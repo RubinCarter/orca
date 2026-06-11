@@ -504,11 +504,13 @@ Already partially landed:
   runtime RPC, and CLI for setup-owned metadata
 - first-class `projectHostSetup.delete` mutation through local IPC, preload,
   runtime RPC, and CLI
+- first-class `projectHostSetup.create` mutation through local IPC, preload,
+  runtime RPC, and CLI for independent setup/provisioning metadata
 
 Not complete yet:
 
-- first-class independent project-host setup creation/provisioning APIs beyond
-  the current repo-backed import/clone compatibility paths
+- actual provisioning execution APIs beyond independent setup metadata and the
+  current repo-backed import/clone compatibility paths
 - bulk setup flows and setup for hosts that are not already known to the client
 - SSH streamed clone progress parity
 - full project settings split into global and host-specific ownership
@@ -538,7 +540,7 @@ tests, and version-skew handling.
 
 The largest remaining areas are:
 
-1. independent `ProjectHostSetup` creation/provisioning APIs
+1. actual provisioning execution APIs
 2. project-first creation/setup UI completion
 3. project and host settings ownership split
 4. cache/request ownership audit
