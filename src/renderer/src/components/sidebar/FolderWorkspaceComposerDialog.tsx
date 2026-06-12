@@ -232,6 +232,7 @@ export function FolderWorkspaceComposerDialog({
         quickAgent,
         autoRenameBranchFromWork: settings?.autoRenameBranchFromWork,
         agentCmdOverrides: settings?.agentCmdOverrides,
+        isRemote: selectedRepoConnectionId !== null,
         createFolderWorkspace,
         onOpenChange
       })
@@ -246,6 +247,7 @@ export function FolderWorkspaceComposerDialog({
     onOpenChange,
     projectGroup,
     quickAgent,
+    selectedRepoConnectionId,
     settings?.agentCmdOverrides,
     settings?.autoRenameBranchFromWork,
     submitting,

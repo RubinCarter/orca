@@ -25,9 +25,10 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import { ClaudeUsageDailyChart } from './ClaudeUsageDailyChart'
 import { ClaudeUsageLoadingState } from './ClaudeUsageLoadingState'
-import { ClaudeUsageRecentSessionsTable } from './ClaudeUsageRecentSessionsTable'
 import { ShareUsageButton } from './ShareUsageButton'
 import { StatCard } from './StatCard'
+import { UsageBreakdownSection } from './UsageBreakdownSection'
+import { UsageSessionsTable } from './UsageSessionsTable'
 import { formatCost, formatTokens, formatUpdatedAt } from './usage-formatters'
 import { translate } from '@/i18n/i18n'
 
@@ -314,70 +315,64 @@ export function ClaudeUsagePane(): React.JSX.Element {
           <ClaudeUsageDailyChart daily={daily} />
 
           <div className="grid gap-4 xl:grid-cols-2">
-            <section className="rounded-lg border border-border/60 bg-card/40 p-4">
-              <div className="mb-3">
-                <h4 className="text-sm font-semibold text-foreground">
-                  {translate('auto.components.stats.ClaudeUsagePane.0f394c24e3', 'By model')}
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  {translate('auto.components.stats.ClaudeUsagePane.c3fdbc5474', 'Top model:')}{' '}
-                  {summary?.topModel ??
-                    translate('auto.components.stats.ClaudeUsagePane.7765a4c3e1', 'n/a')}
-                </p>
-              </div>
-              <div className="space-y-3">
-                {modelBreakdown.slice(0, 5).map((row) => (
-                  <div key={row.key} className="space-y-1">
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="truncate text-foreground">{row.label}</span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {formatTokens(row.inputTokens + row.outputTokens)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.sessions}{' '}
-                      {translate('auto.components.stats.ClaudeUsagePane.02a046792e', 'sessions •')}{' '}
-                      {row.turns}{' '}
-                      {translate('auto.components.stats.ClaudeUsagePane.32176e1d44', 'turns')}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-lg border border-border/60 bg-card/40 p-4">
-              <div className="mb-3">
-                <h4 className="text-sm font-semibold text-foreground">
-                  {translate('auto.components.stats.ClaudeUsagePane.7dc9e5613b', 'By project')}
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  {translate('auto.components.stats.ClaudeUsagePane.f97435845c', 'Top project:')}{' '}
-                  {summary?.topProject ??
-                    translate('auto.components.stats.ClaudeUsagePane.7765a4c3e1', 'n/a')}
-                </p>
-              </div>
-              <div className="space-y-3">
-                {projectBreakdown.slice(0, 5).map((row) => (
-                  <div key={row.key} className="space-y-1">
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="truncate text-foreground">{row.label}</span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {formatTokens(row.inputTokens + row.outputTokens)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.sessions}{' '}
-                      {translate('auto.components.stats.ClaudeUsagePane.02a046792e', 'sessions •')}{' '}
-                      {row.turns}{' '}
-                      {translate('auto.components.stats.ClaudeUsagePane.32176e1d44', 'turns')}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+            <UsageBreakdownSection
+              title={translate('auto.components.stats.ClaudeUsagePane.0f394c24e3', 'By model')}
+              topLabel={translate('auto.components.stats.ClaudeUsagePane.c3fdbc5474', 'Top model:')}
+              topValue={summary?.topModel}
+              rows={modelBreakdown.map((row) => ({
+                key: row.key,
+                label: row.label,
+                tokens: row.inputTokens + row.outputTokens,
+                sessions: row.sessions,
+                eventsOrTurns: row.turns
+              }))}
+              eventsOrTurns="turns"
+            />
+            <UsageBreakdownSection
+              title={translate('auto.components.stats.ClaudeUsagePane.7dc9e5613b', 'By project')}
+              topLabel={translate(
+                'auto.components.stats.ClaudeUsagePane.f97435845c',
+                'Top project:'
+              )}
+              topValue={summary?.topProject}
+              rows={projectBreakdown.map((row) => ({
+                key: row.key,
+                label: row.label,
+                tokens: row.inputTokens + row.outputTokens,
+                sessions: row.sessions,
+                eventsOrTurns: row.turns
+              }))}
+              eventsOrTurns="turns"
+            />
           </div>
 
-          <ClaudeUsageRecentSessionsTable recentSessions={recentSessions} summary={summary} />
+          <section className="rounded-lg border border-border/60 bg-card/40 p-4">
+            <div className="mb-3">
+              <h4 className="text-sm font-semibold text-foreground">
+                {translate('auto.components.stats.ClaudeUsagePane.7e76c84153', 'Recent sessions')}
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                {translate('auto.components.stats.ClaudeUsagePane.abfc4a4943', 'Cache reuse rate:')}{' '}
+                {summary?.cacheReuseRate !== null && summary?.cacheReuseRate !== undefined
+                  ? `${Math.round(summary.cacheReuseRate * 100)}%`
+                  : translate('auto.components.stats.ClaudeUsagePane.7765a4c3e1', 'n/a')}
+              </p>
+            </div>
+            <UsageSessionsTable
+              sessions={recentSessions.map((row) => ({
+                sessionId: row.sessionId,
+                lastActiveAt: row.lastActiveAt,
+                projectLabel: row.projectLabel,
+                model: row.model,
+                turns: row.turns,
+                inputTokens: row.inputTokens,
+                outputTokens: row.outputTokens,
+                cacheTokens: row.cacheReadTokens + row.cacheWriteTokens
+              }))}
+              eventsColumn="turns"
+              tokensColumn="cache"
+            />
+          </section>
         </>
       )}
     </div>

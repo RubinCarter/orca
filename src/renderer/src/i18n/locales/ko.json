@@ -463,6 +463,42 @@
             "7d732521ec": "댓글"
           }
         }
+      },
+      "folder": {
+        "workspace": {
+          "path": {
+            "status": {
+              "title": {
+                "missing": "Folder not found",
+                "not": {
+                  "directory": "Path is not a folder"
+                },
+                "ambiguous": {
+                  "connection": "Cannot determine connection"
+                },
+                "unavailable": "Cannot check folder"
+              },
+              "description": {
+                "missing": "Orca cannot find {{value0}}. Remove and re-import this folder workspace.",
+                "not": {
+                  "directory": "{{value0}} exists, but it is not a folder."
+                },
+                "ambiguous": {
+                  "connection": "Orca cannot tell which SSH connection owns this folder scope."
+                },
+                "unavailable": "Orca cannot verify this folder right now. Check the runtime or SSH connection and try again."
+              },
+              "create": {
+                "description": {
+                  "missing": "Orca cannot find {{value0}}. Remove and re-import the folder."
+                },
+                "title": {
+                  "failed": "Failed to create folder workspace"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "hooks": {

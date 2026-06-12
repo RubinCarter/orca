@@ -27,8 +27,9 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import { ClaudeUsageLoadingState } from './ClaudeUsageLoadingState'
 import { CodexUsageDailyChart } from './CodexUsageDailyChart'
-import { OpenCodeUsageRecentSessionsTable } from './OpenCodeUsageRecentSessionsTable'
 import { StatCard } from './StatCard'
+import { UsageBreakdownSection } from './UsageBreakdownSection'
+import { UsageSessionsTable } from './UsageSessionsTable'
 import { formatCost, formatTokens, formatUpdatedAt } from './usage-formatters'
 import { translate } from '@/i18n/i18n'
 
@@ -315,79 +316,68 @@ export function OpenCodeUsagePane(): React.JSX.Element {
           <CodexUsageDailyChart daily={daily} />
 
           <div className="grid gap-4 xl:grid-cols-2">
-            <section className="rounded-lg border border-border/60 bg-card/40 p-4">
-              <div className="mb-3">
-                <h4 className="text-sm font-semibold text-foreground">
-                  {translate('auto.components.stats.OpenCodeUsagePane.040c044d39', 'By model')}
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  {translate('auto.components.stats.OpenCodeUsagePane.a15206a63a', 'Top model:')}{' '}
-                  {summary?.topModel ??
-                    translate('auto.components.stats.OpenCodeUsagePane.8095a63426', 'n/a')}
-                </p>
-              </div>
-              <div className="space-y-3">
-                {modelBreakdown.slice(0, 5).map((row) => (
-                  <div key={row.key} className="space-y-1">
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="truncate text-foreground">{row.label}</span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {formatTokens(row.totalTokens)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.sessions}{' '}
-                      {translate(
-                        'auto.components.stats.OpenCodeUsagePane.bc0cb89901',
-                        'sessions •'
-                      )}{' '}
-                      {row.events}{' '}
-                      {translate('auto.components.stats.OpenCodeUsagePane.1e5d410df0', 'events')}
-                      {row.estimatedCostUsd !== null
-                        ? ` • ${formatCost(row.estimatedCostUsd)}`
-                        : ''}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-lg border border-border/60 bg-card/40 p-4">
-              <div className="mb-3">
-                <h4 className="text-sm font-semibold text-foreground">
-                  {translate('auto.components.stats.OpenCodeUsagePane.0f0a1684bb', 'By project')}
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  {translate('auto.components.stats.OpenCodeUsagePane.048ffe4d65', 'Top project:')}{' '}
-                  {summary?.topProject ??
-                    translate('auto.components.stats.OpenCodeUsagePane.8095a63426', 'n/a')}
-                </p>
-              </div>
-              <div className="space-y-3">
-                {projectBreakdown.slice(0, 5).map((row) => (
-                  <div key={row.key} className="space-y-1">
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="truncate text-foreground">{row.label}</span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {formatTokens(row.totalTokens)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.sessions}{' '}
-                      {translate(
-                        'auto.components.stats.OpenCodeUsagePane.bc0cb89901',
-                        'sessions •'
-                      )}{' '}
-                      {row.events}{' '}
-                      {translate('auto.components.stats.OpenCodeUsagePane.1e5d410df0', 'events')}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+            <UsageBreakdownSection
+              title={translate('auto.components.stats.OpenCodeUsagePane.040c044d39', 'By model')}
+              topLabel={translate(
+                'auto.components.stats.OpenCodeUsagePane.a15206a63a',
+                'Top model:'
+              )}
+              topValue={summary?.topModel}
+              rows={modelBreakdown.map((row) => ({
+                key: row.key,
+                label: row.label,
+                tokens: row.totalTokens,
+                sessions: row.sessions,
+                eventsOrTurns: row.events,
+                estimatedCostUsd: row.estimatedCostUsd
+              }))}
+              eventsOrTurns="events"
+            />
+            <UsageBreakdownSection
+              title={translate('auto.components.stats.OpenCodeUsagePane.0f0a1684bb', 'By project')}
+              topLabel={translate(
+                'auto.components.stats.OpenCodeUsagePane.048ffe4d65',
+                'Top project:'
+              )}
+              topValue={summary?.topProject}
+              rows={projectBreakdown.map((row) => ({
+                key: row.key,
+                label: row.label,
+                tokens: row.totalTokens,
+                sessions: row.sessions,
+                eventsOrTurns: row.events
+              }))}
+              eventsOrTurns="events"
+            />
           </div>
 
-          <OpenCodeUsageRecentSessionsTable recentSessions={recentSessions} />
+          <section className="rounded-lg border border-border/60 bg-card/40 p-4">
+            <div className="mb-3">
+              <h4 className="text-sm font-semibold text-foreground">
+                {translate('auto.components.stats.OpenCodeUsagePane.4799177b1c', 'Recent sessions')}
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                {translate(
+                  'auto.components.stats.OpenCodeUsagePane.81817a641a',
+                  'Most recent local OpenCode sessions in this scope.'
+                )}
+              </p>
+            </div>
+            <UsageSessionsTable
+              sessions={recentSessions.map((row) => ({
+                sessionId: row.sessionId,
+                lastActiveAt: row.lastActiveAt,
+                projectLabel: row.projectLabel,
+                model: row.model,
+                events: row.events,
+                inputTokens: row.inputTokens,
+                outputTokens: row.outputTokens,
+                totalTokens: row.totalTokens
+              }))}
+              eventsColumn="events"
+              tokensColumn="total"
+            />
+          </section>
         </>
       )}
     </div>

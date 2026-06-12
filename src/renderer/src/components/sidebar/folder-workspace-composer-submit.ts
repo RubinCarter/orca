@@ -5,6 +5,7 @@ import {
 } from '@/lib/new-workspace'
 import { getLinkedWorkItemPromptContext } from '@/lib/linked-work-item-context'
 import { buildAgentStartupPlan } from '@/lib/tui-agent-startup'
+import { isOrcaCliAvailableForLaunch } from '@/lib/orca-cli-launch-availability'
 import { tuiAgentToAgentKind } from '@/lib/telemetry'
 import { activateAndRevealFolderWorkspace } from '@/lib/worktree-activation'
 import { isWorkItemLookupText } from '@/lib/work-item-lookup-text'
@@ -31,6 +32,7 @@ type SubmitFolderWorkspaceCreateParams = {
   quickAgent: TuiAgent | null
   autoRenameBranchFromWork: boolean | undefined
   agentCmdOverrides: Record<string, string> | undefined
+  isRemote: boolean
   createFolderWorkspace: (input: FolderWorkspaceCreateInput) => Promise<FolderWorkspace | null>
   onOpenChange: (open: boolean) => void
 }
@@ -44,6 +46,7 @@ export async function submitFolderWorkspaceCreate({
   quickAgent,
   autoRenameBranchFromWork,
   agentCmdOverrides,
+  isRemote,
   createFolderWorkspace,
   onOpenChange
 }: SubmitFolderWorkspaceCreateParams): Promise<void> {
@@ -67,7 +70,14 @@ export async function submitFolderWorkspaceCreate({
     return
   }
 
-  const linkedPromptContext = getLinkedWorkItemPromptContext(linkedWorkItem)
+  // Why: only suggest `orca linear` when the launched terminal can actually
+  // resolve the CLI; SSH launches get the relay shim, local launches may not.
+  const linearCliAvailable = linkedWorkItem?.linearIdentifier
+    ? await isOrcaCliAvailableForLaunch({ remote: isRemote })
+    : false
+  const linkedPromptContext = getLinkedWorkItemPromptContext(linkedWorkItem, {
+    cliAvailable: linearCliAvailable
+  })
   const startupPrompt = buildAgentPromptWithContext(
     note,
     [],

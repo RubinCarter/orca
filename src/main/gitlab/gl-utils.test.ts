@@ -376,6 +376,24 @@ gitlab.example.com:
     expect(parseGlabAuthStatusHosts(out)).toContain('gitlab.example.com')
   })
 
+  it('extracts hosts from bare auth-status section headers', () => {
+    const out = `
+gitlab.com
+  ✓ Logged in to gitlab.com as user1 (/home/user/.config/glab-cli/config.yml)
+  ✓ Token: **************************
+gitlab.internal
+  ✓ Logged in as user2
+  ✓ Token: **************************
+Self-hosted-git
+  ✓ Logged in as user3
+    `
+    expect(parseGlabAuthStatusHosts(out).sort()).toEqual([
+      'gitlab.com',
+      'gitlab.internal',
+      'self-hosted-git'
+    ])
+  })
+
   it('returns empty list for output with no hosts', () => {
     expect(parseGlabAuthStatusHosts('Not logged in.')).toEqual([])
   })

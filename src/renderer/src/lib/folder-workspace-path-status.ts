@@ -1,5 +1,6 @@
 import type { FolderWorkspacePathStatus } from '../../../shared/folder-workspace-path-status'
 import { blocksFolderWorkspaceActivation } from '../../../shared/folder-workspace-path-status'
+import { translate } from '@/i18n/i18n'
 
 export function getFolderWorkspacePathStatusTitle(
   status: FolderWorkspacePathStatus | null | undefined
@@ -9,14 +10,23 @@ export function getFolderWorkspacePathStatusTitle(
   }
   switch (status.reason) {
     case 'missing':
-      return 'Folder not found'
+      return translate('auto.lib.folder.workspace.path.status.title.missing', 'Folder not found')
     case 'not-directory':
-      return 'Path is not a folder'
+      return translate(
+        'auto.lib.folder.workspace.path.status.title.not.directory',
+        'Path is not a folder'
+      )
     case 'ambiguous-connection':
-      return 'Cannot determine connection'
+      return translate(
+        'auto.lib.folder.workspace.path.status.title.ambiguous.connection',
+        'Cannot determine connection'
+      )
+    case undefined:
     case 'unavailable':
-    default:
-      return 'Cannot check folder'
+      return translate(
+        'auto.lib.folder.workspace.path.status.title.unavailable',
+        'Cannot check folder'
+      )
   }
 }
 
@@ -28,14 +38,28 @@ export function getFolderWorkspacePathStatusDescription(
   }
   switch (status.reason) {
     case 'missing':
-      return `Orca cannot find ${status.path}. Remove and re-import this folder workspace.`
+      return translate(
+        'auto.lib.folder.workspace.path.status.description.missing',
+        'Orca cannot find {{value0}}. Remove and re-import this folder workspace.',
+        { value0: status.path }
+      )
     case 'not-directory':
-      return `${status.path} exists, but it is not a folder.`
+      return translate(
+        'auto.lib.folder.workspace.path.status.description.not.directory',
+        '{{value0}} exists, but it is not a folder.',
+        { value0: status.path }
+      )
     case 'ambiguous-connection':
-      return 'Orca cannot tell which SSH connection owns this folder scope.'
+      return translate(
+        'auto.lib.folder.workspace.path.status.description.ambiguous.connection',
+        'Orca cannot tell which SSH connection owns this folder scope.'
+      )
+    case undefined:
     case 'unavailable':
-    default:
-      return 'Orca cannot verify this folder right now. Check the runtime or SSH connection and try again.'
+      return translate(
+        'auto.lib.folder.workspace.path.status.description.unavailable',
+        'Orca cannot verify this folder right now. Check the runtime or SSH connection and try again.'
+      )
   }
 }
 
@@ -47,30 +71,58 @@ export function formatFolderWorkspaceCreateError(error: unknown): {
   const path = message.includes(':') ? message.slice(message.indexOf(':') + 1) : ''
   if (message.startsWith('folder_workspace_path_missing:')) {
     return {
-      title: 'Folder not found',
-      description: `Orca cannot find ${path}. Remove and re-import the folder.`
+      title: translate('auto.lib.folder.workspace.path.status.title.missing', 'Folder not found'),
+      description: translate(
+        'auto.lib.folder.workspace.path.status.create.description.missing',
+        'Orca cannot find {{value0}}. Remove and re-import the folder.',
+        { value0: path }
+      )
     }
   }
   if (message.startsWith('folder_workspace_path_not_directory:')) {
     return {
-      title: 'Path is not a folder',
-      description: `${path} exists, but it is not a folder.`
+      title: translate(
+        'auto.lib.folder.workspace.path.status.title.not.directory',
+        'Path is not a folder'
+      ),
+      description: translate(
+        'auto.lib.folder.workspace.path.status.description.not.directory',
+        '{{value0}} exists, but it is not a folder.',
+        { value0: path }
+      )
     }
   }
   if (message.startsWith('folder_workspace_connection_ambiguous:')) {
     return {
-      title: 'Cannot determine connection',
-      description: 'Orca cannot tell which SSH connection owns this folder scope.'
+      title: translate(
+        'auto.lib.folder.workspace.path.status.title.ambiguous.connection',
+        'Cannot determine connection'
+      ),
+      description: translate(
+        'auto.lib.folder.workspace.path.status.description.ambiguous.connection',
+        'Orca cannot tell which SSH connection owns this folder scope.'
+      )
     }
   }
   if (message.startsWith('folder_workspace_path_unavailable:')) {
     return {
-      title: 'Cannot check folder',
-      description:
+      title: translate(
+        'auto.lib.folder.workspace.path.status.title.unavailable',
+        'Cannot check folder'
+      ),
+      description: translate(
+        'auto.lib.folder.workspace.path.status.description.unavailable',
         'Orca cannot verify this folder right now. Check the runtime or SSH connection and try again.'
+      )
     }
   }
-  return { title: 'Failed to create folder workspace', description: message }
+  return {
+    title: translate(
+      'auto.lib.folder.workspace.path.status.create.title.failed',
+      'Failed to create folder workspace'
+    ),
+    description: message
+  }
 }
 
 export function folderWorkspaceActivationBlocked(
