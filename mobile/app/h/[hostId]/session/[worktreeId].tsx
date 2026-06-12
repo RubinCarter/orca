@@ -2324,6 +2324,7 @@ export default function SessionScreen() {
       currentOffset: tabStripOffsetRef.current
     })
     if (nextOffset !== tabStripOffsetRef.current) {
+      tabStripOffsetRef.current = nextOffset
       tabStripRef.current?.scrollTo({ x: nextOffset, animated })
     }
   }, [])
