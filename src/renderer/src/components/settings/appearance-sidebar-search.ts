@@ -30,10 +30,6 @@ export const getLeftSidebarAppearanceEntry = createLocalizedCatalog(
       ...translateSearchKeyword(
         'auto.components.settings.appearance.search.leftSidebarAppearance.tint',
         'tint'
-      ),
-      ...translateSearchKeyword(
-        'auto.components.settings.appearance.search.leftSidebarAppearance.contrast',
-        'contrast'
       )
     ]
   })

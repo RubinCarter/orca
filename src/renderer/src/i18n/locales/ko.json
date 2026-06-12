@@ -4169,7 +4169,6 @@
             "rowDescription": "왼쪽 사이드바를 터미널에 맞추거나 기본값을 유지하거나 은은한 색조를 적용합니다.",
             "default": "기본값",
             "matchTerminal": "터미널에 맞춤",
-            "softContrast": "부드러운 대비",
             "tinted": "색조 적용",
             "tintColor": "사이드바 색조",
             "tintColorDescription": "왼쪽 사이드바 표면에 섞을 색상입니다.",

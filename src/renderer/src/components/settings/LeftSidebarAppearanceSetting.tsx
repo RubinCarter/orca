@@ -59,13 +59,6 @@ export function LeftSidebarAppearanceSetting({
                 )
               },
               {
-                value: 'soft-contrast',
-                label: translate(
-                  'auto.components.settings.AppearancePane.leftSidebarAppearance.softContrast',
-                  'Soft Contrast'
-                )
-              },
-              {
                 value: 'tinted',
                 label: translate(
                   'auto.components.settings.AppearancePane.leftSidebarAppearance.tinted',

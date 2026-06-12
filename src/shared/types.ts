@@ -2042,7 +2042,7 @@ export type OpenInApplication = {
 
 export type SourceControlViewMode = 'list' | 'tree'
 
-export type LeftSidebarAppearanceMode = 'default' | 'match-terminal' | 'tinted' | 'soft-contrast'
+export type LeftSidebarAppearanceMode = 'default' | 'match-terminal' | 'tinted'
 
 export type FloatingTerminalCwdRequest = {
   path?: string

@@ -4184,7 +4184,6 @@
             "rowDescription": "Make the left sidebar match your terminal, stay default, or use a tint.",
             "default": "Default",
             "matchTerminal": "Match Terminal",
-            "softContrast": "Soft Contrast",
             "tinted": "Tinted",
             "tintColor": "Sidebar Tint",
             "tintColorDescription": "The color mixed into the left sidebar surface.",

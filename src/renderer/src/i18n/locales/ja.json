@@ -4169,7 +4169,6 @@
             "rowDescription": "左サイドバーをターミナルに合わせるか、既定のままにするか、色合いを加えます。",
             "default": "デフォルト",
             "matchTerminal": "ターミナルに合わせる",
-            "softContrast": "ソフトコントラスト",
             "tinted": "色合い",
             "tintColor": "サイドバーの色合い",
             "tintColorDescription": "左サイドバーの表面に混ぜる色です。",

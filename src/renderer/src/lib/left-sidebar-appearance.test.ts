@@ -81,17 +81,4 @@ describe('resolveLeftSidebarStyleVariables', () => {
 
     expect(vars?.['--worktree-sidebar']).toBe('color-mix(in srgb, #000000 35%, var(--background))')
   })
-
-  it('uses the soft contrast token recipe without overriding app text tokens', () => {
-    const vars = resolveLeftSidebarStyleVariables(
-      settings({ leftSidebarAppearanceMode: 'soft-contrast' }),
-      true
-    )
-
-    expect(vars?.['--worktree-sidebar']).toBe(
-      'color-mix(in srgb, var(--background) 96%, var(--foreground) 4%)'
-    )
-    expect(vars?.['--sidebar']).toBe(vars?.['--worktree-sidebar'])
-    expect(vars?.['--foreground']).toBeUndefined()
-  })
 })

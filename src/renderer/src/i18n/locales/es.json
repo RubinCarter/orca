@@ -4184,7 +4184,6 @@
             "rowDescription": "Haz que la barra lateral izquierda coincida con tu terminal, conserve el valor predeterminado o use un tinte.",
             "default": "Predeterminado",
             "matchTerminal": "Coincidir con terminal",
-            "softContrast": "Contraste suave",
             "tinted": "Con tinte",
             "tintColor": "Tinte de la barra lateral",
             "tintColorDescription": "El color que se mezcla en la superficie de la barra lateral izquierda.",

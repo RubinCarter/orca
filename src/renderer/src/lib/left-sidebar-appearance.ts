@@ -110,11 +110,6 @@ function resolveTintedSurfaceVariables(
   return buildSurfaceVariables({ background, foreground: 'var(--foreground)' })
 }
 
-function resolveSoftContrastSurfaceVariables(): LeftSidebarStyleVariables {
-  const background = 'color-mix(in srgb, var(--background) 96%, var(--foreground) 4%)'
-  return buildSurfaceVariables({ background, foreground: 'var(--foreground)' })
-}
-
 export function resolveLeftSidebarStyleVariables(
   settings: LeftSidebarAppearanceSettings | null | undefined,
   systemPrefersDark: boolean
@@ -129,7 +124,5 @@ export function resolveLeftSidebarStyleVariables(
       return resolveTerminalSurfaceVariables(settings, systemPrefersDark)
     case 'tinted':
       return resolveTintedSurfaceVariables(settings)
-    case 'soft-contrast':
-      return resolveSoftContrastSurfaceVariables()
   }
 }
