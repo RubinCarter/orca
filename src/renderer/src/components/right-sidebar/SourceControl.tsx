@@ -145,6 +145,11 @@ import {
 import { getRuntimeRepoBaseRefDefault } from '@/runtime/runtime-repo-client'
 import { PullRequestIcon } from './checks-panel-content'
 import { stripBaseRef, useCreatePullRequestDialogFields } from './useCreatePullRequestDialogFields'
+import {
+  RIGHT_SIDEBAR_MORPHING_PRIMARY_BUTTON_CLASS,
+  RIGHT_SIDEBAR_PRIMARY_BUTTON_LABEL_CLASS,
+  RIGHT_SIDEBAR_SPLIT_ACTION_ROW_CLASS
+} from './right-sidebar-primary-action-layout'
 import { GitHistoryPanel, type GitHistoryPanelState } from './GitHistoryPanel'
 import type { GitHistoryItem } from '../../../../shared/git-history'
 import { normalizeHostedReviewHeadRef } from '../../../../shared/hosted-review-refs'
@@ -4579,7 +4584,7 @@ function CommitFailureFixSplitButton({
   return (
     <>
       <DropdownMenu>
-        <div className="flex shrink-0 items-stretch">
+        <div className="inline-flex shrink-0 max-w-full items-stretch">
           <Button
             type="button"
             variant={variant}
@@ -4972,7 +4977,7 @@ export function CommitArea({
           chevron exposes the full action surface (fetch, pull, sync,
           publish, compound commits) without forcing morphing labels to
           carry every possible intent. */}
-      <div className={cn(showComposer ? 'mt-1 flex items-stretch' : 'flex items-stretch')}>
+      <div className={cn(RIGHT_SIDEBAR_SPLIT_ACTION_ROW_CLASS, showComposer && 'mt-1')}>
         {/* Why: match the hosted-review action buttons in Checks
             (size="xs", px-3 text-[11px]) so the sidebar has a consistent
             action-button shape across Source Control and Checks. The primary
@@ -4981,13 +4986,16 @@ export function CommitArea({
             pair read as one split button instead of two detached buttons. */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="flex flex-1">
+            <span className="inline-flex">
               <Button
                 type="button"
                 size="xs"
                 disabled={primaryAction.disabled}
                 onClick={() => onPrimaryAction()}
-                className="w-full rounded-r-none px-3 text-[11px]"
+                className={cn(
+                  'rounded-r-none px-3 text-[11px]',
+                  RIGHT_SIDEBAR_MORPHING_PRIMARY_BUTTON_CLASS
+                )}
                 title={primaryAction.title}
               >
                 {showSpinner ? (
@@ -4995,7 +5003,9 @@ export function CommitArea({
                 ) : PrimaryIcon ? (
                   <PrimaryIcon className="size-3.5" aria-hidden="true" />
                 ) : null}
-                {primaryAction.label}
+                <span className={RIGHT_SIDEBAR_PRIMARY_BUTTON_LABEL_CLASS}>
+                  {primaryAction.label}
+                </span>
               </Button>
             </span>
           </TooltipTrigger>
@@ -5733,12 +5743,12 @@ export function ConflictSummaryCard({
           </div>
         </div>
       </div>
-      <div className="mt-2">
+      <div className="mt-2 flex flex-col items-start">
         <Button
           type="button"
           variant="default"
           size="sm"
-          className="h-7 w-full text-xs"
+          className="h-7 text-xs"
           disabled={isResolvingWithAI}
           onClick={onResolveWithAI}
         >
@@ -5753,7 +5763,7 @@ export function ConflictSummaryCard({
           type="button"
           variant="outline"
           size="sm"
-          className="mt-1.5 h-7 w-full text-xs"
+          className="mt-1.5 h-7 text-xs"
           onClick={onReview}
         >
           <GitMerge className="size-3.5" />
@@ -5766,7 +5776,7 @@ export function ConflictSummaryCard({
             // outline conflict-review action instead of reading as destructive.
             variant="outline"
             size="sm"
-            className="mt-1.5 h-7 w-full text-xs"
+            className="mt-1.5 h-7 text-xs"
             disabled={isResolvingWithAI || isAbortingOperation}
             onClick={() => onAbortOperation(conflictOperation)}
           >
@@ -5808,26 +5818,28 @@ export function OperationBanner({
 
   return (
     <div className="rounded-md border border-amber-500/25 bg-amber-500/5 px-3 py-2">
-      <div className="flex items-center justify-center gap-2">
+      <div className="flex items-center gap-2">
         <Icon className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
         <span className="text-xs font-medium text-foreground">{label}</span>
       </div>
       {(conflictOperation === 'merge' || conflictOperation === 'rebase') && onAbortOperation ? (
-        <Button
-          type="button"
-          // Why: abort is the escape hatch for this state, so match the quiet
-          // outline conflict-review action instead of reading as destructive.
-          variant="outline"
-          size="sm"
-          className="mt-2 h-7 w-full text-xs"
-          disabled={isAbortingOperation}
-          onClick={() => onAbortOperation(conflictOperation)}
-        >
-          {isAbortingOperation ? <RefreshCw className="size-3.5 animate-spin" /> : null}
-          {conflictOperation === 'rebase'
-            ? translate('auto.components.right.sidebar.SourceControl.425f138269', 'Abort rebase')
-            : translate('auto.components.right.sidebar.SourceControl.540ca8f78c', 'Abort merge')}
-        </Button>
+        <div className="mt-2 flex flex-col items-start">
+          <Button
+            type="button"
+            // Why: abort is the escape hatch for this state, so match the quiet
+            // outline conflict-review action instead of reading as destructive.
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            disabled={isAbortingOperation}
+            onClick={() => onAbortOperation(conflictOperation)}
+          >
+            {isAbortingOperation ? <RefreshCw className="size-3.5 animate-spin" /> : null}
+            {conflictOperation === 'rebase'
+              ? translate('auto.components.right.sidebar.SourceControl.425f138269', 'Abort rebase')
+              : translate('auto.components.right.sidebar.SourceControl.540ca8f78c', 'Abort merge')}
+          </Button>
+        </div>
       ) : null}
     </div>
   )

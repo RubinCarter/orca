@@ -84,6 +84,11 @@ import type { DiffSection } from '@/components/editor/diff-section-types'
 import type { CombinedDiffFileTreeEntry } from '@/components/editor/combined-diff-file-tree-model'
 import { CHECK_COLOR, CHECK_ICON } from '@/components/right-sidebar/checks-panel-content'
 import {
+  REVIEW_ACTION_MERGE_BUTTON_CLASS,
+  REVIEW_ACTION_STATE_BUTTON_CLASS,
+  RIGHT_SIDEBAR_PRIMARY_BUTTON_LABEL_CLASS
+} from '@/components/right-sidebar/right-sidebar-primary-action-layout'
+import {
   createGitHubChecksTabState,
   resolveGitHubChecksTabState,
   toggleGitHubChecksTabExpandedKey,
@@ -3241,7 +3246,7 @@ function PRActionsPanel({
         <WorkItemStateBadge item={actionItem} />
       </div>
 
-      <div className="grid gap-2">
+      <div className="grid gap-2 justify-items-start">
         <DropdownMenu modal={false}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -3250,7 +3255,8 @@ function PRActionsPanel({
                   type="button"
                   size="sm"
                   className={cn(
-                    'w-full justify-center gap-2 bg-green-600 text-white hover:bg-green-700',
+                    REVIEW_ACTION_MERGE_BUTTON_CLASS,
+                    'gap-2 bg-green-600 text-white hover:bg-green-700',
                     'disabled:cursor-not-allowed disabled:opacity-50'
                   )}
                 >
@@ -3259,11 +3265,13 @@ function PRActionsPanel({
                   ) : (
                     <GitMerge className="size-3.5" />
                   )}
-                  {mergePresentation.autoMergeAction?.label ??
-                    (mergePresentation.directMergeAvailable
-                      ? mergeMethods.defaultLabel
-                      : mergePresentation.label)}
-                  <ChevronDown className="size-3 opacity-60" />
+                  <span className={RIGHT_SIDEBAR_PRIMARY_BUTTON_LABEL_CLASS}>
+                    {mergePresentation.autoMergeAction?.label ??
+                      (mergePresentation.directMergeAvailable
+                        ? mergeMethods.defaultLabel
+                        : mergePresentation.label)}
+                  </span>
+                  <ChevronDown className="size-3 shrink-0 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
@@ -3309,7 +3317,8 @@ function PRActionsPanel({
           variant={nextState === 'closed' ? 'outline' : 'secondary'}
           size="sm"
           className={cn(
-            'w-full justify-center gap-2',
+            REVIEW_ACTION_STATE_BUTTON_CLASS,
+            'gap-2',
             nextState === 'closed' &&
               'border-border bg-background text-foreground hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50'
           )}
@@ -3323,9 +3332,11 @@ function PRActionsPanel({
           ) : (
             <CircleDot className="size-3.5" />
           )}
-          {nextState === 'closed'
-            ? translate('auto.components.GitHubItemDialog.21860b58d0', 'Close pull request')
-            : translate('auto.components.GitHubItemDialog.ec5c4b3ab2', 'Reopen PR')}
+          <span className={RIGHT_SIDEBAR_PRIMARY_BUTTON_LABEL_CLASS}>
+            {nextState === 'closed'
+              ? translate('auto.components.GitHubItemDialog.21860b58d0', 'Close pull request')
+              : translate('auto.components.GitHubItemDialog.ec5c4b3ab2', 'Reopen PR')}
+          </span>
         </Button>
       </div>
     </aside>
@@ -4896,12 +4907,12 @@ function GHEditSection({
           ) : null}
           {hasAttachedWorkspace ? (
             <DropdownMenu modal={false}>
-              <ButtonGroup className="w-full">
+              <ButtonGroup className="inline-flex w-auto max-w-full">
                 <Button
                   type="button"
                   size="sm"
                   onClick={handleOpenOrUseWorkspace}
-                  className="flex-1 gap-1.5"
+                  className="gap-1.5"
                   aria-label={translate(
                     'auto.components.GitHubItemDialog.84855fedd0',
                     'Open workspace attached to issue'
