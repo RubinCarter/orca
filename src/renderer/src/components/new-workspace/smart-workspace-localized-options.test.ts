@@ -21,7 +21,7 @@ describe('smart-workspace-localized-options', () => {
     await i18n.changeLanguage('zh')
 
     expect(getSmartWorkspaceNameModes().map((mode) => mode.label)).toEqual([
-      '聪明的',
+      '智能',
       'GitHub',
       'Linear',
       'GitLab',
