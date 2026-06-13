@@ -1,6 +1,6 @@
 import type { Store } from '../persistence'
 import type { Automation } from '../../shared/automations-types'
-import { getRepoExecutionHostId } from '../../shared/execution-host'
+import { getRepoExecutionHostId, parseExecutionHostId } from '../../shared/execution-host'
 import type { ProjectHostSetup, Repo } from '../../shared/types'
 import { splitWorktreeIdForFilesystem } from '../../shared/worktree-id'
 
@@ -30,6 +30,14 @@ export function resolveAutomationRunTarget(
       return { ok: false, error: 'Automation run target is no longer available.' }
     }
     return { ok: true, cwd, repo }
+  }
+  const parsedHost = parseExecutionHostId(context.hostId)
+  if (parsedHost?.kind === 'runtime') {
+    return {
+      ok: false,
+      error:
+        'Remote-server automation scheduling is not available from this Orca client yet. Run this automation on the remote server or update Orca when durable remote scheduling is available.'
+    }
   }
 
   const setup = store

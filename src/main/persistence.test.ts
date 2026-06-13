@@ -35,7 +35,7 @@ import {
   ONBOARDING_FLOW_VERSION
 } from '../shared/constants'
 import { folderWorkspaceKey } from '../shared/workspace-scope'
-import { toSshExecutionHostId } from '../shared/execution-host'
+import { toRuntimeExecutionHostId, toSshExecutionHostId } from '../shared/execution-host'
 import { SshConnectionStore } from './ssh/ssh-connection-store'
 
 // Shared mutable state so the electron mock can reference a per-test directory
@@ -1198,6 +1198,32 @@ describe('Store', () => {
     })
   })
 
+  it('marks runtime-owned automations as remote-host scheduled', async () => {
+    const store = await createStore()
+    store.addRepo(
+      makeRepo({
+        executionHostId: toRuntimeExecutionHostId('gpu-server'),
+        upstream: { owner: 'stablyai', repo: 'orca' }
+      })
+    )
+
+    const automation = store.createAutomation({
+      name: 'Nightly',
+      prompt: 'Run checks',
+      agentId: 'claude',
+      projectId: 'r1',
+      workspaceMode: 'new_per_run',
+      timezone: 'UTC',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      dtstart: new Date('2026-05-13T00:00:00Z').getTime()
+    })
+
+    expect(automation.schedulerOwner).toBe('remote_host_service')
+    expect(automation.runContext).toMatchObject({
+      hostId: toRuntimeExecutionHostId('gpu-server')
+    })
+  })
+
   it('snapshots automation contexts onto runs', async () => {
     const store = await createStore()
     store.addRepo(makeRepo({ upstream: { owner: 'stablyai', repo: 'orca' } }))
@@ -1254,8 +1280,12 @@ describe('Store', () => {
     writeDataFile(persisted)
 
     const reloaded = await createStore()
-    const migratedAutomation = reloaded.listAutomations().find((entry) => entry.id === automation.id)
-    const migratedRun = reloaded.listAutomationRuns(automation.id).find((entry) => entry.id === run.id)
+    const migratedAutomation = reloaded
+      .listAutomations()
+      .find((entry) => entry.id === automation.id)
+    const migratedRun = reloaded
+      .listAutomationRuns(automation.id)
+      .find((entry) => entry.id === run.id)
 
     expect(migratedAutomation?.runContext).toMatchObject({
       kind: 'workspace-run',

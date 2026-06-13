@@ -24,6 +24,7 @@ import type {
   AutomationPrecheckResult,
   AutomationRunOutputSnapshot,
   AutomationRun,
+  AutomationSchedulerOwner,
   AutomationRunTrigger,
   AutomationUpdateInput
 } from '../shared/automations-types'
@@ -71,6 +72,7 @@ import type { MigrationUnsupportedPtyEntry } from '../shared/agent-status-types'
 import type { SshRemotePtyLease, SshTarget } from '../shared/ssh-types'
 import { isFolderRepo } from '../shared/repo-kind'
 import { getGitUsername } from './git/repo'
+import { getRepoExecutionHostId, parseExecutionHostId } from '../shared/execution-host'
 import {
   getDefaultPersistedState,
   getDefaultNotificationSettings,
@@ -654,6 +656,20 @@ function getAutomationContextsForRepo(
     runContext,
     sourceContext
   }
+}
+
+function getAutomationSchedulerOwner(repo: Repo | undefined): AutomationSchedulerOwner {
+  if (!repo) {
+    return 'local_host_service'
+  }
+  const host = parseExecutionHostId(getRepoExecutionHostId(repo))
+  if (host?.kind === 'ssh') {
+    return 'ssh_bridge'
+  }
+  if (host?.kind === 'runtime') {
+    return 'remote_host_service'
+  }
+  return 'local_host_service'
 }
 
 function backfillLegacyAutomationContexts(
@@ -3745,6 +3761,7 @@ export class Store {
     const repo = this.state.repos.find((entry) => entry.id === input.projectId)
     const now = Date.now()
     const executionTargetType = repo?.connectionId ? 'ssh' : 'local'
+    const schedulerOwner = getAutomationSchedulerOwner(repo)
     const contexts = getAutomationContextsForRepo(repo, this.state.projectHostSetups ?? [])
     const automation: Automation = {
       id: randomUUID(),
@@ -3757,7 +3774,7 @@ export class Store {
       projectId: input.projectId,
       executionTargetType,
       executionTargetId: executionTargetType === 'ssh' ? (repo?.connectionId ?? '') : 'local',
-      schedulerOwner: executionTargetType === 'ssh' ? 'ssh_bridge' : 'local_host_service',
+      schedulerOwner,
       workspaceMode: input.workspaceMode,
       workspaceId: input.workspaceMode === 'existing' ? (input.workspaceId ?? null) : null,
       baseBranch: input.workspaceMode === 'new_per_run' ? (input.baseBranch ?? null) : null,
@@ -3787,6 +3804,7 @@ export class Store {
     const repoId = updates.projectId ?? current.projectId
     const repo = this.state.repos.find((entry) => entry.id === repoId)
     const executionTargetType = repo?.connectionId ? 'ssh' : 'local'
+    const schedulerOwner = getAutomationSchedulerOwner(repo)
     const contexts = getAutomationContextsForRepo(repo, this.state.projectHostSetups ?? [])
     const rrule = updates.rrule ?? current.rrule
     const dtstart = updates.dtstart ?? current.dtstart
@@ -3813,7 +3831,7 @@ export class Store {
           : (current.sourceContext ?? contexts.sourceContext),
       executionTargetType,
       executionTargetId: executionTargetType === 'ssh' ? (repo?.connectionId ?? '') : 'local',
-      schedulerOwner: executionTargetType === 'ssh' ? 'ssh_bridge' : 'local_host_service',
+      schedulerOwner,
       workspaceMode,
       workspaceId:
         workspaceMode === 'existing'
