@@ -44,7 +44,7 @@ Done means: if Machine A and Machine B have different provider accounts, every l
 ## 3. Tasks UI
 
 - [x] Add an explicit source-context picker or display for Tasks that can represent host, provider account, and project/source.
-- [~] Decide and implement the default Tasks view when a logical project exists on multiple hosts.
+- [x] Decide and implement the default Tasks view when a logical project exists on multiple hosts.
 - [~] Support switching the task source without changing the current run host.
 - [~] Show enough account/host metadata to make mismatched GitHub/GitLab/Linear/Jira accounts understandable.
 - [~] Persist task source context in task drawer URLs/state so refresh, deep links, and reopen preserve the same source.
@@ -249,3 +249,5 @@ Done means: reviewers and future agents can understand the vision, implementatio
 - [x] 2026-06-12: Added explicit remote-runtime Host model capability names for project setup, task source context, and workspace run context, then surfaced a Settings saved-server summary that says whether Host model support is ready, unknown, or requires a server update for specific missing capabilities; verified with focused RuntimeEnvironmentsPane tests, targeted oxlint, and full `pnpm run typecheck`.
 - [x] 2026-06-12: Continued the Host copy audit by replacing the SSH disconnected dialog's stale "remote repository" message with SSH-host wording; verified with a stale-copy scan, targeted oxlint, and full `pnpm run typecheck`.
 - [x] 2026-06-12: Improved the Tasks project/source picker by removing the repo-row `SSH` tag and showing host-aware project detail (`Host · path`) when the picker is fed host context, so same-project-on-multiple-hosts is distinguishable without implying the project itself is SSH; verified with focused combobox tests, targeted oxlint, and full `pnpm run typecheck`.
+- [x] 2026-06-12: Marked the default Tasks multi-host behavior complete based on the existing implementation that selects one source per logical GitHub project, prefers Local Mac for duplicate logical projects, and preserves manual multi-host selection; evidence is `task-page-default-repo-selection.test.ts` plus the prior full typecheck.
+- [x] 2026-06-12: Made provider settings and API-budget scope copy point users to Settings > Active Server when they need to edit or inspect another Host's provider credentials/budgets, keeping the existing global Host selector discoverable without duplicating a per-card selector; verified with provider-scope, source-control card, tracker card, and rate-limit panel tests.

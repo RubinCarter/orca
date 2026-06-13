@@ -104,7 +104,7 @@ describe('LinearIntegrationCard account scope', () => {
 
     expect(rendered.textContent).toContain('Account scope: Local Mac')
     expect(rendered.textContent).toContain(
-      'Credentials and account checks for this provider are owned by this desktop client.'
+      'Credentials and account checks for this provider are owned by this desktop client. Choose a remote Host from Settings > Active Server to edit server-owned credentials.'
     )
     expect(rendered.textContent).toContain('Add access with a Personal API key')
 
@@ -124,7 +124,7 @@ describe('LinearIntegrationCard account scope', () => {
 
     expect(rendered.textContent).toContain('Account scope: Remote server: runtime-1')
     expect(rendered.textContent).toContain(
-      'Credentials and account checks for this provider are owned by this remote server.'
+      'Credentials and account checks for this provider are owned by this remote server. Choose a different Host from Settings > Active Server to edit another account scope.'
     )
     expect(rendered.textContent).toContain('Acme')
     expect(rendered.textContent).toContain('Acme workspace · linear@example.test')

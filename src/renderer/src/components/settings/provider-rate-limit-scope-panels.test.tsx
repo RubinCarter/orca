@@ -22,7 +22,9 @@ describe('provider rate-limit panels account scope', () => {
     const markup = renderToStaticMarkup(<GitHubRateLimitPanel />)
 
     expect(markup).toContain('Budget scope: Local Mac')
-    expect(markup).toContain('GitHub API budget is fetched from the CLI on this desktop client.')
+    expect(markup).toContain(
+      'GitHub API budget is fetched from the CLI on this desktop client. Choose a remote Host from Settings &gt; Active Server to view server-owned budgets.'
+    )
   })
 
   it('shows the remote server scope for GitLab API budget', () => {
@@ -31,6 +33,8 @@ describe('provider rate-limit panels account scope', () => {
     const markup = renderToStaticMarkup(<GitLabRateLimitPanel />)
 
     expect(markup).toContain('Budget scope: Remote server: runtime-1')
-    expect(markup).toContain('GitLab API budget is fetched from the CLI on this remote server.')
+    expect(markup).toContain(
+      'GitLab API budget is fetched from the CLI on this remote server. Choose a different Host from Settings &gt; Active Server to view another budget.'
+    )
   })
 })

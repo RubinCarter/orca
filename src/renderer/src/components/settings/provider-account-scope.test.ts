@@ -6,7 +6,7 @@ describe('getProviderAccountScope', () => {
     expect(getProviderAccountScope({ activeRuntimeEnvironmentId: null })).toEqual({
       label: 'Local Mac',
       description:
-        'Credentials and account checks for this provider are owned by this desktop client.'
+        'Credentials and account checks for this provider are owned by this desktop client. Choose a remote Host from Settings > Active Server to edit server-owned credentials.'
     })
   })
 
@@ -14,18 +14,20 @@ describe('getProviderAccountScope', () => {
     expect(getProviderAccountScope({ activeRuntimeEnvironmentId: ' env-1 ' })).toEqual({
       label: 'Remote server: env-1',
       description:
-        'Credentials and account checks for this provider are owned by this remote server.'
+        'Credentials and account checks for this provider are owned by this remote server. Choose a different Host from Settings > Active Server to edit another account scope.'
     })
   })
 
   it('describes provider API budgets as host-scoped', () => {
     expect(getProviderRateLimitScope({ activeRuntimeEnvironmentId: null }, 'GitHub')).toEqual({
       label: 'Local Mac',
-      description: 'GitHub API budget is fetched from the CLI on this desktop client.'
+      description:
+        'GitHub API budget is fetched from the CLI on this desktop client. Choose a remote Host from Settings > Active Server to view server-owned budgets.'
     })
     expect(getProviderRateLimitScope({ activeRuntimeEnvironmentId: ' env-1 ' }, 'GitLab')).toEqual({
       label: 'Remote server: env-1',
-      description: 'GitLab API budget is fetched from the CLI on this remote server.'
+      description:
+        'GitLab API budget is fetched from the CLI on this remote server. Choose a different Host from Settings > Active Server to view another budget.'
     })
   })
 })
