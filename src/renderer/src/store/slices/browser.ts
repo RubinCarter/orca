@@ -572,19 +572,18 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
       return
     }
     const defaultUrl = state.browserDefaultUrl ?? 'about:blank'
-    const pairedWebRuntimeEnvironmentId = (globalThis as { __ORCA_WEB_CLIENT__?: boolean })
-      .__ORCA_WEB_CLIENT__
-      ? getRuntimeEnvironmentIdForWorktree(state, worktreeId)
-      : null
-    if (pairedWebRuntimeEnvironmentId) {
+    const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(state, worktreeId)
+    if (runtimeEnvironmentId) {
       const { createWebRuntimeSessionBrowserTab } = await import('@/runtime/web-runtime-session')
-      await createWebRuntimeSessionBrowserTab({
+      const created = await createWebRuntimeSessionBrowserTab({
         worktreeId,
-        environmentId: pairedWebRuntimeEnvironmentId,
+        environmentId: runtimeEnvironmentId,
         url: defaultUrl,
         targetGroupId: groupId
       })
-      get().recordFeatureInteraction('browser-tab-created')
+      if (created) {
+        get().recordFeatureInteraction('browser-tab-created')
+      }
       return
     }
     get().createBrowserTab(worktreeId, defaultUrl, {

@@ -11,8 +11,13 @@ import { GRAB_BUDGET, type BrowserPageAnnotation } from '../../../../shared/brow
 import { clearRuntimeCompatibilityCacheForTests } from '../../runtime/runtime-rpc-client'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 
+const createWebRuntimeSessionBrowserTabMock = vi.hoisted(() => vi.fn())
 const runtimeEnvironmentCall = vi.fn()
 const runtimeEnvironmentTransportCall = vi.fn()
+
+vi.mock('@/runtime/web-runtime-session', () => ({
+  createWebRuntimeSessionBrowserTab: createWebRuntimeSessionBrowserTabMock
+}))
 
 const mockApi = {
   browser: {
@@ -441,6 +446,8 @@ describe('createBrowserSlice runtime guard', () => {
     clearRuntimeCompatibilityCacheForTests()
     runtimeEnvironmentCall.mockReset()
     runtimeEnvironmentTransportCall.mockReset()
+    createWebRuntimeSessionBrowserTabMock.mockReset()
+    createWebRuntimeSessionBrowserTabMock.mockResolvedValue(true)
     runtimeEnvironmentTransportCall.mockImplementation((args: RuntimeEnvironmentCallRequest) => {
       return createCompatibleRuntimeStatusResponseIfNeeded(args) ?? runtimeEnvironmentCall(args)
     })
@@ -589,6 +596,84 @@ describe('createBrowserSlice runtime guard', () => {
     const tab = store.getState().createBrowserTab('wt-remote', 'https://example.com')
 
     expect(tab.sessionProfileId).toBe('remote-default')
+  })
+
+  it('creates new browser tabs through the owning runtime for desktop remote worktrees', async () => {
+    const store = createTestStore()
+    store.setState({
+      activeWorktreeId: 'wt-remote',
+      settings: { activeRuntimeEnvironmentId: null } as AppState['settings'],
+      browserDefaultUrl: 'about:blank',
+      repos: [
+        {
+          id: 'repo-1',
+          path: '/repo',
+          displayName: 'Repo',
+          badgeColor: '#000000',
+          addedAt: 1,
+          connectionId: null,
+          executionHostId: 'runtime:env-1'
+        }
+      ],
+      worktreesByRepo: {
+        'repo-1': [
+          {
+            id: 'wt-remote',
+            repoId: 'repo-1',
+            path: '/repo/wt',
+            head: 'abc123',
+            branch: 'feature',
+            isBare: false,
+            isMainWorktree: false,
+            displayName: 'Workspace',
+            comment: '',
+            linkedIssue: null,
+            linkedPR: null,
+            linkedLinearIssue: null,
+            isArchived: false,
+            isUnread: false,
+            isPinned: false,
+            sortOrder: 0,
+            lastActivityAt: 1
+          }
+        ]
+      }
+    })
+
+    await store.getState().openNewBrowserTabInActiveWorkspace('group-1')
+
+    expect(createWebRuntimeSessionBrowserTabMock).toHaveBeenCalledWith({
+      worktreeId: 'wt-remote',
+      environmentId: 'env-1',
+      url: 'about:blank',
+      targetGroupId: 'group-1'
+    })
+    expect(store.getState().createUnifiedTab).not.toHaveBeenCalled()
+    expect(store.getState().browserTabsByWorktree['wt-remote']).toBeUndefined()
+    expect(store.getState().recordFeatureInteraction).toHaveBeenCalledWith('browser-tab-created')
+  })
+
+  it('does not create a local fallback tab when runtime browser creation fails', async () => {
+    const store = createTestStore()
+    createWebRuntimeSessionBrowserTabMock.mockResolvedValueOnce(false)
+    store.setState({
+      activeWorktreeId: 'wt-remote',
+      settings: { activeRuntimeEnvironmentId: 'env-1' } as AppState['settings']
+    })
+
+    await store.getState().openNewBrowserTabInActiveWorkspace('group-1')
+
+    expect(createWebRuntimeSessionBrowserTabMock).toHaveBeenCalledWith({
+      worktreeId: 'wt-remote',
+      environmentId: 'env-1',
+      url: 'about:blank',
+      targetGroupId: 'group-1'
+    })
+    expect(store.getState().createUnifiedTab).not.toHaveBeenCalled()
+    expect(store.getState().browserTabsByWorktree['wt-remote']).toBeUndefined()
+    expect(store.getState().recordFeatureInteraction).not.toHaveBeenCalledWith(
+      'browser-tab-created'
+    )
   })
 
   it('does not import local browser cookies while a runtime environment is active', async () => {
