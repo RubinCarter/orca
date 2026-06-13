@@ -36,7 +36,7 @@ function getFileWatcherWorkerPath(): string {
 export function watchFileExplorerInWorker(
   rootPath: string,
   callback: (events: FsChangeEvent[]) => void
-): Promise<() => void> {
+): Promise<() => Promise<void>> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(getFileWatcherWorkerPath(), {
       workerData: { rootPath, ignore: RUNTIME_FILE_WATCH_IGNORE }
@@ -45,7 +45,10 @@ export function watchFileExplorerInWorker(
     let ready = false
     let disposed = false
 
-    const dispose = (): void => {
+    // Why: returns a promise that resolves once the worker is actually down, so
+    // the shutdown drain (awaitRuntimeFileWatcherUnsubscribes) doesn't finish
+    // while the native watcher thread is still alive.
+    const dispose = async (): Promise<void> => {
       if (disposed) {
         return
       }
@@ -57,7 +60,10 @@ export function watchFileExplorerInWorker(
       } catch {
         // Worker already gone — terminate below covers it.
       }
-      void worker.terminate()
+      await worker.terminate().then(
+        () => undefined,
+        () => undefined
+      )
     }
 
     worker.on('message', (message: FileWatcherWorkerMessage) => {

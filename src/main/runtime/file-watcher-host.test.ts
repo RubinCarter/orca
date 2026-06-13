@@ -134,12 +134,12 @@ describe('watchFileExplorerInWorker', () => {
     worker.emit('message', { type: 'ready' })
     const dispose = await promise
 
-    dispose()
+    await dispose()
     expect(worker.postedMessages).toContainEqual({ type: 'unsubscribe' })
     expect(worker.terminated).toBe(true)
 
     // Idempotent: a second dispose does nothing further.
-    dispose()
+    await dispose()
     expect(
       worker.postedMessages.filter((m) => (m as { type?: string }).type === 'unsubscribe')
     ).toHaveLength(1)
@@ -151,7 +151,7 @@ describe('watchFileExplorerInWorker', () => {
     const worker = lastWorker()
     worker.emit('message', { type: 'ready' })
     const dispose = await promise
-    dispose()
+    await dispose()
     onEvents.mockClear()
 
     worker.emit('message', {

@@ -298,7 +298,7 @@ export class RuntimeFileCommands {
     // recursive crawl can't starve the main/`serve` process (issue #5308).
     const dispose = await watchFileExplorerInWorker(rootPath, callback)
     return () => {
-      trackRuntimeFileWatcherUnsubscribe(rootPath, async () => dispose())
+      trackRuntimeFileWatcherUnsubscribe(rootPath, dispose)
     }
   }
 

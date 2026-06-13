@@ -36,6 +36,20 @@ if (!parentPort) {
 
 const port = parentPort
 
+/** Report a watcher failure to the host and ask the renderer to refresh from
+ *  scratch (the overflow event), so a mid-stream error never leaves the
+ *  explorer silently stale. */
+function reportWatchError(err: unknown): void {
+  port.postMessage({
+    type: 'error',
+    message: err instanceof Error ? err.message : String(err)
+  } satisfies FileWatcherWorkerMessage)
+  port.postMessage({
+    type: 'events',
+    events: [{ kind: 'overflow', absolutePath: data.rootPath }]
+  } satisfies FileWatcherWorkerMessage)
+}
+
 /** Run an async mapper over items with a bounded number in flight at once, so a
  *  large batch can't occupy every libuv threadpool thread in this worker. */
 async function mapWithConcurrency<T, R>(
@@ -71,15 +85,7 @@ async function main(): Promise<void> {
     data.rootPath,
     (err, events) => {
       if (err) {
-        // Surface the error and ask the renderer to refresh from scratch.
-        port.postMessage({
-          type: 'error',
-          message: err.message
-        } satisfies FileWatcherWorkerMessage)
-        port.postMessage({
-          type: 'events',
-          events: [{ kind: 'overflow', absolutePath: data.rootPath }]
-        } satisfies FileWatcherWorkerMessage)
+        reportWatchError(err)
         return
       }
       // Why: large watcher batches usually mean a generated directory or branch
@@ -103,9 +109,13 @@ async function main(): Promise<void> {
           }
           return { kind: event.type, absolutePath: event.path, isDirectory }
         }
-      ).then((mapped) => {
-        port.postMessage({ type: 'events', events: mapped } satisfies FileWatcherWorkerMessage)
-      })
+      )
+        .then((mapped) => {
+          port.postMessage({ type: 'events', events: mapped } satisfies FileWatcherWorkerMessage)
+        })
+        // Why: without this, a throwing postMessage / stat becomes an unhandled
+        // rejection that crashes the worker silently. Surface it instead.
+        .catch((err: unknown) => reportWatchError(err))
     },
     { ignore: data.ignore }
   )
