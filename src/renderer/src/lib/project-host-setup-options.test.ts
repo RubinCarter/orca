@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import type { ExecutionHostRegistryEntry } from '../../../shared/execution-host-registry'
+import {
+  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+  WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+} from '../../../shared/protocol-version'
 import type { ProjectHostSetup, Repo } from '../../../shared/types'
 import { buildProjectHostSetupOptions } from './project-host-setup-options'
+
+const FULL_HOST_MODEL_RUNTIME_CAPABILITIES = [
+  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+  WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+]
 
 function repo(id: string): Repo {
   return {
@@ -108,7 +117,10 @@ describe('buildProjectHostSetupOptions', () => {
       eligibleRepos: [repo('local-repo')],
       hosts: [
         host('local'),
-        host('runtime:gpu', { label: 'GPU VM', capabilities: ['project-host-setup.v1'] })
+        host('runtime:gpu', {
+          label: 'GPU VM',
+          capabilities: FULL_HOST_MODEL_RUNTIME_CAPABILITIES
+        })
       ],
       projectHostSetups: [
         setup('local', 'project-1', 'local', 'local-repo'),
@@ -142,7 +154,12 @@ describe('buildProjectHostSetupOptions', () => {
     expect(
       buildProjectHostSetupOptions({
         ...base,
-        hosts: [host('runtime:gpu', { label: 'GPU VM', capabilities: ['project-host-setup.v1'] })],
+        hosts: [
+          host('runtime:gpu', {
+            label: 'GPU VM',
+            capabilities: FULL_HOST_MODEL_RUNTIME_CAPABILITIES
+          })
+        ],
         projectHostSetups: [
           ...base.projectHostSetups,
           setup('gpu-pending', 'project-1', 'runtime:gpu', '', {
@@ -157,7 +174,12 @@ describe('buildProjectHostSetupOptions', () => {
     expect(
       buildProjectHostSetupOptions({
         ...base,
-        hosts: [host('runtime:gpu', { label: 'GPU VM', capabilities: ['project-host-setup.v1'] })],
+        hosts: [
+          host('runtime:gpu', {
+            label: 'GPU VM',
+            capabilities: FULL_HOST_MODEL_RUNTIME_CAPABILITIES
+          })
+        ],
         projectHostSetups: [
           ...base.projectHostSetups,
           setup('gpu-pending', 'project-1', 'runtime:gpu', '', {
@@ -172,7 +194,12 @@ describe('buildProjectHostSetupOptions', () => {
     expect(
       buildProjectHostSetupOptions({
         ...base,
-        hosts: [host('runtime:gpu', { label: 'GPU VM', capabilities: ['project-host-setup.v1'] })],
+        hosts: [
+          host('runtime:gpu', {
+            label: 'GPU VM',
+            capabilities: FULL_HOST_MODEL_RUNTIME_CAPABILITIES
+          })
+        ],
         projectHostSetups: [
           ...base.projectHostSetups,
           setup('gpu-pending', 'project-1', 'runtime:gpu', '', {
@@ -194,7 +221,7 @@ describe('buildProjectHostSetupOptions', () => {
         host('runtime:gpu', {
           label: 'GPU VM',
           health: 'blocked',
-          capabilities: ['project-host-setup.v1']
+          capabilities: FULL_HOST_MODEL_RUNTIME_CAPABILITIES
         })
       ],
       projectHostSetups: [setup('local', 'project-1', 'local', 'local-repo')]
@@ -217,6 +244,28 @@ describe('buildProjectHostSetupOptions', () => {
       projectId: 'project-1',
       eligibleRepos: [repo('local-repo')],
       hosts: [host('local'), host('runtime:gpu', { label: 'GPU VM', capabilities: [] })],
+      projectHostSetups: [setup('local', 'project-1', 'local', 'local-repo')]
+    })
+
+    expect(options.at(-1)).toMatchObject({
+      id: 'needs-setup:runtime:gpu',
+      kind: 'needs-setup',
+      detail: 'Update Orca on this host to set up projects',
+      isAvailable: false
+    })
+  })
+
+  it('marks runtime hosts without workspace run-context capability as unavailable', () => {
+    const options = buildProjectHostSetupOptions({
+      projectId: 'project-1',
+      eligibleRepos: [repo('local-repo')],
+      hosts: [
+        host('local'),
+        host('runtime:gpu', {
+          label: 'GPU VM',
+          capabilities: [PROJECT_HOST_SETUP_RUNTIME_CAPABILITY]
+        })
+      ],
       projectHostSetups: [setup('local', 'project-1', 'local', 'local-repo')]
     })
 

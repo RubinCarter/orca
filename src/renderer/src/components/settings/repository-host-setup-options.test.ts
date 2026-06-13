@@ -1,11 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ExecutionHostRegistryEntry } from '../../../../shared/execution-host-registry'
-import { PROJECT_HOST_SETUP_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
+import {
+  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+  WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+} from '../../../../shared/protocol-version'
 import { buildSetupHostOptions } from './repository-host-setup-options'
 
 vi.mock('@/i18n/i18n', () => ({
   translate: (_key: string, fallback: string) => fallback
 }))
+
+const FULL_HOST_MODEL_RUNTIME_CAPABILITIES = [
+  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+  WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+]
 
 function runtimeHost(
   overrides: Partial<ExecutionHostRegistryEntry> = {}
@@ -33,7 +41,23 @@ describe('buildSetupHostOptions', () => {
     })
   })
 
-  it('enables runtime hosts that advertise project-host setup support', () => {
+  it('enables runtime hosts that advertise project setup and workspace run support', () => {
+    expect(
+      buildSetupHostOptions({
+        projectHostSetups: [],
+        hostOptions: [
+          runtimeHost({
+            capabilities: FULL_HOST_MODEL_RUNTIME_CAPABILITIES
+          })
+        ]
+      })[0]
+    ).toMatchObject({
+      isAvailable: true,
+      detail: 'Orca server'
+    })
+  })
+
+  it('disables runtime hosts that cannot run workspaces with explicit host context', () => {
     expect(
       buildSetupHostOptions({
         projectHostSetups: [],
@@ -44,8 +68,8 @@ describe('buildSetupHostOptions', () => {
         ]
       })[0]
     ).toMatchObject({
-      isAvailable: true,
-      detail: 'Orca server'
+      isAvailable: false,
+      detail: 'Update Orca on this host to set up projects'
     })
   })
 })

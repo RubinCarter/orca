@@ -4,7 +4,10 @@ import {
   type ExecutionHostId
 } from '../../../shared/execution-host'
 import type { ExecutionHostRegistryEntry } from '../../../shared/execution-host-registry'
-import { PROJECT_HOST_SETUP_RUNTIME_CAPABILITY } from '../../../shared/protocol-version'
+import {
+  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+  WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+} from '../../../shared/protocol-version'
 import type { ProjectHostSetup, Repo } from '../../../shared/types'
 
 export type ProjectHostSetupOption =
@@ -160,7 +163,10 @@ function getHostSetupAvailability(host: ExecutionHostRegistryEntry): {
         detail: 'Checking host capabilities'
       }
     }
-    if (!host.capabilities.includes(PROJECT_HOST_SETUP_RUNTIME_CAPABILITY)) {
+    if (
+      !host.capabilities.includes(PROJECT_HOST_SETUP_RUNTIME_CAPABILITY) ||
+      !host.capabilities.includes(WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY)
+    ) {
       return {
         isAvailable: false,
         detail: 'Update Orca on this host to set up projects'

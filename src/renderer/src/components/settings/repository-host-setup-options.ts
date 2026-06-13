@@ -1,6 +1,9 @@
 import { getExecutionHostLabel, type ExecutionHostId } from '../../../../shared/execution-host'
 import type { ExecutionHostRegistryEntry } from '../../../../shared/execution-host-registry'
-import { PROJECT_HOST_SETUP_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
+import {
+  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+  WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+} from '../../../../shared/protocol-version'
 import type { ProjectHostSetup, ProjectHostSetupState } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 
@@ -80,7 +83,10 @@ function getHostSetupAvailability(host: ExecutionHostRegistryEntry): {
         )
       }
     }
-    if (!capabilities.includes(PROJECT_HOST_SETUP_RUNTIME_CAPABILITY)) {
+    if (
+      !capabilities.includes(PROJECT_HOST_SETUP_RUNTIME_CAPABILITY) ||
+      !capabilities.includes(WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY)
+    ) {
       return {
         isAvailable: false,
         detail: translate(
