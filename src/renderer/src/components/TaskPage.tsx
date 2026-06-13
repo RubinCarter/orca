@@ -43,7 +43,10 @@ import { useAllWorktrees, useRepoMap } from '@/store/selectors'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import { getLocalPreflightContext, localPreflightContextKey } from '@/lib/local-preflight-context'
 import { getProviderRuntimeContextKey } from '@/lib/provider-runtime-context'
-import { getSettingsFocusedExecutionHostId } from '../../../shared/execution-host'
+import {
+  getSettingsFocusedExecutionHostId,
+  parseExecutionHostId
+} from '../../../shared/execution-host'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
@@ -180,7 +183,10 @@ import { shouldHideTaskPageListChrome } from '@/components/task-page-list-chrome
 import { findTaskPageJiraIssue } from '@/components/task-page-jira-cache-selectors'
 import { getRepoBackedTaskEmptyState } from '@/components/task-page-empty-state'
 import { getDefaultTaskRepoSelection } from '@/components/task-page-default-repo-selection'
-import { getRepoBackedProviderAvailability } from '@/components/task-source-provider-availability'
+import {
+  getRepoBackedProviderAvailability,
+  type RuntimeProviderPreflightStatus
+} from '@/components/task-source-provider-availability'
 import {
   createTaskPageGitHubStatusStateDraft,
   resolveTaskPageGitHubStatusStateDraft,
@@ -216,6 +222,7 @@ import type {
   TaskProvider,
   TaskViewPresetId
 } from '../../../shared/types'
+import type { PreflightStatus } from '../../../preload/api-types'
 import type { GitLabProjectRef } from '../../../shared/gitlab-types'
 import {
   LINEAR_ISSUE_LIST_MAX,
@@ -2915,6 +2922,17 @@ export default function TaskPage(): React.JSX.Element {
   const [taskSource, setTaskSource] = useState<TaskProvider>(
     resolveVisibleTaskProvider(preferredTaskSource, visibleTaskProviders)
   )
+  const runtimePreflightMountedRef = useRef(true)
+  const runtimePreflightRequestedHostIdsRef = useRef<Set<TaskSourceContext['hostId']>>(new Set())
+  const [runtimePreflightStatusByHostId, setRuntimePreflightStatusByHostId] = useState<
+    ReadonlyMap<TaskSourceContext['hostId'], RuntimeProviderPreflightStatus>
+  >(() => new Map())
+  useEffect(
+    () => () => {
+      runtimePreflightMountedRef.current = false
+    },
+    []
+  )
   const taskSourceRepoContexts = useMemo(
     () =>
       taskSource === 'github' || taskSource === 'gitlab'
@@ -2938,6 +2956,78 @@ export default function TaskPage(): React.JSX.Element {
       ),
     [repos, settings, sshConnectionStates, sshTargetLabels, runtimeStatusByEnvironmentId]
   )
+  const runtimeTaskSourceHostIds = useMemo(() => {
+    if (taskSource !== 'github' && taskSource !== 'gitlab') {
+      return []
+    }
+    const hostIds = new Set<TaskSourceContext['hostId']>()
+    for (const context of taskSourceRepoContexts) {
+      const parsed = parseExecutionHostId(context.hostId)
+      if (parsed?.kind !== 'runtime') {
+        continue
+      }
+      const host = hostRegistryById.get(context.hostId)
+      if (
+        host?.kind !== 'runtime' ||
+        host.health !== 'available' ||
+        !host.capabilities?.includes(TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY)
+      ) {
+        continue
+      }
+      hostIds.add(parsed.id)
+    }
+    return [...hostIds].sort()
+  }, [hostRegistryById, taskSource, taskSourceRepoContexts])
+  useEffect(() => {
+    const unrequestedHostIds = runtimeTaskSourceHostIds.filter(
+      (hostId) => !runtimePreflightRequestedHostIdsRef.current.has(hostId)
+    )
+    if (unrequestedHostIds.length === 0) {
+      return
+    }
+    setRuntimePreflightStatusByHostId((current) => {
+      const next = new Map(current)
+      for (const hostId of unrequestedHostIds) {
+        next.set(hostId, { checked: false, status: null })
+      }
+      return next
+    })
+    for (const hostId of unrequestedHostIds) {
+      runtimePreflightRequestedHostIdsRef.current.add(hostId)
+      const parsed = parseExecutionHostId(hostId)
+      if (parsed?.kind !== 'runtime') {
+        continue
+      }
+      // Why: task sources can span multiple runtime hosts; each runtime owns
+      // its own gh/glab installation and auth state.
+      void callRuntimeRpc<PreflightStatus>(
+        { kind: 'environment', environmentId: parsed.environmentId },
+        'preflight.check',
+        undefined,
+        { timeoutMs: 15_000 }
+      )
+        .then((status) => {
+          if (!runtimePreflightMountedRef.current) {
+            return
+          }
+          setRuntimePreflightStatusByHostId((current) => {
+            const next = new Map(current)
+            next.set(hostId, { checked: true, status })
+            return next
+          })
+        })
+        .catch(() => {
+          if (!runtimePreflightMountedRef.current) {
+            return
+          }
+          setRuntimePreflightStatusByHostId((current) => {
+            const next = new Map(current)
+            next.set(hostId, { checked: true, status: null })
+            return next
+          })
+        })
+    }
+  }, [runtimeTaskSourceHostIds])
   const getTaskPickerRepoHostLabel = useCallback(
     (repo: Repo): string | null => {
       const provider = taskSource === 'gitlab' ? 'gitlab' : 'github'
@@ -2961,7 +3051,8 @@ export default function TaskPage(): React.JSX.Element {
         provider: taskSource,
         contexts: taskSourceRepoContexts,
         preflightStatus,
-        preflightReady: preflightStatusCurrent && preflightStatusChecked
+        preflightReady: preflightStatusCurrent && preflightStatusChecked,
+        runtimePreflightStatusByHostId
       })
     ]
   }, [
@@ -2969,6 +3060,7 @@ export default function TaskPage(): React.JSX.Element {
     preflightStatus,
     preflightStatusChecked,
     preflightStatusCurrent,
+    runtimePreflightStatusByHostId,
     taskSource,
     taskSourceRepoContexts
   ])
@@ -3053,7 +3145,8 @@ export default function TaskPage(): React.JSX.Element {
         provider,
         contexts,
         preflightStatus,
-        preflightReady: preflightStatusCurrent && preflightStatusChecked
+        preflightReady: preflightStatusCurrent && preflightStatusChecked,
+        runtimePreflightStatusByHostId
       })
     ]
     const accountHost = hostRegistryById.get(accountBackedTaskSourceHostId)
@@ -3106,6 +3199,7 @@ export default function TaskPage(): React.JSX.Element {
     preflightStatus,
     preflightStatusChecked,
     preflightStatusCurrent,
+    runtimePreflightStatusByHostId,
     selectedRepos,
     sourceOptions
   ])

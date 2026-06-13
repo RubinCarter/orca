@@ -9,6 +9,11 @@ type ProviderToolStatus = {
   authenticated: boolean
 }
 
+export type RuntimeProviderPreflightStatus = {
+  checked: boolean
+  status: PreflightStatus | null
+}
+
 function isDesktopOwnedHost(hostId: TaskSourceContext['hostId']): boolean {
   const parsed = parseExecutionHostId(hostId)
   return parsed?.kind !== 'runtime'
@@ -44,19 +49,20 @@ export function getRepoBackedProviderAvailability(args: {
   contexts: readonly TaskSourceContext[]
   preflightStatus: PreflightStatus | null
   preflightReady: boolean
+  runtimePreflightStatusByHostId?: ReadonlyMap<
+    TaskSourceContext['hostId'],
+    RuntimeProviderPreflightStatus
+  >
 }): TaskSourceHostAvailability[] {
-  if (!args.preflightReady) {
-    return []
-  }
-  const status = getRepoBackedProviderToolStatus(args.provider, args.preflightStatus)
-  if (!status) {
-    return []
-  }
-  const reason = getProviderReason(status)
-  if (!reason) {
-    return []
-  }
-  return args.contexts
-    .filter((context) => isDesktopOwnedHost(context.hostId))
-    .map((context) => ({ hostId: context.hostId, reason }))
+  return args.contexts.flatMap((context) => {
+    const hostPreflight = isDesktopOwnedHost(context.hostId)
+      ? { checked: args.preflightReady, status: args.preflightStatus }
+      : args.runtimePreflightStatusByHostId?.get(context.hostId)
+    if (!hostPreflight?.checked) {
+      return []
+    }
+    const status = getRepoBackedProviderToolStatus(args.provider, hostPreflight.status)
+    const reason = status ? getProviderReason(status) : null
+    return reason ? [{ hostId: context.hostId, reason }] : []
+  })
 }

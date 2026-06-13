@@ -40,6 +40,19 @@ describe('TaskPage source switching host boundary', () => {
     expect(section).toContain("reason: 'missing-task-source-capability'")
   })
 
+  it('checks runtime-owned provider auth on the owning runtime', () => {
+    const section = sourceBetween(
+      TASK_PAGE_SOURCE,
+      'const runtimeTaskSourceHostIds = useMemo(() => {',
+      'const getTaskPickerRepoHostLabel = useCallback('
+    )
+
+    expect(section).toContain('TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY')
+    expect(section).toContain("'preflight.check'")
+    expect(section).toContain("{ kind: 'environment', environmentId: parsed.environmentId }")
+    expect(TASK_PAGE_SOURCE).toContain('runtimePreflightStatusByHostId')
+  })
+
   it('preserves exact GitLab project identity when opening or starting from an item', () => {
     const sourceContextBuilder = sourceBetween(
       TASK_PAGE_SOURCE,

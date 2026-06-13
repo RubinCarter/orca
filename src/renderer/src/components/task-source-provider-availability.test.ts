@@ -65,6 +65,49 @@ describe('task source provider availability', () => {
     ).toEqual([])
   })
 
+  it('marks runtime-owned GitHub sources unavailable from their own preflight', () => {
+    expect(
+      getRepoBackedProviderAvailability({
+        provider: 'github',
+        contexts: [source('runtime:server')],
+        preflightReady: true,
+        preflightStatus: readyPreflight,
+        runtimePreflightStatusByHostId: new Map([
+          [
+            'runtime:server',
+            {
+              checked: true,
+              status: {
+                ...readyPreflight,
+                gh: { installed: true, authenticated: false }
+              }
+            }
+          ]
+        ])
+      })
+    ).toEqual([{ hostId: 'runtime:server', reason: 'missing-provider-auth' }])
+  })
+
+  it('waits for runtime preflight before reporting runtime provider availability', () => {
+    expect(
+      getRepoBackedProviderAvailability({
+        provider: 'github',
+        contexts: [source('runtime:server')],
+        preflightReady: true,
+        preflightStatus: readyPreflight,
+        runtimePreflightStatusByHostId: new Map([
+          [
+            'runtime:server',
+            {
+              checked: false,
+              status: null
+            }
+          ]
+        ])
+      })
+    ).toEqual([])
+  })
+
   it('waits for preflight before reporting provider availability', () => {
     expect(
       getRepoBackedProviderAvailability({
