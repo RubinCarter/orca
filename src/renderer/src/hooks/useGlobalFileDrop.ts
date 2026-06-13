@@ -36,6 +36,20 @@ export function shouldUploadRemoteEditorFileDrop(
   return Boolean(settings?.activeRuntimeEnvironmentId?.trim() || connectionId?.trim())
 }
 
+export function getEditorFileDropOperationContext(
+  store: WorktreeRuntimeOwnerState,
+  worktreeId: string,
+  worktreePath: string | null | undefined,
+  connectionId: string | undefined
+): RuntimeFileOperationArgs {
+  return {
+    settings: getEditorFileDropSettingsForWorktree(store, worktreeId),
+    worktreeId,
+    worktreePath,
+    connectionId
+  }
+}
+
 export function useGlobalFileDrop(): void {
   useEffect(() => {
     return window.api.ui.onFileDrop((data) => {
@@ -52,8 +66,14 @@ export function useGlobalFileDrop(): void {
       const activeWorktree = store.getKnownWorktreeById(activeWorktreeId)
       const worktreePath = activeWorktree?.path
       const connectionId = getConnectionId(activeWorktreeId) ?? undefined
-      const dropSettings = getEditorFileDropSettingsForWorktree(store, activeWorktreeId)
-      const runtimeEnvironmentId = dropSettings.activeRuntimeEnvironmentId
+      const fileContext = getEditorFileDropOperationContext(
+        store,
+        activeWorktreeId,
+        worktreePath,
+        connectionId
+      )
+      const dropSettings = fileContext.settings
+      const runtimeEnvironmentId = dropSettings?.activeRuntimeEnvironmentId ?? null
       if (shouldUploadRemoteEditorFileDrop(dropSettings, connectionId)) {
         if (!worktreePath) {
           toast.error(
@@ -70,12 +90,7 @@ export function useGlobalFileDrop(): void {
             // SSH editors must upload into the server worktree before opening.
             const destinationDir = joinPath(worktreePath, '.orca/drops')
             const { results } = await importExternalPathsToRuntime(
-              {
-                settings: dropSettings,
-                worktreeId: activeWorktreeId,
-                worktreePath,
-                connectionId
-              },
+              fileContext,
               data.paths,
               destinationDir,
               { ensureDestinationDir: true }
@@ -125,12 +140,6 @@ export function useGlobalFileDrop(): void {
       for (const filePath of data.paths) {
         void (async () => {
           try {
-            const fileContext: RuntimeFileOperationArgs = {
-              settings: store.settings,
-              worktreeId: activeWorktreeId,
-              worktreePath,
-              connectionId
-            }
             const isRemoteRuntimePath = isRemoteRuntimeFileOperation(fileContext, filePath)
             // Why: remote paths don't need local auth — the relay/runtime is the security boundary.
             if (!connectionId && !isRemoteRuntimePath) {

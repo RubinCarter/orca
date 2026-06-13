@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getEditorFileDropOperationContext,
   getEditorFileDropSettingsForWorktree,
   shouldUploadRemoteEditorFileDrop
 } from './useGlobalFileDrop'
@@ -45,5 +46,45 @@ describe('shouldUploadRemoteEditorFileDrop', () => {
         'wt-1'
       )
     ).toEqual({ activeRuntimeEnvironmentId: null })
+  })
+
+  it('builds file operation context from the worktree owner instead of global focus', () => {
+    expect(
+      getEditorFileDropOperationContext(
+        {
+          settings: { activeRuntimeEnvironmentId: 'focused-runtime' },
+          repos: [{ id: 'repo-1', connectionId: null, executionHostId: 'local' }],
+          worktreesByRepo: { 'repo-1': [{ id: 'wt-1', repoId: 'repo-1' }] }
+        },
+        'wt-1',
+        '/repos/repo-1',
+        undefined
+      )
+    ).toEqual({
+      settings: { activeRuntimeEnvironmentId: null },
+      worktreeId: 'wt-1',
+      worktreePath: '/repos/repo-1',
+      connectionId: undefined
+    })
+  })
+
+  it('preserves SSH ownership in editor drop operation context', () => {
+    expect(
+      getEditorFileDropOperationContext(
+        {
+          settings: { activeRuntimeEnvironmentId: 'focused-runtime' },
+          repos: [{ id: 'repo-1', connectionId: 'ssh-1', executionHostId: 'ssh:ssh-1' }],
+          worktreesByRepo: { 'repo-1': [{ id: 'wt-1', repoId: 'repo-1' }] }
+        },
+        'wt-1',
+        '/home/orca/repo-1',
+        'ssh-1'
+      )
+    ).toEqual({
+      settings: { activeRuntimeEnvironmentId: null },
+      worktreeId: 'wt-1',
+      worktreePath: '/home/orca/repo-1',
+      connectionId: 'ssh-1'
+    })
   })
 })
