@@ -797,6 +797,62 @@ describe('createLinearSlice caching', () => {
     ).toBeNull()
   })
 
+  it('scopes cached Linear teams, projects, and views to the explicit source context', async () => {
+    const store = createTestStore()
+    store.setState({
+      linearStatus: { connected: true, viewer: null, selectedWorkspaceId: 'workspace-1' }
+    })
+    const localSource = linearSourceContext('local-runtime')
+    const remoteSource = linearSourceContext('remote-runtime')
+    const localScope = getTaskSourceCacheScope(localSource)
+    const remoteScope = getTaskSourceCacheScope(remoteSource)
+    const fetchedAt = Date.now()
+
+    store.setState({
+      linearTeamCache: {
+        [`${localScope}::workspace-1::teams`]: { data: [team('local-team')], fetchedAt },
+        [`${remoteScope}::workspace-1::teams`]: { data: [team('remote-team')], fetchedAt }
+      },
+      linearProjectCache: {
+        [`${localScope}::workspace-1::projects::::20`]: {
+          data: { items: [project('local-project')] },
+          fetchedAt
+        },
+        [`${remoteScope}::workspace-1::projects::::20`]: {
+          data: { items: [project('remote-project')] },
+          fetchedAt
+        }
+      },
+      linearCustomViewCache: {
+        [`${localScope}::workspace-1::custom-views::issue::20`]: {
+          data: { items: [{ id: 'local-view', name: 'Local view', model: 'issue' }] },
+          fetchedAt
+        },
+        [`${remoteScope}::workspace-1::custom-views::issue::20`]: {
+          data: { items: [{ id: 'remote-view', name: 'Remote view', model: 'issue' }] },
+          fetchedAt
+        }
+      }
+    })
+
+    expect(
+      store.getState().getCachedLinearTeams('workspace-1', { sourceContext: remoteSource })
+    ).toMatchObject([{ id: 'remote-team' }])
+    expect(
+      store
+        .getState()
+        .getCachedLinearProjects(undefined, 20, 'workspace-1', { sourceContext: remoteSource })
+    ).toMatchObject({ items: [{ id: 'remote-project' }] })
+    expect(
+      store
+        .getState()
+        .getCachedLinearCustomViews('issue', 20, 'workspace-1', { sourceContext: remoteSource })
+    ).toMatchObject({ items: [{ id: 'remote-view' }] })
+    expect(store.getState().getCachedLinearTeams('workspace-1')).toBeNull()
+    expect(store.getState().getCachedLinearProjects(undefined, 20, 'workspace-1')).toBeNull()
+    expect(store.getState().getCachedLinearCustomViews('issue', 20, 'workspace-1')).toBeNull()
+  })
+
   it('patches issue-cache entries keyed by workspace-qualified ids', () => {
     const store = createTestStore()
     store.setState({

@@ -4186,7 +4186,9 @@ export default function TaskPage(): React.JSX.Element {
       return
     }
     let cancelled = false
-    const cachedTeams = getCachedLinearTeams(selectedLinearWorkspaceId)
+    const cachedTeams = getCachedLinearTeams(selectedLinearWorkspaceId, {
+      sourceContext: linearTaskSourceContext
+    })
     // Why: workspace switches must not leave the prior workspace's teams
     // available for new-issue creation while the replacement fetch is pending,
     // but a workspace-scoped cache can keep the selector usable immediately.
@@ -6800,7 +6802,9 @@ export default function TaskPage(): React.JSX.Element {
     }
     let cancelled = false
     const query = appliedLinearProjectSearch.trim()
-    const cached = getCachedLinearProjects(query || undefined, LINEAR_ITEM_LIMIT)
+    const cached = getCachedLinearProjects(query || undefined, LINEAR_ITEM_LIMIT, undefined, {
+      sourceContext: linearTaskSourceContext
+    })
     if (cached) {
       setLinearProjectsResult(cached)
     }
@@ -6935,7 +6939,9 @@ export default function TaskPage(): React.JSX.Element {
     }
     let cancelled = false
     const cachedResults = LINEAR_CUSTOM_VIEW_MODELS.map((model) =>
-      getCachedLinearCustomViews(model, LINEAR_ITEM_LIMIT)
+      getCachedLinearCustomViews(model, LINEAR_ITEM_LIMIT, undefined, {
+        sourceContext: linearTaskSourceContext
+      })
     )
     const allCached = cachedResults.every(
       (result): result is LinearCollectionResult<LinearCustomViewSummary> => result !== null

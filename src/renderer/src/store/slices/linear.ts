@@ -479,7 +479,10 @@ export type LinearSlice = {
     limit?: number,
     options?: LinearFetchOptions
   ) => Promise<LinearCollectionResult<LinearIssue>>
-  getCachedLinearTeams: (workspaceId?: LinearWorkspaceSelection | null) => LinearTeam[] | null
+  getCachedLinearTeams: (
+    workspaceId?: LinearWorkspaceSelection | null,
+    options?: Pick<LinearFetchOptions, 'sourceContext'>
+  ) => LinearTeam[] | null
   listLinearTeams: (
     workspaceId?: LinearWorkspaceSelection | null,
     options?: LinearFetchOptions
@@ -487,7 +490,8 @@ export type LinearSlice = {
   getCachedLinearProjects: (
     query?: string,
     limit?: number,
-    workspaceId?: LinearWorkspaceSelection | null
+    workspaceId?: LinearWorkspaceSelection | null,
+    options?: Pick<LinearFetchOptions, 'sourceContext'>
   ) => LinearCollectionResult<LinearProjectSummary> | null
   listLinearProjects: (
     query?: string,
@@ -509,7 +513,8 @@ export type LinearSlice = {
   getCachedLinearCustomViews: (
     model: LinearCustomViewModel,
     limit?: number,
-    workspaceId?: LinearWorkspaceSelection | null
+    workspaceId?: LinearWorkspaceSelection | null,
+    options?: Pick<LinearFetchOptions, 'sourceContext'>
   ) => LinearCollectionResult<LinearCustomViewSummary> | null
   listLinearCustomViews: (
     model: LinearCustomViewModel,
@@ -1234,9 +1239,10 @@ export const createLinearSlice: StateCreator<AppState, [], [], LinearSlice> = (s
     return promise
   },
 
-  getCachedLinearTeams: (workspaceId) => {
+  getCachedLinearTeams: (workspaceId, options) => {
+    const scope = getLinearReadScope(get().settings, options?.sourceContext)
     const key = linearTeamsCacheKey(workspaceId ?? getSelectedWorkspaceId(get().linearStatus))
-    return get().linearTeamCache[key]?.data ?? null
+    return get().linearTeamCache[scopedLinearCacheKey(scope, key)]?.data ?? null
   },
 
   listLinearTeams: async (workspaceId, options) => {
@@ -1332,10 +1338,11 @@ export const createLinearSlice: StateCreator<AppState, [], [], LinearSlice> = (s
     return promise
   },
 
-  getCachedLinearProjects: (query, limit = 20, workspaceId) => {
+  getCachedLinearProjects: (query, limit = 20, workspaceId, options) => {
+    const scope = getLinearReadScope(get().settings, options?.sourceContext)
     const resolvedWorkspaceId = workspaceId ?? getSelectedWorkspaceId(get().linearStatus)
     const cacheKey = linearCollectionCacheKey(resolvedWorkspaceId, 'projects', query?.trim(), limit)
-    return get().linearProjectCache[cacheKey]?.data ?? null
+    return get().linearProjectCache[scopedLinearCacheKey(scope, cacheKey)]?.data ?? null
   },
 
   listLinearProjects: async (query, limit = 20, workspaceId, options) => {
@@ -1644,10 +1651,11 @@ export const createLinearSlice: StateCreator<AppState, [], [], LinearSlice> = (s
     return promise
   },
 
-  getCachedLinearCustomViews: (model, limit = 20, workspaceId) => {
+  getCachedLinearCustomViews: (model, limit = 20, workspaceId, options) => {
+    const scope = getLinearReadScope(get().settings, options?.sourceContext)
     const resolvedWorkspaceId = workspaceId ?? getSelectedWorkspaceId(get().linearStatus)
     const cacheKey = linearCollectionCacheKey(resolvedWorkspaceId, 'custom-views', model, limit)
-    return get().linearCustomViewCache[cacheKey]?.data ?? null
+    return get().linearCustomViewCache[scopedLinearCacheKey(scope, cacheKey)]?.data ?? null
   },
 
   listLinearCustomViews: async (model, limit = 20, workspaceId, options) => {
