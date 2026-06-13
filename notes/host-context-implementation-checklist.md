@@ -78,7 +78,7 @@ Done means: starting work from an external item carries the item’s source iden
 - [x] Update session reuse logic so an automation never resumes on the wrong host.
 - [~] Add disabled states for disconnected run host, missing project host setup, missing source auth, unavailable source tool, and unsupported provider.
 - [x] Add migration behavior for old automations that only know a repo id/path.
-- [~] Update CLI/RPC automation APIs with v2 selectors for logical project, source context, and run host.
+- [x] Update CLI/RPC automation APIs with v2 selectors for logical project, source context, and run host.
 
 Done means: scheduled or manual automations behave predictably when a project exists on multiple hosts or providers differ by host.
 
@@ -117,7 +117,7 @@ Done means: the sidebar reflects project availability, not every configured SSH 
 
 ## 9. CLI, Remote Server, SSH, And Cloud-Ready Host APIs
 
-- [~] Add CLI selectors for logical project, project host setup, source host/context, and run host.
+- [x] Add CLI selectors for logical project, project host setup, source host/context, and run host.
 - [x] Keep SSH and remote server behavior represented as host capabilities rather than separate product concepts.
 - [x] Ensure remote server mode can still support users who want the desktop client to behave like “the server” when explicitly configured.
 - [x] Ensure SSH remains the lightweight “execute on this machine over SSH” path.
@@ -244,3 +244,4 @@ Done means: reviewers and future agents can understand the vision, implementatio
 - [x] 2026-06-12: Guarded GitHub label and assignable-user metadata lookups with the same repo/source-context selector as task mutations, so drawer edit metadata cannot bypass source-host validation; verified with GitHub IPC regressions (17 tests), focused oxlint, and full `pnpm run typecheck`.
 - [x] 2026-06-12: Continued the Host copy audit through onboarding, remote folder-add, attachment import, Settings SSH copy, and remote file browser catalog text; extracted `RepoStepNestedImportPanel` to keep the touched onboarding component under max-lines, and verified with stale-copy scans, focused onboarding/repos tests, focused oxlint, full `pnpm run typecheck`, and `git diff --check`.
 - [x] 2026-06-12: Preserved explicit automation run-host context in CLI project selectors: `orca automations create/edit --project/--host` and `--project-host-setup` now send `WorkspaceRunContext` alongside the legacy repo selector, so scheduled runs retain logical project, host, setup, repo, and path identity. Verified with focused CLI regressions (108 tests), targeted oxlint, full `pnpm run typecheck`, and `git diff --check`.
+- [x] 2026-06-12: Added an advanced automation CLI source selector via `--source-context <json|null>` for create/edit, normalizing the shared `TaskSourceContext` shape before RPC and allowing edit callers to clear the source context with `null`; verified with focused CLI regressions (111 tests), targeted oxlint, full `pnpm run typecheck`, and `git diff --check`.

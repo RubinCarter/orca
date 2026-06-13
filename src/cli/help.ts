@@ -497,6 +497,8 @@ export function formatFlagHelp(flag: string): string {
       '--workspace-status <id> Board status id (defaults: todo, in-progress, in-review, completed)',
     staged: '--staged               Open staged source-control changes',
     provider: '--provider <agent>     Agent id such as codex, claude, or gemini',
+    'source-context':
+      '--source-context <json|null> Explicit TaskSourceContext for automation task/provider data',
     trigger: '--trigger <schedule>   Automation schedule preset, cron, or RRULE',
     schedule: '--schedule <schedule>  Alias for --trigger',
     time: '--time <HH:MM>        Time used with daily/weekdays/weekly presets',
