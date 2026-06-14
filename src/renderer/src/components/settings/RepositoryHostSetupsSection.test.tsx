@@ -4,7 +4,11 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { toSshExecutionHostId } from '../../../../shared/execution-host'
-import { RUNTIME_PROTOCOL_VERSION } from '../../../../shared/protocol-version'
+import {
+  PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+  RUNTIME_PROTOCOL_VERSION,
+  WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+} from '../../../../shared/protocol-version'
 import type { Project, ProjectHostSetup, Repo } from '../../../../shared/types'
 import { useAppStore } from '../../store'
 import { RepositoryHostSetupsSection } from './RepositoryHostSetupsSection'
@@ -413,6 +417,29 @@ describe('RepositoryHostSetupsSection', () => {
         })
       ],
       settings: { activeRuntimeEnvironmentId: 'gpu' } as never,
+      runtimeStatusByEnvironmentId: new Map([
+        [
+          'gpu',
+          {
+            checkedAt: 1,
+            appVersion: '1.8.0',
+            status: {
+              runtimeId: 'runtime-gpu',
+              rendererGraphEpoch: 1,
+              graphStatus: 'ready',
+              authoritativeWindowId: 1,
+              liveTabCount: 0,
+              liveLeafCount: 0,
+              runtimeProtocolVersion: RUNTIME_PROTOCOL_VERSION,
+              minCompatibleRuntimeClientVersion: 1,
+              capabilities: [
+                PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+                WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+              ]
+            }
+          }
+        ]
+      ]),
       createProjectHostSetup
     })
 
@@ -546,7 +573,10 @@ describe('RepositoryHostSetupsSection', () => {
               liveLeafCount: 0,
               runtimeProtocolVersion: RUNTIME_PROTOCOL_VERSION,
               minCompatibleRuntimeClientVersion: 1,
-              capabilities: ['project-host-setup.v1']
+              capabilities: [
+                PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
+                WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
+              ]
             }
           }
         ]
