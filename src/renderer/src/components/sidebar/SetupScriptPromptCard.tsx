@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { track } from '@/lib/telemetry'
-import { RepoBadgeMark } from '@/components/repo/RepoBadgeLabel'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import {
   buildImportedHookSettings,
@@ -17,15 +16,7 @@ import { checkRuntimeHooks, inspectRuntimeSetupScriptImports } from '@/runtime/r
 import { isGitRepoKind } from '../../../../shared/repo-kind'
 import type { SetupScriptImportCandidate } from '../../../../shared/setup-script-imports'
 import { buildSetupScriptPromptActionTelemetry } from '../../../../shared/setup-script-telemetry'
-import {
-  ConfigureOnlyAction,
-  DetectedSetupPreview,
-  DismissButton,
-  InspectionErrorActions,
-  PackageManagerActions,
-  SaveLocalSetupAction,
-  SetupScriptPromptBody
-} from './SetupScriptPromptCardViews'
+import { SetupScriptPromptCardShell } from './SetupScriptPromptCardShell'
 import { showSavedInProjectSettingsToast } from './SetupScriptPromptToast'
 import { openSetupScriptSettings } from './open-setup-script-settings'
 import { trackSetupScriptPromptExposure } from './setup-script-prompt-exposure-telemetry'
@@ -388,57 +379,24 @@ function SetupScriptPromptCard(): React.JSX.Element | null {
   const candidateProvenance = candidate ? formatCandidateProvenance(candidate) : null
 
   return (
-    <div className="shrink-0 px-3 pb-2">
-      <div className="setup-script-prompt-card rounded-lg border border-worktree-sidebar-border p-3 text-worktree-sidebar-accent-foreground shadow-xs">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold leading-snug">
-            {translate(
-              'auto.components.sidebar.SetupScriptPromptCard.ff1e819a11',
-              'Add a setup script'
-            )}
-          </p>
-          <DismissButton onDismiss={handleDismiss} />
-        </div>
-
-        <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <RepoBadgeMark color={activeRepo.badgeColor} />
-          <span className="truncate font-medium text-foreground">{activeRepo.displayName}</span>
-        </p>
-
-        <p className="mt-1 text-xs leading-snug text-muted-foreground">
-          <SetupScriptPromptBody
-            isInspectionError={isInspectionError}
-            sharedSetupIgnored={sharedSetupIgnored}
-            isPackageManagerSuggestion={Boolean(isPackageManagerSuggestion && candidate)}
-            candidateSource={candidateSource}
-          />
-        </p>
-
-        {!isInspectionError && !sharedSetupIgnored && candidate && isPackageManagerSuggestion ? (
-          <DetectedSetupPreview
-            setup={detectedSetupDraft}
-            onSetupChange={setDetectedSetupDraft}
-            provenance={candidateProvenance}
-          />
-        ) : null}
-
-        {isInspectionError ? (
-          <InspectionErrorActions onRetry={handleRetryInspection} onConfigure={handleConfigure} />
-        ) : sharedSetupIgnored ? (
-          <ConfigureOnlyAction onConfigure={handleConfigure} />
-        ) : candidate && isPackageManagerSuggestion ? (
-          <PackageManagerActions
-            isSaving={isImporting}
-            onSave={() => void handleImport()}
-            onConfigure={handleConfigure}
-          />
-        ) : candidate ? (
-          <SaveLocalSetupAction isSaving={isImporting} onSave={() => void handleImport()} />
-        ) : renderedPromptState.status === 'ok' ? (
-          <ConfigureOnlyAction onConfigure={handleConfigure} />
-        ) : null}
-      </div>
-    </div>
+    <SetupScriptPromptCardShell
+      repoBadgeColor={activeRepo.badgeColor}
+      repoDisplayName={activeRepo.displayName}
+      isInspectionError={isInspectionError}
+      sharedSetupIgnored={sharedSetupIgnored}
+      isPackageManagerSuggestion={Boolean(isPackageManagerSuggestion && candidate)}
+      hasCandidate={Boolean(candidate)}
+      candidateSource={candidateSource}
+      candidateProvenance={candidateProvenance}
+      detectedSetupDraft={detectedSetupDraft}
+      isImporting={isImporting}
+      renderedStateOk={renderedPromptState.status === 'ok'}
+      onDismiss={handleDismiss}
+      onRetryInspection={handleRetryInspection}
+      onConfigure={handleConfigure}
+      onImport={() => void handleImport()}
+      onSetupDraftChange={setDetectedSetupDraft}
+    />
   )
 }
 
