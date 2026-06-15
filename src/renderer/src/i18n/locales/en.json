@@ -9816,7 +9816,9 @@
           "f5cf81cec2": "Loading diff...",
           "72f71f52eb": "Text diff is unavailable for this file.",
           "7ce8436458": "Text diff is unavailable for this file in branch compare.",
-          "bdbf02d5df": "binary"
+          "bdbf02d5df": "binary",
+          "b5675b0694": "Save",
+          "593f2193f6": "This draft crossed the safe display limit, but it can still be saved."
         },
         "DiffSectionHeader": {
           "8915726e93": "Copy path"
@@ -10183,6 +10185,23 @@
         },
         "useRichMarkdownReviewData": {
           "f9d2acd6b0": "All unsent notes"
+        },
+        "LargeDiffFallback": {
+          "a3c74f8a21": "line count exceeds the safe display limit",
+          "fd92fbde46": "character count exceeds the safe display limit",
+          "7d424bb761": "This diff is too large to display safely.",
+          "28aa2cc90b": "Original lines",
+          "20857938dd": "Modified lines",
+          "e5f0d2182e": "Characters",
+          "877c25a02f": "Reason",
+          "5fca073b72": "Limits",
+          "f1d136a163": "lines per side",
+          "23433fcdea": "combined characters",
+          "7944ed9fb8": "Not counted"
+        },
+        "DiffViewer": {
+          "b5675b0694": "Save",
+          "593f2193f6": "This draft crossed the safe display limit, but it can still be saved."
         }
       },
       "diff": {

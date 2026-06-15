@@ -1342,6 +1342,8 @@ export type GitHubPRFileContents = {
   modified: string
   originalIsBinary: boolean
   modifiedIsBinary: boolean
+  originalTooLarge?: boolean
+  modifiedTooLarge?: boolean
 }
 
 export type GitHubPRReviewCommentInput = {
