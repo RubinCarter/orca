@@ -426,6 +426,8 @@ export function AppearancePane({
             <LeftSidebarAppearanceSetting settings={settings} updateSettings={updateSettings} />
           </SearchableSetting>
 
+          {/* Why: this setting lives with the sidebar layout controls; Settings only
+              points people to it so we do not create a second stateful control. */}
           <SearchableSetting
             title={workspaceCardLayoutEntry.title}
             description={workspaceCardLayoutEntry.description}
