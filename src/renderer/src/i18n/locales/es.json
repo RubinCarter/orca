@@ -4637,7 +4637,16 @@
           "f63ea281e3": "Feed integrado en la barra lateral izquierda para completar agentes y estados de bloqueo.",
           "ca2219fe5e": "Muestra una pequeña mascota animada fijada en la esquina inferior derecha. Elige un personaje (Claudino, OpenCode, Gremlin) o carga tu propio PNG, APNG, GIF, WebP, JPG o SVG desde el menú de mascotas de la barra de estado. Ocultarlo en cualquier momento desde el mismo menú sin desactivar esta configuración.",
           "dd6f0a1d45": "Mascota",
-          "0e89a574ae": "Mascota animada flotante en la esquina inferior derecha."
+          "0e89a574ae": "Mascota animada flotante en la esquina inferior derecha.",
+          "agentHibernation": {
+            "copy": "Detiene los terminales de agentes en segundo plano que estén inactivos después del intervalo configurado y reanuda las sesiones compatibles cuando las vuelves a abrir. Experimental mientras ajustamos el modelo de seguridad.",
+            "description": "Detiene los terminales de agentes en segundo plano que estén inactivos después del intervalo configurado y reanuda las sesiones compatibles cuando las vuelves a abrir.",
+            "idleMinutesDescription": "Cuántos minutos inactivo debe esperar un agente en segundo plano completado antes de que Orca pueda hibernarlo.",
+            "idleMinutesLabel": "Hibernar después de",
+            "idleMinutesSuffix": "minutos",
+            "title": "Hibernación de agentes",
+            "toggleLabel": "Alternar hibernación de agentes"
+          }
         },
         "FloatingWorkspacePane": {
           "aeaf76fda9": "Barra de estado",
@@ -6678,7 +6687,17 @@
             "b54cea709b": "compañero",
             "051203d37c": "mascota",
             "6b5a56ac35": "Mascota animada flotante en la esquina inferior derecha.",
-            "87d99e634b": "Mascota"
+            "87d99e634b": "Mascota",
+            "agentHibernation": {
+              "agent": "agente",
+              "agents": "agentes",
+              "description": "Detiene los terminales de agentes en segundo plano que estén inactivos después del intervalo configurado y reanuda las sesiones compatibles cuando se vuelven a abrir.",
+              "hibernate": "hibernar",
+              "minutes": "minutos",
+              "sleep": "suspender",
+              "terminal": "terminal",
+              "title": "Hibernación de agentes"
+            }
           }
         },
         "floating": {

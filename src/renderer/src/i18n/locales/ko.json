@@ -4622,7 +4622,16 @@
           "f63ea281e3": "agent 완료 및 차단 상태에 대한 스레드 왼쪽 사이드바 피드입니다.",
           "ca2219fe5e": "오른쪽 하단에 고정된 작은 애니메이션 애완동물을 표시합니다. 캐릭터(Claudino, OpenCode, Gremlin)를 선택하거나 상태 표시줄 애완동물 메뉴에서 자신만의 PNG, APNG, GIF, WebP, JPG 또는 SVG를 업로드하세요. 이 설정을 비활성화하지 않고 동일한 메뉴에서 언제든지 숨길 수 있습니다.",
           "dd6f0a1d45": "애완 동물",
-          "0e89a574ae": "오른쪽 하단에 떠 있는 애니메이션 애완동물."
+          "0e89a574ae": "오른쪽 하단에 떠 있는 애니메이션 애완동물.",
+          "agentHibernation": {
+            "copy": "설정된 유휴 시간이 지난 백그라운드 agent 터미널을 중지하고, 다시 열 때 지원되는 세션을 재개합니다. 안전 모델을 조정하는 동안 제공되는 실험적 기능입니다.",
+            "description": "설정된 유휴 시간이 지난 백그라운드 agent 터미널을 중지하고, 다시 열 때 지원되는 세션을 재개합니다.",
+            "idleMinutesDescription": "완료된 백그라운드 agent를 Orca가 최대 절전 모드로 전환하기 전에 기다릴 유휴 시간(분)입니다.",
+            "idleMinutesLabel": "최대 절전까지",
+            "idleMinutesSuffix": "분",
+            "title": "Agent 최대 절전",
+            "toggleLabel": "Agent 최대 절전 전환"
+          }
         },
         "FloatingWorkspacePane": {
           "aeaf76fda9": "상태 표시줄",
@@ -6663,7 +6672,17 @@
             "b54cea709b": "친구",
             "051203d37c": "애완 동물",
             "6b5a56ac35": "오른쪽 하단에 떠 있는 애니메이션 애완동물.",
-            "87d99e634b": "애완 동물"
+            "87d99e634b": "애완 동물",
+            "agentHibernation": {
+              "agent": "agent",
+              "agents": "agents",
+              "description": "설정된 유휴 시간이 지난 백그라운드 agent 터미널을 중지하고, 다시 열 때 지원되는 세션을 재개합니다.",
+              "hibernate": "최대 절전",
+              "minutes": "분",
+              "sleep": "절전",
+              "terminal": "터미널",
+              "title": "Agent 최대 절전"
+            }
           }
         },
         "floating": {
