@@ -51,6 +51,10 @@ type OrcaTestFixtures = {
   // memory benchmarks). Prepended before the main entry so Electron forwards
   // them to Chromium without affecting other specs' launches.
   orcaAppExtraArgs: string[]
+  // Why: a few IPC repro specs need to launch the Electron app with a scoped
+  // PATH/token environment. Keep this fixture-owned so tests never mutate the
+  // developer's shell or already-running Orca instance.
+  launchEnv: NodeJS.ProcessEnv
 }
 
 type OrcaWorkerFixtures = {
@@ -197,7 +201,7 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
 
   // Test-scoped: one Electron app per test
   electronApp: async (
-    { dismissOnboarding, orcaAppExtraEnv, orcaAppExtraArgs },
+    { dismissOnboarding, launchEnv, orcaAppExtraEnv, orcaAppExtraArgs },
     provideFixture,
     testInfo
   ) => {
@@ -254,6 +258,7 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
       // so pass the repo-root relay path explicitly for this opt-in suite.
       env: {
         ...cleanEnv,
+        ...launchEnv,
         NODE_ENV: 'development',
         ORCA_E2E_USER_DATA_DIR: userDataDir,
         ...((process.env.ORCA_E2E_SSH_LOCALHOST === '1' ||
@@ -277,6 +282,7 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
   // Default: dismiss the onboarding overlay so it doesn't intercept clicks.
   dismissOnboarding: [true, { option: true }],
   seedTestRepo: [true, { option: true }],
+  launchEnv: [{}, { option: true }],
   orcaAppExtraEnv: [{}, { option: true }],
   orcaAppExtraArgs: [[], { option: true }],
 

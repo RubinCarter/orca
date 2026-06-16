@@ -38,16 +38,23 @@ export function ChangesModeView({
   if (!dc) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        {translate("auto.components.editor.ChangesModeView.54e0035b15", "Loading diff...")}</div>
+        {translate('auto.components.editor.ChangesModeView.54e0035b15', 'Loading diff...')}
+      </div>
     )
   }
   if (dc.kind === 'binary') {
     return (
       <div className="flex h-full items-center justify-center px-6 text-center">
         <div className="space-y-2">
-          <div className="text-sm font-medium text-foreground">{translate("auto.components.editor.ChangesModeView.7dffb0f563", "Binary file")}</div>
+          <div className="text-sm font-medium text-foreground">
+            {translate('auto.components.editor.ChangesModeView.7dffb0f563', 'Binary file')}
+          </div>
           <div className="text-xs text-muted-foreground">
-            {translate("auto.components.editor.ChangesModeView.052c184f24", "Text diff is unavailable for this file.")}</div>
+            {translate(
+              'auto.components.editor.ChangesModeView.052c184f24',
+              'Text diff is unavailable for this file.'
+            )}
+          </div>
         </div>
       </div>
     )
@@ -55,7 +62,8 @@ export function ChangesModeView({
   // Why: Monaco renders an empty diff when the two sides match, which reads as
   // a broken view. Surface an inline banner so the user knows Changes mode is
   // active but there is simply nothing to diff right now.
-  const isIdentical = dc.originalContent === modifiedContent
+  const isDiffBodyPruned = dc.largeDiffRenderLimit?.limited === true
+  const isIdentical = !isDiffBodyPruned && dc.originalContent === modifiedContent
   // Why: after a terminal commit/pull/rebase, Changes mode refreshes the
   // HEAD-side blob in React state, but Monaco can keep painting the previous
   // diff if we reuse the same kept model identities. Rotate only the
@@ -68,7 +76,11 @@ export function ChangesModeView({
       {activeFile.conflict && <ConflictBanner file={activeFile} entry={activeConflictEntry} />}
       {isIdentical && (
         <div className="border-b border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          {translate("auto.components.editor.ChangesModeView.ef25ae2d09", "No uncommitted changes.")}</div>
+          {translate(
+            'auto.components.editor.ChangesModeView.ef25ae2d09',
+            'No uncommitted changes.'
+          )}
+        </div>
       )}
       <div className="flex min-h-0 flex-1 flex-col">
         <DiffViewer
@@ -77,6 +89,7 @@ export function ChangesModeView({
           originalModelKey={originalModelKey}
           originalContent={dc.originalContent}
           modifiedContent={modifiedContent}
+          largeDiffRenderLimit={dc.largeDiffRenderLimit}
           language={resolvedLanguage}
           filePath={activeFile.filePath}
           relativePath={activeFile.relativePath}

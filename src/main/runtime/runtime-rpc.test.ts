@@ -989,7 +989,9 @@ describe('OrcaRuntimeRpcServer', () => {
     await server['handleWebSocketMessage'](
       JSON.stringify({
         id: 'req_forbidden',
-        method: 'git.generateCommitMessage',
+        // files.delete is a real registered RPC intentionally kept off the
+        // mobile allowlist — mobile clients must never delete host files.
+        method: 'files.delete',
         deviceToken: mobile.token,
         params: { worktree: 'id:wt-1' }
       }),
@@ -2154,7 +2156,10 @@ describe('OrcaRuntimeRpcServer', () => {
     })
     expect(listResponse).toMatchObject({
       id: 'req_list',
-      ok: true
+      ok: true,
+      result: {
+        terminals: [expect.objectContaining({ ptyId: 'pty-1' })]
+      }
     })
 
     const handle = (

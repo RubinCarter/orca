@@ -21,6 +21,7 @@ import {
 import { preventMiddleButtonDefault } from './middle-button-default-guard'
 import { SortableTabContextMenu } from './SortableTabContextMenu'
 import { translate } from '@/i18n/i18n'
+import { TAB_CONTAINER_WIDTH_CLASSES, TAB_LABEL_WIDTH_CLASSES } from './tab-width-rules'
 
 type SortableTabProps = {
   tab: TerminalTab
@@ -217,7 +218,7 @@ export default function SortableTab({
       // tab still reads as "selected + has activity". The wash is
       // rendered as an absolutely-positioned child below so the ::after
       // pseudo-element stays free for the drop indicator.
-      className={`group relative flex items-center h-full px-1.5 text-xs cursor-pointer select-none shrink-0 outline-none focus:outline-none focus-visible:outline-none ${getTabStripBorderClasses(hasTabsToRight, { includeTopBorder: includeTopTabBorder })} ${getDropIndicatorClasses(dropIndicator ?? null)} ${getTabRootStateClasses(isActive)}`}
+      className={`group relative flex items-center h-full px-1.5 text-xs cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none ${getTabStripBorderClasses(hasTabsToRight, { includeTopBorder: includeTopTabBorder })} ${getDropIndicatorClasses(dropIndicator ?? null)} ${getTabRootStateClasses(isActive)}`}
       onDoubleClick={(e) => {
         if (isEditing) {
           return
@@ -309,7 +310,11 @@ export default function SortableTab({
           ref={setRenameInputElement}
           data-tab-rename-input="true"
           value={renameValue}
-          aria-label={translate("auto.components.tab.bar.SortableTab.ab19f603eb", "Rename tab {{value0}}", { value0: tabTitle })}
+          aria-label={translate(
+            'auto.components.tab.bar.SortableTab.ab19f603eb',
+            'Rename tab {{value0}}',
+            { value0: tabTitle }
+          )}
           onChange={(event) => setRenameValue(event.target.value)}
           onBlur={commitRename}
           onKeyDown={(event) => {
@@ -342,15 +347,15 @@ export default function SortableTab({
           // shrink it to ~0 when many tabs compete for horizontal space.
           // Force a minimum width that matches the normal title box so the
           // rename input stays usable even when the tab bar is saturated.
-          className="h-5 w-[72px] min-w-[72px] max-w-[72px] mr-1 px-1 py-0 text-xs"
+          className="mr-1 h-5 min-w-[72px] flex-1 px-1 py-0 text-xs"
           spellCheck={false}
         />
       ) : isEditing || menuOpen ? (
-        <span className="truncate max-w-[72px] mr-1">{displayTitle}</span>
+        <span className={`${TAB_LABEL_WIDTH_CLASSES} mr-1`}>{displayTitle}</span>
       ) : (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="truncate max-w-[72px] mr-1">{displayTitle}</span>
+            <span className={`${TAB_LABEL_WIDTH_CLASSES} mr-1`}>{displayTitle}</span>
           </TooltipTrigger>
           <TooltipContent
             side="bottom"
@@ -379,8 +384,8 @@ export default function SortableTab({
             e.stopPropagation()
             onToggleExpand(tab.id)
           }}
-          title={translate("auto.components.tab.bar.SortableTab.fdb2691425", "Collapse pane")}
-          aria-label={translate("auto.components.tab.bar.SortableTab.fdb2691425", "Collapse pane")}
+          title={translate('auto.components.tab.bar.SortableTab.fdb2691425', 'Collapse pane')}
+          aria-label={translate('auto.components.tab.bar.SortableTab.fdb2691425', 'Collapse pane')}
         >
           <Minimize2 className="w-3 h-3" />
         </button>
@@ -397,7 +402,11 @@ export default function SortableTab({
           // instead of bypassing the render layer by calling closeTab() on
           // the store — a store-only assertion would pass even if this
           // button had been accidentally unmounted.
-          aria-label={translate("auto.components.tab.bar.SortableTab.6df69d9388", "Close tab {{value0}}", { value0: tabTitle })}
+          aria-label={translate(
+            'auto.components.tab.bar.SortableTab.6df69d9388',
+            'Close tab {{value0}}',
+            { value0: tabTitle }
+          )}
           type="button"
           data-tab-close-button="true"
           onPointerDown={(e) => {
@@ -425,6 +434,7 @@ export default function SortableTab({
   return (
     <>
       <div
+        className={TAB_CONTAINER_WIDTH_CLASSES}
         onContextMenuCapture={(event) => {
           event.preventDefault()
           window.dispatchEvent(new Event(CLOSE_ALL_CONTEXT_MENUS_EVENT))

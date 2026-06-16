@@ -94,7 +94,7 @@ export function EditorPanelShell({
 }: EditorPanelShellProps): JSX.Element {
   return (
     <div ref={panelRef} className="flex flex-col flex-1 min-w-0 min-h-0">
-      {!model.isCombinedDiff && (
+      {!model.isCombinedDiff && activeFile.mode !== 'check-details' && (
         <EditorPanelHeader
           activeFile={activeFile}
           copiedPathVisible={copiedPathVisible}
@@ -185,6 +185,7 @@ export function EditorPanelShell({
 function EditorLoadingFallback(): JSX.Element {
   return (
     <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-      {translate("auto.components.editor.EditorPanelShell.e2c4dec350", "Loading editor...")}</div>
+      {translate('auto.components.editor.EditorPanelShell.e2c4dec350', 'Loading editor...')}
+    </div>
   )
 }

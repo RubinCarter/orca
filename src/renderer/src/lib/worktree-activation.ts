@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- Why: worktree activation is a single ordered flow spanning startup, setup, issue commands, and default tabs; splitting it would obscure sequencing guarantees. */
 import type {
+  FolderWorkspace,
   SetupSplitDirection,
   TuiAgent,
   Worktree,
@@ -31,8 +32,23 @@ import {
   setWorktreeNavActivator,
   setWorktreeNavViewActivator
 } from '@/store/slices/worktree-nav-history'
+import {
+  resolveTuiAgentLaunchArgs,
+  resolveTuiAgentLaunchEnv
+} from '../../../shared/tui-agent-launch-defaults'
 import { isTuiAgent } from '../../../shared/tui-agent-config'
 import { resumeSleepingAgentSessionsForWorktree } from '@/lib/resume-sleeping-agent-session'
+import {
+  getRuntimeEnvironmentIdForWorktree,
+  type WorktreeRuntimeOwnerState
+} from '@/lib/worktree-runtime-owner'
+import { folderWorkspaceKey, parseWorkspaceKey } from '../../../shared/workspace-scope'
+import {
+  folderWorkspaceActivationBlocked,
+  getFolderWorkspacePathStatusDescription,
+  getFolderWorkspacePathStatusTitle
+} from './folder-workspace-path-status'
+import { toast } from 'sonner'
 
 /** Telemetry payload threaded from the launch site to `pty:spawn`. Main
  *  fires `agent_started` only after the spawn succeeds — see
@@ -56,7 +72,7 @@ export type IssueCommandLaunch =
   | WorktreeSetupLaunch
   | { command: string; env?: Record<string, string> }
 
-type WorktreeActivationStore = {
+type WorktreeActivationStore = Partial<WorktreeRuntimeOwnerState> & {
   tabsByWorktree: Record<string, { id: string }[]>
   defaultTerminalTabsAppliedByWorktreeId: Record<string, true>
   createTab: (
@@ -84,6 +100,7 @@ type WorktreeActivationStore = {
       command: string
       env?: Record<string, string>
       initialAgentStatus?: { agent: TuiAgent; prompt: string }
+      showSessionRestoredBanner?: boolean
       telemetry?: AgentStartedTelemetry
     }
   ) => void
@@ -117,6 +134,71 @@ export type ActivateAndRevealResult = {
   primaryTabId: string | null
 }
 
+function ensureFolderWorkspaceInitialTerminal(
+  folderWorkspace: FolderWorkspace,
+  startup?: WorktreeStartupPayload
+): string | null {
+  const state = useAppStore.getState()
+  const workspaceKey = folderWorkspaceKey(folderWorkspace.id)
+  const primaryTabId = ensureWorktreeHasInitialTerminal(
+    state,
+    workspaceKey,
+    startup,
+    undefined,
+    undefined,
+    undefined
+  )
+  return primaryTabId
+}
+
+export function activateAndRevealFolderWorkspace(
+  folderWorkspaceId: string,
+  opts?: {
+    sidebarRevealBehavior?: PendingSidebarWorktreeReveal['behavior']
+    startup?: WorktreeStartupPayload
+  }
+): ActivateAndRevealResult | false {
+  const state = useAppStore.getState()
+  const folderWorkspace = state.folderWorkspaces.find(
+    (workspace) => workspace.id === folderWorkspaceId
+  )
+  if (!folderWorkspace) {
+    return false
+  }
+  const pathStatus = state.getFreshFolderWorkspacePathStatus({
+    scope: 'folder-workspace',
+    folderWorkspaceId
+  })
+  if (folderWorkspaceActivationBlocked(pathStatus)) {
+    toast.error(getFolderWorkspacePathStatusTitle(pathStatus) ?? 'Cannot open folder workspace', {
+      description: getFolderWorkspacePathStatusDescription(pathStatus) ?? folderWorkspace.folderPath
+    })
+    return false
+  }
+
+  if (state.activeView !== 'terminal') {
+    state.setActiveView('terminal')
+  }
+
+  state.setActiveFolderWorkspace(folderWorkspaceId)
+
+  const workspaceKey = folderWorkspaceKey(folderWorkspaceId)
+  state.markWorktreeVisited(workspaceKey)
+  if (!state.isNavigatingHistory) {
+    state.recordWorktreeVisit(workspaceKey)
+  }
+  resumeSleepingAgentSessionsForWorktree(workspaceKey)
+  const primaryTabId = ensureFolderWorkspaceInitialTerminal(folderWorkspace, opts?.startup)
+
+  if (opts?.sidebarRevealBehavior) {
+    state.revealWorktreeInSidebar(workspaceKey, { behavior: opts.sidebarRevealBehavior })
+  } else {
+    state.revealWorktreeInSidebar(workspaceKey)
+  }
+
+  return { primaryTabId }
+}
+
 function buildCreatedAgentReopenStartup(worktree: Worktree): WorktreeStartupPayload | undefined {
   const agent = worktree.createdWithAgent
   if (!isTuiAgent(agent)) {
@@ -127,6 +209,8 @@ function buildCreatedAgentReopenStartup(worktree: Worktree): WorktreeStartupPayl
     agent,
     prompt: '',
     cmdOverrides: useAppStore.getState().settings?.agentCmdOverrides ?? {},
+    agentArgs: resolveTuiAgentLaunchArgs(agent, useAppStore.getState().settings?.agentDefaultArgs),
+    agentEnv: resolveTuiAgentLaunchEnv(agent, useAppStore.getState().settings?.agentDefaultEnv),
     platform: CLIENT_PLATFORM,
     allowEmptyPromptLaunch: true
   })
@@ -154,6 +238,7 @@ export function activateAndRevealWorktree(
     issueCommand?: IssueCommandLaunch
     sidebarRevealBehavior?: PendingSidebarWorktreeReveal['behavior']
     notifyHostRuntime?: boolean
+    revealInSidebar?: boolean
   }
 ): ActivateAndRevealResult | false {
   const state = useAppStore.getState()
@@ -185,14 +270,16 @@ export function activateAndRevealWorktree(
   // 3. Core activation: sets activeWorktreeId, restores per-worktree state,
   // clears unread, bumps dead PTY generations, triggers GitHub refresh
   state.setActiveWorktree(worktreeId)
-  if (
-    opts?.notifyHostRuntime !== false &&
-    isWebRuntimeSessionActive(useAppStore.getState().settings?.activeRuntimeEnvironmentId)
-  ) {
+  const postActivationState = useAppStore.getState()
+  const ownerRuntimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(postActivationState, wt.id)
+  if (opts?.notifyHostRuntime !== false && isWebRuntimeSessionActive(ownerRuntimeEnvironmentId)) {
     // Why: paired web clients own only local selection state. The desktop host
     // must also activate the worktree so hidden renderer-owned terminal panes
     // mount and publish session surfaces back to the web client.
-    void activateWebRuntimeSessionWorktree({ worktreeId })
+    void activateWebRuntimeSessionWorktree({
+      worktreeId,
+      environmentId: ownerRuntimeEnvironmentId
+    })
   }
 
   // Why: record focus recency for Cmd+J's empty-query ordering BEFORE any
@@ -238,29 +325,33 @@ export function activateAndRevealWorktree(
   }
 
   // 6. Reveal in sidebar
-  if (opts?.sidebarRevealBehavior) {
-    state.revealWorktreeInSidebar(worktreeId, { behavior: opts.sidebarRevealBehavior })
-  } else {
-    state.revealWorktreeInSidebar(worktreeId)
+  if (opts?.revealInSidebar !== false) {
+    if (opts?.sidebarRevealBehavior) {
+      state.revealWorktreeInSidebar(worktreeId, { behavior: opts.sidebarRevealBehavior })
+    } else {
+      state.revealWorktreeInSidebar(worktreeId)
+    }
   }
 
-  ensureWebRuntimeWorktreeTerminalAfterWake(worktreeId)
+  if (opts?.notifyHostRuntime !== false) {
+    ensureWebRuntimeWorktreeTerminalAfterWake(worktreeId)
+  }
 
   return { primaryTabId }
 }
 
 export function ensureWebRuntimeWorktreeTerminalAfterWake(worktreeId: string): void {
   const state = useAppStore.getState()
-  const runtimeEnvironmentId = state.settings?.activeRuntimeEnvironmentId?.trim()
+  const worktree = state.getKnownWorktreeById(worktreeId)
+  if (!worktree) {
+    return
+  }
+  const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(state, worktree.id)
   if (!runtimeEnvironmentId || !isWebRuntimeSessionActive(runtimeEnvironmentId)) {
     return
   }
 
   const tabs = state.tabsByWorktree[worktreeId] ?? []
-  if (tabs.length === 0) {
-    return
-  }
-
   const hasLivePty = tabs.some((tab) => tabHasLivePty(state.ptyIdsByTabId, tab.id))
   if (hasLivePty) {
     return
@@ -278,7 +369,7 @@ export function ensureWebRuntimeWorktreeTerminalAfterWake(worktreeId: string): v
   }
 
   const { renderableTabCount } = state.reconcileWorktreeTabModel(worktreeId)
-  if (renderableTabCount === 0) {
+  if (tabs.length > 0 && renderableTabCount === 0) {
     return
   }
 
@@ -315,9 +406,11 @@ export function ensureWorktreeHasInitialTerminal(
   }
   // Why: remote web clients mirror the runtime server's session tabs. A local
   // activation fallback can spawn a second host terminal before the mirror lands.
-  if (
-    isWebRuntimeSessionActive(useAppStore.getState().settings?.activeRuntimeEnvironmentId ?? null)
-  ) {
+  const ownerState =
+    store.settings !== undefined || store.repos !== undefined || store.worktreesByRepo !== undefined
+      ? store
+      : useAppStore.getState()
+  if (isWebRuntimeSessionActive(getRuntimeEnvironmentIdForWorktree(ownerState, worktreeId))) {
     return null
   }
 
@@ -470,11 +563,17 @@ function queueSetupAndIssueCommands(
   }
 }
 
-// Why: break the import cycle — the nav-history slice must call
-// activateAndRevealWorktree from goBack/goForward, but the slice lives under
-// @/store, which activation already imports from. Registering the activator
-// at module init here lets the slice call back without importing this file.
-setWorktreeNavActivator(activateAndRevealWorktree)
+// Why: break the import cycle — the nav-history slice must activate workspace
+// entries from goBack/goForward, but it lives under @/store, which activation
+// already imports from. Registering here keeps folder workspace replay on the
+// same path as direct folder activation.
+setWorktreeNavActivator((workspaceId) => {
+  const workspaceScope = parseWorkspaceKey(workspaceId)
+  if (workspaceScope?.type === 'folder') {
+    return activateAndRevealFolderWorkspace(workspaceScope.folderWorkspaceId)
+  }
+  return activateAndRevealWorktree(workspaceId)
+})
 
 // Why: page entries in nav history replay through setActiveView(...)
 // (not open*Page) so back/forward does not mutate previousViewBefore* or
@@ -491,8 +590,14 @@ setWorktreeNavViewActivator((entry) => {
       taskPageData: {
         ...state.taskPageData,
         openGitHubWorkItem: undefined,
+        openGitHubSourceContext: undefined,
         openGitHubInitialTab: undefined,
-        openLinearIssue: undefined
+        openGitLabWorkItem: undefined,
+        openGitLabSourceContext: undefined,
+        openLinearIssue: undefined,
+        openLinearSourceContext: undefined,
+        openJiraIssue: undefined,
+        openJiraSourceContext: undefined
       }
     }))
     return
@@ -505,8 +610,55 @@ setWorktreeNavViewActivator((entry) => {
         taskSource: 'github',
         preselectedRepoId: entry.workItem.repoId,
         openGitHubWorkItem: entry.workItem,
+        openGitHubSourceContext: entry.sourceContext,
         openGitHubInitialTab: entry.initialTab,
-        openLinearIssue: undefined
+        openGitLabWorkItem: undefined,
+        openGitLabSourceContext: undefined,
+        openLinearIssue: undefined,
+        openLinearSourceContext: undefined,
+        openJiraIssue: undefined,
+        openJiraSourceContext: undefined
+      }
+    }))
+    return
+  }
+  if (entry.source === 'gitlab') {
+    useAppStore.setState((state) => ({
+      activeView: 'tasks',
+      githubTaskDrawerWorkItem: null,
+      taskPageData: {
+        ...state.taskPageData,
+        taskSource: 'gitlab',
+        preselectedRepoId: entry.workItem.repoId,
+        openGitHubWorkItem: undefined,
+        openGitHubSourceContext: undefined,
+        openGitHubInitialTab: undefined,
+        openGitLabWorkItem: entry.workItem,
+        openGitLabSourceContext: entry.sourceContext,
+        openLinearIssue: undefined,
+        openLinearSourceContext: undefined,
+        openJiraIssue: undefined,
+        openJiraSourceContext: undefined
+      }
+    }))
+    return
+  }
+  if (entry.source === 'jira') {
+    useAppStore.setState((state) => ({
+      activeView: 'tasks',
+      githubTaskDrawerWorkItem: null,
+      taskPageData: {
+        ...state.taskPageData,
+        taskSource: 'jira',
+        openGitHubWorkItem: undefined,
+        openGitHubSourceContext: undefined,
+        openGitHubInitialTab: undefined,
+        openGitLabWorkItem: undefined,
+        openGitLabSourceContext: undefined,
+        openLinearIssue: undefined,
+        openLinearSourceContext: undefined,
+        openJiraIssue: entry.issue,
+        openJiraSourceContext: entry.sourceContext
       }
     }))
     return
@@ -518,8 +670,14 @@ setWorktreeNavViewActivator((entry) => {
       ...state.taskPageData,
       taskSource: 'linear',
       openGitHubWorkItem: undefined,
+      openGitHubSourceContext: undefined,
       openGitHubInitialTab: undefined,
-      openLinearIssue: entry.issue
+      openGitLabWorkItem: undefined,
+      openGitLabSourceContext: undefined,
+      openLinearIssue: entry.issue,
+      openLinearSourceContext: entry.sourceContext,
+      openJiraIssue: undefined,
+      openJiraSourceContext: undefined
     }
   }))
 })
