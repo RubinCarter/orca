@@ -12,7 +12,7 @@ const FULL_HOST_MODEL_RUNTIME_CAPABILITIES = [
   PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
   WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
 ]
-const LOCAL_HOST_LABEL = getLocalExecutionHostLabel()
+const localHostLabel = getLocalExecutionHostLabel()
 
 function repo(id: string): Repo {
   return {
@@ -53,7 +53,7 @@ function host(
   return {
     id,
     kind: id === 'local' ? 'local' : id.startsWith('ssh:') ? 'ssh' : 'runtime',
-    label: id === 'local' ? LOCAL_HOST_LABEL : id.replace(/^ssh:|^runtime:/, ''),
+    label: id === 'local' ? localHostLabel : id.replace(/^ssh:|^runtime:/, ''),
     detail: id === 'local' ? 'This computer' : 'Host',
     health: id === 'local' ? 'local' : 'available',
     ...overrides
@@ -72,7 +72,7 @@ describe('buildProjectHostSetupOptions', () => {
     })
 
     expect(options.map((option) => option.id)).toEqual(['local', 'remote'])
-    expect(options[0]).toMatchObject({ label: LOCAL_HOST_LABEL, repoId: 'local-repo' })
+    expect(options[0]).toMatchObject({ label: localHostLabel, repoId: 'local-repo' })
     expect(options[1]).toMatchObject({ label: 'builder', repoId: 'remote-repo' })
   })
 
@@ -131,7 +131,7 @@ describe('buildProjectHostSetupOptions', () => {
     })
 
     expect(options).toEqual([
-      expect.objectContaining({ id: 'local', kind: 'ready', label: LOCAL_HOST_LABEL }),
+      expect.objectContaining({ id: 'local', kind: 'ready', label: localHostLabel }),
       expect.objectContaining({
         id: 'needs-setup:ssh:builder',
         kind: 'needs-setup',
@@ -164,7 +164,7 @@ describe('buildProjectHostSetupOptions', () => {
     })
 
     expect(options).toEqual([
-      expect.objectContaining({ id: 'local', kind: 'ready', label: LOCAL_HOST_LABEL }),
+      expect.objectContaining({ id: 'local', kind: 'ready', label: localHostLabel }),
       expect.objectContaining({
         id: 'needs-setup:runtime:gpu',
         kind: 'needs-setup',
@@ -259,7 +259,7 @@ describe('buildProjectHostSetupOptions', () => {
     })
 
     expect(options).toEqual([
-      expect.objectContaining({ id: 'local', kind: 'ready', label: LOCAL_HOST_LABEL }),
+      expect.objectContaining({ id: 'local', kind: 'ready', label: localHostLabel }),
       expect.objectContaining({
         id: 'needs-setup:runtime:gpu',
         kind: 'needs-setup',

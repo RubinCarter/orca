@@ -3,14 +3,13 @@ import { getLocalExecutionHostLabel } from '../../../../shared/execution-host'
 import { getPaletteHostBadge } from './palette-host-badge'
 import { buildSidebarHostOptions } from '../sidebar/sidebar-host-options'
 
-const LOCAL_HOST_LABEL = getLocalExecutionHostLabel()
-
 // Why: a connected SSH state makes the target a live remote, which is what the
 // palette badge now requires before disambiguating rows with a host label.
 const connectedSshStates = (targetId: string) =>
   new Map([
     [targetId, { targetId, status: 'connected' as const, error: null, reconnectAttempt: 0 }]
   ])
+const localHostLabel = getLocalExecutionHostLabel()
 
 describe('getPaletteHostBadge', () => {
   it('returns null for single-host (local-only) workspaces', () => {
@@ -45,7 +44,7 @@ describe('getPaletteHostBadge', () => {
 
     expect(getPaletteHostBadge({ connectionId: null }, hosts)).toEqual({
       hostId: 'local',
-      label: LOCAL_HOST_LABEL
+      label: localHostLabel
     })
   })
 
@@ -115,7 +114,7 @@ describe('getPaletteHostBadge', () => {
 
     expect(getPaletteHostBadge({}, hosts)).toEqual({
       hostId: 'local',
-      label: LOCAL_HOST_LABEL
+      label: localHostLabel
     })
   })
 

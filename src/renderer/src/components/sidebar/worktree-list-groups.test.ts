@@ -24,7 +24,7 @@ import type {
   WorktreeLineage
 } from '../../../../shared/types'
 
-const LOCAL_HOST_LABEL = getLocalExecutionHostLabel()
+const localHostLabel = getLocalExecutionHostLabel()
 
 const repo: Repo = {
   id: 'repo-1',
@@ -349,7 +349,7 @@ describe('buildRows with pinned worktrees', () => {
 
     expect(rows).toMatchObject([
       { type: 'header', key: 'project:github:stablyai/orca', label: 'Orca', count: 2 },
-      { type: 'item', worktree: { id: worktree.id }, hostContextLabel: LOCAL_HOST_LABEL },
+      { type: 'item', worktree: { id: worktree.id }, hostContextLabel: localHostLabel },
       { type: 'item', worktree: { id: remoteWorktree.id }, hostContextLabel: 'gpu-vm' }
     ])
   })
@@ -464,14 +464,14 @@ describe('buildRows with pinned worktrees', () => {
       { projects: [project], projectHostSetups: [projectHostSetups[0]!, runtimeSetup] },
       [],
       new Map([
-        ['local', LOCAL_HOST_LABEL],
+        ['local', localHostLabel],
         ['runtime:03ef704c-b180-4b10-998d-e28fbd5de9a3', 'dev box']
       ])
     )
 
     expect(rows).toMatchObject([
       { type: 'header', key: 'project:github:stablyai/orca', label: 'Orca', count: 2 },
-      { type: 'item', worktree: { id: worktree.id }, hostContextLabel: LOCAL_HOST_LABEL },
+      { type: 'item', worktree: { id: worktree.id }, hostContextLabel: localHostLabel },
       { type: 'item', worktree: { id: runtimeWorktree.id }, hostContextLabel: 'dev box' }
     ])
   })

@@ -13,10 +13,9 @@ import type { Project, ProjectHostSetup, Repo } from '../../../../shared/types'
 import { useAppStore } from '../../store'
 import { RepositoryHostSetupsSection } from './RepositoryHostSetupsSection'
 
-const LOCAL_HOST_LABEL = getLocalExecutionHostLabel()
-
 let container: HTMLDivElement
 let root: Root
+const localHostLabel = getLocalExecutionHostLabel()
 
 function makeRepo(overrides: Partial<Repo> & Pick<Repo, 'id' | 'displayName' | 'path'>): Repo {
   return {
@@ -144,7 +143,7 @@ describe('RepositoryHostSetupsSection', () => {
     renderSection(localRepo)
 
     expect(container.textContent).toContain('Viewing host')
-    expect(container.textContent).toContain(LOCAL_HOST_LABEL)
+    expect(container.textContent).toContain(localHostLabel)
   })
 
   it('opens the selected host setup settings pane through the setup repo id', () => {
