@@ -1,23 +1,26 @@
 # Orca Mobile iOS release lane.
 #
 # Builds the prebuilt iOS workspace, signs it with the distribution identity
-# already imported into the CI keychain, and uploads the resulting .ipa to
-# TestFlight / App Store Connect. All Apple credentials come from CI env vars
+# imported into the CI keychain plus an explicit App Store provisioning profile
+# fetched via the App Store Connect API key, then uploads the .ipa to
+# TestFlight. All Apple credentials come from CI env vars
 # (see .github/workflows/mobile-ios-release.yml) so nothing secret lives in the
 # repo.
 #
-# Provisioning profiles are generated/refreshed automatically from the App
-# Store Connect API key via `-allowProvisioningUpdates`; only the distribution
-# certificate's private key must be pre-supplied (the API key cannot recreate
-# it across runs), which is why we import a .p12 into the keychain first.
+# Why manual signing (not -allowProvisioningUpdates / automatic cloud signing):
+# mixing a pre-imported distribution .p12 with xcodebuild's cloud-managed
+# automatic signing produced "Cloud signing permission error / No profiles
+# found" at exportArchive (cloud signing also needs an Admin-role API key).
+# Instead we fetch an explicit profile with the API key (sigh) and sign
+# manually against the imported cert — works with any team API key.
 
-require "tempfile"
 require "base64"
 
 default_platform(:ios)
 
 WORKSPACE = "ios/Orca.xcworkspace"
 SCHEME = "Orca"
+BUNDLE_ID = "com.stably.orca.mobile"
 
 platform :ios do
   desc "Build, sign, and upload Orca Mobile to TestFlight"
@@ -32,43 +35,27 @@ platform :ios do
 
     team_id = ENV.fetch("APPLE_TEAM_ID")
 
-    # Why: gym (build_app) has no `api_key` option, so we feed xcodebuild the
-    # App Store Connect key directly via xcargs. Without these auth flags,
-    # `-allowProvisioningUpdates` has no credentials and the archive fails with
-    # "No Accounts" / "No profiles for ... were found". The distribution cert is
-    # pre-imported into the keychain by the workflow; the API key only
-    # generates/downloads the provisioning profile.
-    #
-    # Why decode the secret ourselves instead of using api_key[:key]: feeding
-    # api_key[:key] to xcodebuild produced "Invalid authentication key
-    # credential (invalidPEMDocument)" — fastlane's stored value wasn't clean
-    # PEM. Decode the base64 secret directly so the .p8 is exactly the original
-    # PEM. Tempfile lives for the process; the runner VM is ephemeral so nothing
-    # secret persists.
-    key_file = Tempfile.new(["asc_api_key", ".p8"])
-    key_file.write(Base64.decode64(ENV.fetch("ASC_API_KEY_P8")))
-    key_file.close
-
-    auth_args =
-      "-allowProvisioningUpdates " \
-      "-authenticationKeyID #{api_key[:key_id]} " \
-      "-authenticationKeyIssuerID #{api_key[:issuer_id]} " \
-      "-authenticationKeyPath #{key_file.path}"
+    # Fetch (or create) the App Store distribution profile via the API key and
+    # install it locally. sigh records the bundle-id → profile-name mapping in
+    # SIGH_PROFILE_MAPPING, which we feed to the manual export below.
+    get_provisioning_profile(
+      api_key: api_key,
+      app_identifier: BUNDLE_ID,
+      force: true,
+    )
+    profile_name = lane_context[SharedValues::SIGH_PROFILE_MAPPING][BUNDLE_ID]
 
     build_app(
       workspace: WORKSPACE,
       scheme: SCHEME,
       configuration: "Release",
       export_method: "app-store",
-      xcargs: "#{auth_args} DEVELOPMENT_TEAM=#{team_id}",
-      # Why also on export: the archive and the export-to-.ipa are separate
-      # xcodebuild invocations. Without the auth key on export too, the export
-      # step can't fetch/create the distribution profile and fails with
-      # "Cloud signing permission error / No profiles for ... were found".
-      export_xcargs: auth_args,
       export_options: {
         teamID: team_id,
-        signingStyle: "automatic",
+        signingStyle: "manual",
+        provisioningProfiles: {
+          BUNDLE_ID => profile_name,
+        },
       },
       output_directory: "build",
       output_name: "Orca.ipa",
