@@ -61,6 +61,11 @@ platform :ios do
       configuration: "Release",
       export_method: "app-store",
       xcargs: "#{auth_args} DEVELOPMENT_TEAM=#{team_id}",
+      # Why also on export: the archive and the export-to-.ipa are separate
+      # xcodebuild invocations. Without the auth key on export too, the export
+      # step can't fetch/create the distribution profile and fails with
+      # "Cloud signing permission error / No profiles for ... were found".
+      export_xcargs: auth_args,
       export_options: {
         teamID: team_id,
         signingStyle: "automatic",
