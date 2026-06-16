@@ -1,11 +1,12 @@
 /* eslint-disable max-lines -- Why: Claude rate-limit fallback tests share account/keychain/PTY mocks that would be noisier split apart. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fetchClaudeRateLimits, fetchManagedAccountUsage } from './claude-fetcher'
 import { fetchViaPty } from './claude-pty'
 import {
+  readActiveClaudeKeychainCredentials,
   readActiveClaudeKeychainCredentialsStrict,
   readManagedClaudeKeychainCredentials
 } from '../claude-accounts/keychain'
@@ -67,6 +68,7 @@ describe('fetchClaudeRateLimits', () => {
     tempDir = null
     vi.clearAllMocks()
     readFileMock.mockRejectedValue(new Error('missing file'))
+    vi.mocked(readActiveClaudeKeychainCredentials).mockResolvedValue(null)
     vi.mocked(readActiveClaudeKeychainCredentialsStrict).mockResolvedValue(null)
     vi.mocked(readManagedClaudeKeychainCredentials).mockResolvedValue(null)
     appGetPathMock.mockReturnValue('/tmp/orca-claude-fetcher-test')
@@ -123,11 +125,11 @@ describe('fetchClaudeRateLimits', () => {
     expect(fetchViaPty).not.toHaveBeenCalled()
   })
 
-  it('reads scoped default-config Keychain credentials for OAuth usage fetches', async () => {
+  it('reads scoped Keychain credentials when the Claude config dir is explicit', async () => {
     const configDir = '/Users/test/.claude'
     const authPreparation: ClaudeRuntimeAuthPreparation = {
       configDir,
-      envPatch: {},
+      envPatch: { CLAUDE_CONFIG_DIR: configDir },
       stripAuthEnv: false,
       provenance: 'system'
     }
@@ -167,11 +169,56 @@ describe('fetchClaudeRateLimits', () => {
     )
   })
 
+  it('uses legacy Keychain credentials for host system default without an explicit config dir', async () => {
+    const configDir = '/Users/test/.claude'
+    const authPreparation: ClaudeRuntimeAuthPreparation = {
+      configDir,
+      runtime: 'host',
+      envPatch: {},
+      stripAuthEnv: false,
+      provenance: 'system'
+    }
+    vi.mocked(readActiveClaudeKeychainCredentials).mockResolvedValueOnce(
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'legacy-oauth-token',
+          expiresAt: Date.now() + 60_000
+        }
+      })
+    )
+    vi.mocked(readActiveClaudeKeychainCredentialsStrict).mockResolvedValue(
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'stale-scoped-oauth-token',
+          expiresAt: Date.now() + 60_000
+        }
+      })
+    )
+
+    await expect(fetchClaudeRateLimits({ authPreparation })).resolves.toMatchObject({
+      provider: 'claude',
+      status: 'ok',
+      session: { usedPercent: 12 },
+      weekly: { usedPercent: 34 }
+    })
+
+    expect(readActiveClaudeKeychainCredentials).toHaveBeenCalledWith(undefined)
+    expect(readActiveClaudeKeychainCredentialsStrict).not.toHaveBeenCalled()
+    expect(netFetchMock).toHaveBeenCalledWith(
+      'https://api.anthropic.com/api/oauth/usage',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer legacy-oauth-token'
+        })
+      })
+    )
+  })
+
   it('falls back to the credentials file when Keychain access fails', async () => {
     const configDir = '/Users/test/.claude'
     const authPreparation: ClaudeRuntimeAuthPreparation = {
       configDir,
-      envPatch: {},
+      envPatch: { CLAUDE_CONFIG_DIR: configDir },
       stripAuthEnv: false,
       provenance: 'system'
     }
@@ -210,7 +257,7 @@ describe('fetchClaudeRateLimits', () => {
     const configDir = '/Users/test/.claude'
     const authPreparation: ClaudeRuntimeAuthPreparation = {
       configDir,
-      envPatch: {},
+      envPatch: { CLAUDE_CONFIG_DIR: configDir },
       stripAuthEnv: false,
       provenance: 'system'
     }
@@ -246,7 +293,7 @@ describe('fetchClaudeRateLimits', () => {
     const configDir = '/Users/test/.claude'
     const authPreparation: ClaudeRuntimeAuthPreparation = {
       configDir,
-      envPatch: {},
+      envPatch: { CLAUDE_CONFIG_DIR: configDir },
       stripAuthEnv: false,
       provenance: 'system'
     }
@@ -283,7 +330,7 @@ describe('fetchClaudeRateLimits', () => {
     const configDir = '/Users/test/.claude'
     const authPreparation: ClaudeRuntimeAuthPreparation = {
       configDir,
-      envPatch: {},
+      envPatch: { CLAUDE_CONFIG_DIR: configDir },
       stripAuthEnv: false,
       provenance: 'system'
     }
@@ -329,7 +376,7 @@ describe('fetchClaudeRateLimits', () => {
     const configDir = '/Users/test/.claude'
     const authPreparation: ClaudeRuntimeAuthPreparation = {
       configDir,
-      envPatch: {},
+      envPatch: { CLAUDE_CONFIG_DIR: configDir },
       stripAuthEnv: false,
       provenance: 'system'
     }
@@ -367,7 +414,7 @@ describe('fetchClaudeRateLimits', () => {
     const configDir = '/Users/test/.claude'
     const authPreparation: ClaudeRuntimeAuthPreparation = {
       configDir,
-      envPatch: {},
+      envPatch: { CLAUDE_CONFIG_DIR: configDir },
       stripAuthEnv: false,
       provenance: 'system'
     }
@@ -397,7 +444,7 @@ describe('fetchClaudeRateLimits', () => {
     const configDir = '/Users/test/.claude'
     const authPreparation: ClaudeRuntimeAuthPreparation = {
       configDir,
-      envPatch: {},
+      envPatch: { CLAUDE_CONFIG_DIR: configDir },
       stripAuthEnv: false,
       provenance: 'system'
     }
@@ -449,5 +496,57 @@ describe('fetchClaudeRateLimits', () => {
 
     expect(netFetchMock).not.toHaveBeenCalled()
     expect(readFileMock).not.toHaveBeenCalled()
+  })
+
+  it('refreshes and persists an expiring inactive account before fetching usage', async () => {
+    setPlatform('linux')
+    tempDir = mkdtempSync(join(tmpdir(), 'orca-claude-fetcher-'))
+    appGetPathMock.mockReturnValue(tempDir)
+    const ownedAuthPath = join(tempDir, 'claude-accounts', 'account-1', 'auth')
+    mkdirSync(ownedAuthPath, { recursive: true })
+    writeFileSync(join(ownedAuthPath, '.orca-managed-claude-auth'), 'account-1\n', 'utf-8')
+    const credentialsPath = join(ownedAuthPath, '.credentials.json')
+    writeFileSync(
+      credentialsPath,
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'stale-access',
+          refreshToken: 'stale-refresh',
+          expiresAt: Date.now() - 60_000
+        }
+      }),
+      'utf-8'
+    )
+
+    // First net.fetch call is the OAuth refresh (token endpoint); second is the
+    // usage fetch with the refreshed access token.
+    netFetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        access_token: 'fresh-access',
+        expires_in: 3600,
+        refresh_token: 'fresh-refresh'
+      })
+    })
+    netFetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ five_hour: { utilization: 12 }, seven_day: { utilization: 34 } })
+    })
+
+    const result = await fetchManagedAccountUsage({
+      id: 'account-1',
+      managedAuthPath: ownedAuthPath
+    })
+
+    expect(result.status).toBe('ok')
+    // Rotated token persisted back to managed storage.
+    const persisted = JSON.parse(readFileSync(credentialsPath, 'utf-8'))
+    expect(persisted.claudeAiOauth.accessToken).toBe('fresh-access')
+    expect(persisted.claudeAiOauth.refreshToken).toBe('fresh-refresh')
+    // Usage fetch used the fresh access token.
+    const usageCall = netFetchMock.mock.calls.find(([url]) =>
+      String(url).includes('/api/oauth/usage')
+    )
+    expect(usageCall?.[1]?.headers?.Authorization).toBe('Bearer fresh-access')
   })
 })

@@ -11,6 +11,10 @@ import { tuiAgentToAgentKind } from '@/lib/telemetry'
 import { useAppStore } from '@/store'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 import { isTuiAgentEnabled } from '../../../../shared/tui-agent-selection'
+import {
+  resolveTuiAgentLaunchArgs,
+  resolveTuiAgentLaunchEnv
+} from '../../../../shared/tui-agent-launch-defaults'
 import { translate } from '@/i18n/i18n'
 
 type FloatingTerminalWindowControlsProps = {
@@ -55,6 +59,8 @@ export function FloatingTerminalWindowControls({
       agent: defaultAgent,
       prompt: '',
       cmdOverrides: state.settings?.agentCmdOverrides ?? {},
+      agentArgs: resolveTuiAgentLaunchArgs(defaultAgent, state.settings?.agentDefaultArgs),
+      agentEnv: resolveTuiAgentLaunchEnv(defaultAgent, state.settings?.agentDefaultEnv),
       platform: CLIENT_PLATFORM,
       allowEmptyPromptLaunch: true
     })
@@ -117,9 +123,9 @@ export function FloatingTerminalWindowControls({
           <TooltipContent side="bottom" sideOffset={6}>
             {translate(
               'auto.components.floating.terminal.FloatingTerminalWindowControls.648352c51f',
-              'Open'
+              'Open {{value0}} in floating workspace',
+              { value0: defaultAgentLabel ?? defaultAgent }
             )}
-            {defaultAgentLabel ?? defaultAgent}
           </TooltipContent>
         </Tooltip>
       ) : null}

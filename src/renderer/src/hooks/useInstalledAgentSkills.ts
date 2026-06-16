@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   DiscoveredSkill,
   SkillDiscoveryResult,
@@ -29,7 +29,7 @@ export type InstalledAgentSkillState = {
   loading: boolean
   error: string | null
   skills: readonly DiscoveredSkill[]
-  refresh: () => Promise<void>
+  refresh: () => Promise<boolean>
 }
 
 let cachedDiscoveryByTarget = new Map<string, SkillDiscoveryResult>()
@@ -163,49 +163,79 @@ export function useInstalledAgentSkill(
   const [result, setResult] = useState<SkillDiscoveryResult | null>(cachedDiscovery)
   const [loading, setLoading] = useState(enabled && !cachedDiscovery)
   const [error, setError] = useState<string | null>(null)
+  const currentDiscoveryTargetKeyRef = useRef(discoveryTargetKey)
+  const refreshGenerationRef = useRef(0)
+  const stateResetInputRef = useRef({ discoveryTargetKey, enabled })
+  currentDiscoveryTargetKeyRef.current = discoveryTargetKey
   // Why: skill scans can outlive transient settings/onboarding panels; keep
   // the module cache update but skip React state writes after unmount.
   const mountedRef = useMountedRef()
+  let resultForRender = result
+  let loadingForRender = loading
+  let errorForRender = error
+  if (
+    stateResetInputRef.current.discoveryTargetKey !== discoveryTargetKey ||
+    stateResetInputRef.current.enabled !== enabled
+  ) {
+    const nextCachedDiscovery = cachedDiscoveryByTarget.get(discoveryTargetKey) ?? null
+    const nextLoading = enabled && !nextCachedDiscovery
+    stateResetInputRef.current = { discoveryTargetKey, enabled }
+    resultForRender = nextCachedDiscovery
+    loadingForRender = nextLoading
+    errorForRender = null
+    setResult(nextCachedDiscovery)
+    setLoading(nextLoading)
+    setError(null)
+  }
 
   const refresh = useCallback(
-    async (force = true): Promise<void> => {
-      if (!enabled) {
-        if (mountedRef.current) {
-          setLoading(false)
+    async (force = true): Promise<boolean> => {
+      const requestDiscoveryTargetKey = discoveryTargetKey
+      const requestGeneration = ++refreshGenerationRef.current
+      const writeIfCurrent = (write: () => void): void => {
+        if (
+          mountedRef.current &&
+          requestGeneration === refreshGenerationRef.current &&
+          currentDiscoveryTargetKeyRef.current === requestDiscoveryTargetKey
+        ) {
+          write()
         }
-        return
       }
-      if (mountedRef.current) {
+
+      if (!enabled) {
+        writeIfCurrent(() => {
+          setLoading(false)
+        })
+        return false
+      }
+      writeIfCurrent(() => {
         setLoading(true)
-      }
+      })
+      let installedAfterRefresh = false
       try {
         const next = await discoverInstalledAgentSkills(force, discoveryTarget)
-        if (!mountedRef.current) {
-          return
-        }
-        setResult(next)
-        setError(null)
+        installedAfterRefresh = hasInstalledAgentSkill(next.skills, skillName, { sourceKinds })
+        writeIfCurrent(() => {
+          setResult(next)
+          setError(null)
+        })
       } catch (refreshError) {
-        if (!mountedRef.current) {
-          return
-        }
-        setError(
-          refreshError instanceof Error ? refreshError.message : 'Could not scan installed skills.'
-        )
+        writeIfCurrent(() => {
+          setError(
+            refreshError instanceof Error
+              ? refreshError.message
+              : 'Could not scan installed skills.'
+          )
+        })
       } finally {
-        if (mountedRef.current) {
+        writeIfCurrent(() => {
           setLoading(false)
-        }
+        })
       }
+      return installedAfterRefresh
     },
-    [discoveryTarget, enabled, mountedRef]
+    [discoveryTarget, discoveryTargetKey, enabled, mountedRef, skillName, sourceKinds]
   )
-
-  useEffect(() => {
-    const nextCachedDiscovery = cachedDiscoveryByTarget.get(discoveryTargetKey) ?? null
-    setResult(nextCachedDiscovery)
-    setLoading(enabled && !nextCachedDiscovery)
-  }, [discoveryTargetKey, enabled])
 
   useEffect(() => {
     void refresh(false)
@@ -228,7 +258,10 @@ export function useInstalledAgentSkill(
     }
   }, [enabled, refresh])
 
-  const skills = useMemo(() => (enabled && result ? result.skills : []), [enabled, result])
+  const skills = useMemo(
+    () => (enabled && resultForRender ? resultForRender.skills : []),
+    [enabled, resultForRender]
+  )
 
   const installed = useMemo(
     () => (enabled ? hasInstalledAgentSkill(skills, skillName, { sourceKinds }) : false),
@@ -247,8 +280,8 @@ export function useInstalledAgentSkill(
 
   return {
     installed,
-    loading,
-    error,
+    loading: loadingForRender,
+    error: errorForRender,
     skills,
     refresh: forceRefresh
   }

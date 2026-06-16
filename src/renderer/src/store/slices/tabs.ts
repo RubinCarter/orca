@@ -29,6 +29,7 @@ import { buildHydratedTabState, pruneTabGroupLayoutForGroups } from './tabs-hydr
 import { buildOrphanTerminalCleanupPatch, getOrphanTerminalIds } from './terminal-orphan-helpers'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
+import { folderWorkspaceKey } from '../../../../shared/workspace-scope'
 
 export type TabSplitDirection = 'left' | 'right' | 'up' | 'down'
 
@@ -238,7 +239,12 @@ function applyTabOrderSortValues(tabs: Tab[], tabOrder: string[]): Tab[] {
 }
 
 function isReplaceablePreviewContentType(contentType: Tab['contentType']): boolean {
-  return contentType === 'editor' || contentType === 'diff' || contentType === 'conflict-review'
+  return (
+    contentType === 'editor' ||
+    contentType === 'diff' ||
+    contentType === 'conflict-review' ||
+    contentType === 'check-details'
+  )
 }
 
 function canReplacePreviewContentType(
@@ -381,7 +387,8 @@ function deriveActiveSurfaceForWorktree(
     activeFileId =
       activeUnifiedTab.contentType === 'editor' ||
       activeUnifiedTab.contentType === 'diff' ||
-      activeUnifiedTab.contentType === 'conflict-review'
+      activeUnifiedTab.contentType === 'conflict-review' ||
+      activeUnifiedTab.contentType === 'check-details'
         ? activeUnifiedTab.entityId
         : fileStillOpen
           ? restoredFileId
@@ -855,6 +862,7 @@ export const createTabsSlice: StateCreator<AppState, [], [], TabsSlice> = (set, 
         ...(shouldDeactivateWorktree
           ? {
               activeWorktreeId: null,
+              activeWorkspaceKey: null,
               activeTabId: null,
               activeBrowserTabId: null,
               activeFileId: null,
@@ -1818,6 +1826,9 @@ export const createTabsSlice: StateCreator<AppState, [], [], TabsSlice> = (set, 
         .map((w) => w.id)
     )
     validWorktreeIds.add(FLOATING_TERMINAL_WORKTREE_ID)
+    for (const workspace of state.folderWorkspaces) {
+      validWorktreeIds.add(folderWorkspaceKey(workspace.id))
+    }
     set(buildHydratedTabState(session, validWorktreeIds))
   }
 })

@@ -17,8 +17,14 @@ import {
 } from '../claude-accounts/keychain'
 import {
   readClaudeManagedAuthFile,
-  resolveOwnedClaudeManagedAuthPath
+  resolveOwnedClaudeManagedAuthPath,
+  writeClaudeManagedAuthFile
 } from '../claude-accounts/managed-auth-path'
+import { writeManagedClaudeKeychainCredentials } from '../claude-accounts/keychain'
+import {
+  isOauthTokenExpiring,
+  refreshClaudeOauthCredentials
+} from '../claude-accounts/oauth-refresh'
 import { createOAuthUsageError, OAuthUsageError } from './claude-oauth-usage-error'
 import { withMacTailscaleDnsHint } from '../network/macos-tailscale-dns-diagnostic'
 import { ensureElectronProxyFromEnvironment } from '../network/proxy-settings'
@@ -60,6 +66,11 @@ type KeychainCredentials = {
 type OAuthCredentialReadResult = {
   token: string | null
   hasRefreshableCredentials: boolean
+}
+
+type OAuthCredentialReadOptions = {
+  credentialsFileConfigDir?: string
+  keychainConfigDir?: string
 }
 
 // Why: factored out so both the active-account Keychain reader and the
@@ -161,9 +172,11 @@ async function readFromCredentialsFile(configDir?: string): Promise<OAuthCredent
  * here — those are API keys which return 401 on the OAuth usage endpoint.
  * API-key users are served by the PTY fallback instead.
  */
-async function readOAuthCredentials(configDir?: string): Promise<OAuthCredentialReadResult> {
+async function readOAuthCredentials(
+  options?: OAuthCredentialReadOptions
+): Promise<OAuthCredentialReadResult> {
   // 1. macOS Keychain (Claude Max/Pro OAuth)
-  const fromKeychain = await readFromKeychain(configDir)
+  const fromKeychain = await readFromKeychain(options?.keychainConfigDir)
   if (fromKeychain.token) {
     return fromKeychain
   }
@@ -172,7 +185,7 @@ async function readOAuthCredentials(configDir?: string): Promise<OAuthCredential
   }
 
   // 2. Legacy credentials file
-  const fromFile = await readFromCredentialsFile(configDir)
+  const fromFile = await readFromCredentialsFile(options?.credentialsFileConfigDir)
   if (fromFile.token) {
     return fromFile
   }
@@ -181,6 +194,23 @@ async function readOAuthCredentials(configDir?: string): Promise<OAuthCredential
   }
 
   return emptyOAuthCredentialReadResult()
+}
+
+function resolveOAuthCredentialReadOptions(
+  authPreparation?: ClaudeRuntimeAuthPreparation
+): OAuthCredentialReadOptions | undefined {
+  if (!authPreparation) {
+    return undefined
+  }
+  const readOptions: OAuthCredentialReadOptions = {
+    credentialsFileConfigDir: authPreparation.configDir
+  }
+  // Why: host system-default launches do not inject CLAUDE_CONFIG_DIR, so
+  // their Keychain lookup must mirror Claude's legacy service ordering.
+  if (authPreparation.envPatch.CLAUDE_CONFIG_DIR) {
+    readOptions.keychainConfigDir = authPreparation.configDir
+  }
+  return readOptions
 }
 
 // ---------------------------------------------------------------------------
@@ -299,7 +329,9 @@ export async function fetchClaudeRateLimits(
   }
 
   // Path A: try OAuth API if we have a genuine OAuth token
-  const oauthCredentials = await readOAuthCredentials(options?.authPreparation?.configDir)
+  const oauthCredentials = await readOAuthCredentials(
+    resolveOAuthCredentialReadOptions(options?.authPreparation)
+  )
   if (oauthCredentials.token) {
     try {
       return await fetchViaOAuth(oauthCredentials.token)
@@ -378,37 +410,56 @@ export type InactiveClaudeAccountInfo = {
   wslLinuxAuthPath?: string | null
 }
 
-// Why: reads an inactive account's OAuth token directly from its managed
-// storage without materializing credentials into the shared runtime location.
-// Using ClaudeRuntimeAuthService would overwrite the active account's auth.
-async function readManagedOAuthToken(account: InactiveClaudeAccountInfo): Promise<string | null> {
+type ManagedCredentialsLocation =
+  | { kind: 'keychain'; accountId: string }
+  | { kind: 'file'; managedAuthPath: string }
+
+// Why: resolves where an inactive account's credentials live without
+// materializing them into the shared runtime location. Using
+// ClaudeRuntimeAuthService would overwrite the active account's auth.
+function resolveManagedCredentialsLocation(
+  account: InactiveClaudeAccountInfo
+): ManagedCredentialsLocation | null {
+  if (account.managedAuthRuntime === 'wsl') {
+    const managedAuthPath = resolveOwnedWslClaudeManagedAuthPath(account)
+    return managedAuthPath ? { kind: 'file', managedAuthPath } : null
+  }
+  const managedAuthPath = resolveOwnedClaudeManagedAuthPath(account.id, account.managedAuthPath, {
+    adoptLegacyMarker: true
+  })
+  if (!managedAuthPath) {
+    return null
+  }
+  // macOS stores host managed credentials in the Keychain; everything else
+  // (and WSL, handled above) stores them as a file under the managed dir.
+  if (process.platform === 'darwin') {
+    return { kind: 'keychain', accountId: account.id }
+  }
+  return { kind: 'file', managedAuthPath }
+}
+
+async function readManagedCredentialsJson(
+  location: ManagedCredentialsLocation
+): Promise<string | null> {
   try {
-    if (account.managedAuthRuntime === 'wsl') {
-      const managedAuthPath = resolveOwnedWslClaudeManagedAuthPath(account)
-      if (!managedAuthPath) {
-        return null
-      }
-      const raw = readClaudeManagedAuthFile(managedAuthPath, '.credentials.json')
-      return raw ? parseOAuthCredentialsJson(raw).token : null
+    if (location.kind === 'keychain') {
+      return await readManagedClaudeKeychainCredentials(location.accountId)
     }
-    const managedAuthPath = resolveOwnedClaudeManagedAuthPath(account.id, account.managedAuthPath, {
-      adoptLegacyMarker: true
-    })
-    if (!managedAuthPath) {
-      return null
-    }
-    if (process.platform === 'darwin') {
-      const raw = await readManagedClaudeKeychainCredentials(account.id)
-      if (raw) {
-        return parseOAuthCredentialsJson(raw).token
-      }
-      return null
-    }
-    const raw = readClaudeManagedAuthFile(managedAuthPath, '.credentials.json')
-    return raw ? parseOAuthCredentialsJson(raw).token : null
+    return readClaudeManagedAuthFile(location.managedAuthPath, '.credentials.json')
   } catch {
     return null
   }
+}
+
+async function writeManagedCredentialsJson(
+  location: ManagedCredentialsLocation,
+  credentialsJson: string
+): Promise<void> {
+  if (location.kind === 'keychain') {
+    await writeManagedClaudeKeychainCredentials(location.accountId, credentialsJson)
+    return
+  }
+  writeClaudeManagedAuthFile(location.managedAuthPath, '.credentials.json', credentialsJson)
 }
 
 function resolveOwnedWslClaudeManagedAuthPath(account: InactiveClaudeAccountInfo): string | null {
@@ -444,7 +495,38 @@ function resolveOwnedWslClaudeManagedAuthPath(account: InactiveClaudeAccountInfo
 export async function fetchManagedAccountUsage(
   account: InactiveClaudeAccountInfo
 ): Promise<ProviderRateLimits> {
-  const token = await readManagedOAuthToken(account)
+  const location = resolveManagedCredentialsLocation(account)
+  const credentialsJson = location ? await readManagedCredentialsJson(location) : null
+  if (!credentialsJson) {
+    return {
+      provider: 'claude',
+      session: null,
+      weekly: null,
+      updatedAt: Date.now(),
+      error: 'No credentials',
+      status: 'error'
+    }
+  }
+
+  // Why: own the refresh for inactive accounts (claude-swap's model) — when the
+  // stored token is expiring, refresh and persist the rotated token back to
+  // managed storage before fetching usage. This keeps inactive accounts'
+  // single-use refresh tokens fresh so a later switch-in never materializes a
+  // stale token. Persistence failure is non-fatal: we still try the fetch.
+  let token = parseOAuthCredentialsJson(credentialsJson).token
+  if (location && isOauthTokenExpiring(credentialsJson)) {
+    const refreshed = await refreshClaudeOauthCredentials(credentialsJson)
+    if (refreshed) {
+      try {
+        await writeManagedCredentialsJson(location, refreshed)
+      } catch {
+        // Keep going with the refreshed token in memory even if the write
+        // failed; worst case the next poll refreshes again.
+      }
+      token = parseOAuthCredentialsJson(refreshed).token
+    }
+  }
+
   if (!token) {
     return {
       provider: 'claude',
@@ -455,6 +537,7 @@ export async function fetchManagedAccountUsage(
       status: 'error'
     }
   }
+
   // Why: PTY fallback is intentionally omitted for inactive accounts. The PTY
   // path materializes credentials via ClaudeRuntimeAuthService, which would
   // interfere with the active account's auth state.
