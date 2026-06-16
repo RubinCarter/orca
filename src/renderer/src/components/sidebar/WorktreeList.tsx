@@ -2943,7 +2943,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
       ((currentWorktree.linkedGitLabMR ?? null) === null ||
         (currentWorktree.linkedPR ?? null) !== null)
     const shouldTrackSidebarWorktree = rightSidebarShowsPR && sidebarWorktreeHasGitHubReview
-    const shouldTrackVisibleRows = groupBy === 'pr-status' || cardProps.includes('pr')
+    const shouldTrackVisibleRows = groupBy === 'pr-status' || cardProps.includes('status')
     if (!shouldTrackVisibleRows && !shouldTrackSidebarWorktree) {
       if (lastVisibleRefreshKeyRef.current !== '__hidden__') {
         lastVisibleRefreshKeyRef.current = '__hidden__'
@@ -4333,10 +4333,10 @@ const WorktreeList = React.memo(function WorktreeList({
 
   const cardProps = useAppStore((s) => s.worktreeCardProperties)
 
-  // PR cache is needed for PR-status grouping and when the PR card property
-  // is visible.
+  // PR cache is needed for PR-status grouping and when the status lane can
+  // show PR state on quiet/done workspace cards.
   const prCache = useAppStore((s) =>
-    groupBy === 'pr-status' || cardProps.includes('pr') ? s.prCache : null
+    groupBy === 'pr-status' || cardProps.includes('status') ? s.prCache : null
   )
   const settings = useAppStore((s) => s.settings)
   const sshTargetLabels = useAppStore((s) => s.sshTargetLabels)

@@ -3583,7 +3583,7 @@
           "95c9754653": "Agent activity layout",
           "3d4b9c4997": "Hover",
           "ba87080fb7": "Show properties",
-          "320b675c9a": "Card layout",
+          "320b675c9a": "Card display",
           "09faabd875": "Project order",
           "7bada3b1ab": "Sort by",
           "dc0bb670bc": "Group by",
@@ -4342,7 +4342,7 @@
             "tintOpacity": "Tint Strength",
             "tintOpacityDescription": "Controls how strongly the tint is mixed into the sidebar."
           },
-          "workspaceCardLayoutGuidance": "Use the workspace sidebar options menu > Card layout > Compact."
+          "workspaceCardLayoutGuidance": "Use the workspace sidebar options menu > Card display > Compact."
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",

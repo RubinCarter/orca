@@ -3544,7 +3544,7 @@
           "95c9754653": "Agent アクティビティのレイアウト",
           "3d4b9c4997": "ホバー",
           "ba87080fb7": "プロパティを表示する",
-          "320b675c9a": "カードのレイアウト",
+          "320b675c9a": "カード表示",
           "09faabd875": "プロジェクトの順序",
           "7bada3b1ab": "並べ替え",
           "dc0bb670bc": "グループ化",
@@ -4327,7 +4327,7 @@
             "tintOpacity": "色合いの強さ",
             "tintOpacityDescription": "サイドバーに色合いをどの程度強く混ぜるかを調整します。"
           },
-          "workspaceCardLayoutGuidance": "ワークスペースサイドバーのオプションメニュー > カードレイアウト > コンパクト を使用します。"
+          "workspaceCardLayoutGuidance": "ワークスペースサイドバーのオプションメニュー > カード表示 > コンパクト を使用します。"
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",

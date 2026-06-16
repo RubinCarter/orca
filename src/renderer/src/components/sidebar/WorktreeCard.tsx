@@ -46,6 +46,7 @@ import {
 import { WorktreeCardPortsDetails, WorktreeCardPortsTrigger } from './WorktreeCardPorts'
 import { writeWorkspaceDragData } from './workspace-status'
 import { getWorktreeCardPrDisplay } from './worktree-card-pr-display'
+import { getWorktreeCardTitleDisplay } from './worktree-card-title-display'
 import { useWorktreeCardDetailsHoverControl } from './worktree-card-details-hover-state'
 import { isEventTargetInsideCurrentTarget } from './worktree-card-dom-events'
 import { getWorkspacePortsByWorktreeId } from '@/lib/workspace-port-groups'
@@ -423,15 +424,25 @@ const WorktreeCard = React.memo(function WorktreeCard({
           url: linearIssueUrlFallback
         }
     : null
+  const cardTitleDisplay = getWorktreeCardTitleDisplay({
+    storedDisplayName: worktree.displayName,
+    branchName: branch,
+    path: worktree.path,
+    repositoryName: repo?.displayName,
+    linearIssueTitle: linearIssueDisplay?.title,
+    issueTitle: issueDisplay?.title,
+    reviewTitle: prDisplay?.title
+  })
   const isDeleting = deleteState?.isDeleting ?? false
   const deleteModifierPressed = useWorkspaceDeleteModifierPressed()
 
-  const showDetailedCardProperties = !compactCards
+  const showStatus = cardProps.includes('status')
   const showIssue = cardProps.includes('issue')
   const showLinearIssue = cardProps.includes('linear-issue')
-  const showPR = cardProps.includes('pr')
   const showComment = cardProps.includes('comment')
   const showPorts = cardProps.includes('ports')
+  const detailsHoverControl = useWorktreeCardDetailsHoverControl()
+  const hoverDetailsOpen = detailsHoverControl.hoverOpen
 
   // Skip hosted-review fetches when the corresponding card surfaces are hidden.
   // This preference is purely presentational, so background refreshes would
@@ -447,7 +458,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
       isFolder ||
       worktree.isBare ||
       !hostedReviewCacheKey ||
-      !showPR ||
+      !showStatus ||
       isMacAppDataPath(repo.path)
     ) {
       return
@@ -487,7 +498,47 @@ const WorktreeCard = React.memo(function WorktreeCard({
     fetchHostedReviewForBranch,
     branch,
     hostedReviewCacheKey,
-    showPR
+    showStatus
+  ])
+
+  useEffect(() => {
+    if (
+      !hoverDetailsOpen ||
+      showStatus ||
+      isWebClient() ||
+      !repo ||
+      isFolder ||
+      worktree.isBare ||
+      !hostedReviewCacheKey ||
+      isMacAppDataPath(repo.path)
+    ) {
+      return
+    }
+    // Why: hidden card metadata is revealed on whole-card hover. Fetch lazily
+    // here instead of restoring always-on background decoration polling.
+    void fetchHostedReviewForBranch(repo.path, branch, {
+      repoId: repo.id,
+      linkedGitHubPR: worktree.linkedPR ?? null,
+      linkedGitLabMR,
+      linkedBitbucketPR,
+      linkedAzureDevOpsPR,
+      linkedGiteaPR,
+      staleWhileRevalidate: true
+    })
+  }, [
+    hoverDetailsOpen,
+    showStatus,
+    repo,
+    isFolder,
+    worktree.isBare,
+    worktree.linkedPR,
+    linkedGitLabMR,
+    linkedBitbucketPR,
+    linkedAzureDevOpsPR,
+    linkedGiteaPR,
+    fetchHostedReviewForBranch,
+    branch,
+    hostedReviewCacheKey
   ])
 
   // Same rationale for issues: once that surface is hidden, polling only burns
@@ -519,6 +570,21 @@ const WorktreeCard = React.memo(function WorktreeCard({
   }, [repo, isFolder, worktree.linkedIssue, fetchIssue, issueCacheKey, showIssue])
 
   useEffect(() => {
+    if (
+      !hoverDetailsOpen ||
+      showIssue ||
+      isWebClient() ||
+      !repo ||
+      isFolder ||
+      !worktree.linkedIssue ||
+      !issueCacheKey
+    ) {
+      return
+    }
+    void fetchIssue(repo.path, worktree.linkedIssue, { repoId: repo.id })
+  }, [hoverDetailsOpen, showIssue, repo, isFolder, worktree.linkedIssue, fetchIssue, issueCacheKey])
+
+  useEffect(() => {
     if (!worktree.linkedLinearIssue || !showLinearIssue) {
       return
     }
@@ -537,6 +603,13 @@ const WorktreeCard = React.memo(function WorktreeCard({
       document.removeEventListener('visibilitychange', refreshLinearIssueIfVisible)
     }
   }, [worktree.linkedLinearIssue, fetchLinearIssue, showLinearIssue])
+
+  useEffect(() => {
+    if (!hoverDetailsOpen || showLinearIssue || !worktree.linkedLinearIssue) {
+      return
+    }
+    void fetchLinearIssue(worktree.linkedLinearIssue, 'all')
+  }, [hoverDetailsOpen, showLinearIssue, worktree.linkedLinearIssue, fetchLinearIssue])
 
   // Stable click handler – ignore clicks that are really text selections.
   const handleClick = useCallback(
@@ -766,65 +839,67 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // as if the workspace is read so bold emphasis never appears. The persisted
   // `worktree.isUnread` flag is unchanged; only the rendering changes.
   const showUnreadEmphasis = cardProps.includes('unread') && worktree.isUnread
-  const metaIssue = showIssue ? issueDisplay : null
-  const metaLinearIssue = showLinearIssue ? linearIssueDisplay : null
-  const metaReview = showPR ? prDisplay : null
-  const metaComment = showComment ? worktree.comment : null
+  const hoverIssue = issueDisplay
+  const hoverLinearIssue = linearIssueDisplay
+  const hoverReview = prDisplay
+  const hoverComment = worktree.comment
+  const metaIssue = showIssue ? hoverIssue : null
+  const metaLinearIssue = showLinearIssue ? hoverLinearIssue : null
+  const metaComment = showComment ? hoverComment : null
   const handleOpenGitHubIssueInOrca = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
-      const issueUrl = metaIssue && 'url' in metaIssue ? metaIssue.url : undefined
-      if (!repo || !metaIssue || !issueUrl) {
+      const issueUrl = hoverIssue && 'url' in hoverIssue ? hoverIssue.url : undefined
+      if (!repo || !hoverIssue || !issueUrl) {
         return
       }
       const item: GitHubWorkItem = {
         id: issueUrl,
         type: 'issue',
-        number: metaIssue.number,
-        title: metaIssue.title,
-        state: 'state' in metaIssue ? (metaIssue.state ?? 'open') : 'open',
+        number: hoverIssue.number,
+        title: hoverIssue.title,
+        state: 'state' in hoverIssue ? (hoverIssue.state ?? 'open') : 'open',
         url: issueUrl,
-        labels: 'labels' in metaIssue ? (metaIssue.labels ?? []) : [],
+        labels: 'labels' in hoverIssue ? (hoverIssue.labels ?? []) : [],
         updatedAt: new Date().toISOString(),
         author: null,
         repoId: repo.id
       }
       openTaskPage({ taskSource: 'github', preselectedRepoId: repo.id, openGitHubWorkItem: item })
     },
-    [metaIssue, openTaskPage, repo]
+    [hoverIssue, openTaskPage, repo]
   )
   const handleOpenReviewInOrca = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
-      if (!repo || !metaReview?.url || metaReview.provider !== 'github') {
+      if (!repo || !hoverReview?.url || hoverReview.provider !== 'github') {
         return
       }
       const item: GitHubWorkItem = {
-        id: metaReview.url,
+        id: hoverReview.url,
         type: 'pr',
-        number: metaReview.number,
-        title: metaReview.title,
-        state: metaReview.state ?? 'open',
-        url: metaReview.url,
+        number: hoverReview.number,
+        title: hoverReview.title,
+        state: hoverReview.state ?? 'open',
+        url: hoverReview.url,
         labels: [],
-        updatedAt: 'updatedAt' in metaReview ? metaReview.updatedAt : new Date().toISOString(),
+        updatedAt: 'updatedAt' in hoverReview ? hoverReview.updatedAt : new Date().toISOString(),
         author: null,
-        headSha: 'headSha' in metaReview ? metaReview.headSha : undefined,
+        headSha: 'headSha' in hoverReview ? hoverReview.headSha : undefined,
         repoId: repo.id
       }
       openTaskPage({ taskSource: 'github', preselectedRepoId: repo.id, openGitHubWorkItem: item })
     },
-    [metaReview, openTaskPage, repo]
+    [hoverReview, openTaskPage, repo]
   )
-  const detailsHoverControl = useWorktreeCardDetailsHoverControl()
   const hasExplicitLinkedReview =
-    (metaReview?.provider === 'github' && worktree.linkedPR !== null) ||
-    (metaReview?.provider === 'gitlab' && linkedGitLabMR !== null) ||
-    (metaReview?.provider === 'bitbucket' && linkedBitbucketPR !== null) ||
-    (metaReview?.provider === 'azure-devops' && linkedAzureDevOpsPR !== null) ||
-    (metaReview?.provider === 'gitea' && linkedGiteaPR !== null)
+    (hoverReview?.provider === 'github' && worktree.linkedPR !== null) ||
+    (hoverReview?.provider === 'gitlab' && linkedGitLabMR !== null) ||
+    (hoverReview?.provider === 'bitbucket' && linkedBitbucketPR !== null) ||
+    (hoverReview?.provider === 'azure-devops' && linkedAzureDevOpsPR !== null) ||
+    (hoverReview?.provider === 'gitea' && linkedGiteaPR !== null)
   const handleUnlinkReview = useCallback(() => {
-    switch (metaReview?.provider) {
+    switch (hoverReview?.provider) {
       case 'github':
         void updateWorktreeMeta(worktree.id, { linkedPR: null })
         return
@@ -844,7 +919,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
       case undefined:
         break
     }
-  }, [metaReview?.provider, updateWorktreeMeta, worktree.id])
+  }, [hoverReview?.provider, updateWorktreeMeta, worktree.id])
   const handleOpenLinearIssueInOrca = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -858,7 +933,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const hasDetails = hasWorktreeCardDetails({
     issue: metaIssue,
     linearIssue: metaLinearIssue,
-    review: metaReview,
+    review: null,
     comment: metaComment
   })
   const hasPorts = showPorts && workspacePorts.length > 0
@@ -878,7 +953,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const showConflictOperationBadge =
     !!conflictOperation && conflictOperation !== 'unknown' && conflictOperation !== 'rebase'
   const hasMetadataBadge = showConflictOperationBadge
-  const showStatus = cardProps.includes('status')
   const showUnreadQuickAction = !affiliateListMode && cardProps.includes('unread')
   // Why: the activity dot and unread bell compete for the same tiny sidebar
   // lane. Keep one slot, and let an active unread bell visually win.
@@ -904,11 +978,22 @@ const WorktreeCard = React.memo(function WorktreeCard({
     : hasDetailedMetaRowContent
   const showHeaderActions = showTitleRowUnread || showTitleRowPrimary || showDeleteQuickAction
   const showBranchIdentityHover =
-    !isFolder &&
-    branch.length > 0 &&
-    !cardProps.includes('branch') &&
-    branch !== worktree.displayName
-  const showInlineAgentList = showDetailedCardProperties && cardProps.includes('inline-agents')
+    !isFolder && branch.length > 0 && !cardProps.includes('branch') && branch !== cardTitleDisplay
+  const showInlineAgentList = cardProps.includes('inline-agents')
+  const hasHoverDetails =
+    hasWorktreeCardDetails({
+      issue: hoverIssue,
+      linearIssue: hoverLinearIssue,
+      review: hoverReview,
+      comment: hoverComment
+    }) ||
+    workspacePorts.length > 0 ||
+    showBranchIdentityHover
+  // Why: the whole card now owns metadata hover; avoid stacking the title's
+  // truncation tooltip on top of the richer details popover.
+  const titleWrapper = hasHoverDetails
+    ? (title: React.ReactElement): React.ReactElement => title
+    : undefined
   // Why: sidebar rows need a small surface inset, while their content remains
   // aligned with the pre-inset layout and the repo header hierarchy.
   const cardStyle = flushSurface
@@ -919,80 +1004,20 @@ const WorktreeCard = React.memo(function WorktreeCard({
       ? { paddingLeft: `calc(0.125rem + ${contentIndent}px)` }
       : undefined
 
-  const titleDetailsWrapper =
-    showBranchIdentityHover || (compactCards && (hasDetails || hasPorts))
-      ? (title: React.ReactElement) => (
-          <WorktreeCardDetailsHover
-            issue={metaIssue}
-            linearIssue={metaLinearIssue}
-            review={metaReview}
-            comment={metaComment}
-            branchName={showBranchIdentityHover ? branch : undefined}
-            workspaceTitle={worktree.displayName}
-            detailsAfter={hasPorts ? <WorktreeCardPortsDetails ports={workspacePorts} /> : null}
-            openDelay={100}
-            hoverControl={detailsHoverControl}
-            onEditIssue={affiliateListMode ? undefined : handleEditIssue}
-            onEditComment={affiliateListMode ? undefined : handleEditComment}
-            onOpenGitHubIssueInOrca={
-              metaIssue && 'url' in metaIssue && metaIssue.url
-                ? handleOpenGitHubIssueInOrca
-                : undefined
-            }
-            onOpenLinearIssueInOrca={linearIssue?.url ? handleOpenLinearIssueInOrca : undefined}
-            onOpenReviewInOrca={
-              metaReview?.url && metaReview.provider === 'github'
-                ? handleOpenReviewInOrca
-                : undefined
-            }
-            // Why: when metadata is hidden from the card body, title hover
-            // carries the same explicit-link affordance without adding chrome.
-            onUnlinkReview={
-              !affiliateListMode && hasExplicitLinkedReview ? handleUnlinkReview : undefined
-            }
-          >
-            {title}
-          </WorktreeCardDetailsHover>
-        )
-      : undefined
-
   const detailsAndPorts =
     hasDetails || hasPorts ? (
-      <WorktreeCardDetailsHover
-        issue={metaIssue}
-        linearIssue={metaLinearIssue}
-        review={metaReview}
-        comment={metaComment}
-        detailsAfter={hasPorts ? <WorktreeCardPortsDetails ports={workspacePorts} /> : null}
-        hoverControl={detailsHoverControl}
-        onEditIssue={affiliateListMode ? undefined : handleEditIssue}
-        onEditComment={affiliateListMode ? undefined : handleEditComment}
-        onOpenGitHubIssueInOrca={
-          metaIssue && 'url' in metaIssue && metaIssue.url ? handleOpenGitHubIssueInOrca : undefined
-        }
-        onOpenLinearIssueInOrca={linearIssue?.url ? handleOpenLinearIssueInOrca : undefined}
-        onOpenReviewInOrca={
-          metaReview?.url && metaReview.provider === 'github' ? handleOpenReviewInOrca : undefined
-        }
-        // Why: branch lookup can show a review without persisted metadata. Only
-        // expose unlink when this workspace has an explicit linked PR/MR.
-        onUnlinkReview={
-          !affiliateListMode && hasExplicitLinkedReview ? handleUnlinkReview : undefined
-        }
-      >
-        <div className="flex shrink-0 items-center gap-1">
-          {hasPorts && <WorktreeCardPortsTrigger ports={workspacePorts} />}
-          {hasDetails && (
-            <WorktreeCardMetaBadges
-              issue={metaIssue}
-              linearIssue={metaLinearIssue}
-              review={metaReview}
-              comment={metaComment}
-              className="ml-0 pr-0"
-            />
-          )}
-        </div>
-      </WorktreeCardDetailsHover>
+      <div className="flex shrink-0 items-center gap-1">
+        {hasPorts && <WorktreeCardPortsTrigger ports={workspacePorts} />}
+        {hasDetails && (
+          <WorktreeCardMetaBadges
+            issue={metaIssue}
+            linearIssue={metaLinearIssue}
+            review={null}
+            comment={metaComment}
+            className="ml-0 pr-0"
+          />
+        )}
+      </div>
     ) : null
 
   const cardBody = (
@@ -1053,8 +1078,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
             unreadTooltip={unreadTooltip}
             onPointerDown={stopQuickActionPointerPropagation}
             onToggleUnread={handleToggleUnreadQuick}
-            showReviewStatus={showPR}
-            prDisplay={metaReview}
+            prDisplay={hoverReview}
           />
         </div>
       ) : null}
@@ -1117,12 +1141,12 @@ const WorktreeCard = React.memo(function WorktreeCard({
                  at text-foreground in both states so the title keeps hierarchy
                  against nearby status chips. */}
             <WorktreeTitleInlineRename
-              displayName={worktree.displayName}
+              displayName={cardTitleDisplay}
               disabled={isDeleting || affiliateListMode}
               showUnreadEmphasis={showUnreadEmphasis}
               className="text-[12px]"
               editingClassName="flex-1"
-              titleWrapper={titleDetailsWrapper}
+              titleWrapper={titleWrapper}
               onEditingChange={affiliateListMode ? undefined : setTitleRenaming}
               onRename={handleRenameTitle}
               beginEditing={
@@ -1468,17 +1492,54 @@ const WorktreeCard = React.memo(function WorktreeCard({
     </div>
   )
 
+  const cardBodyWithHoverDetails =
+    hasHoverDetails && !titleRenaming ? (
+      <WorktreeCardDetailsHover
+        issue={hoverIssue}
+        linearIssue={hoverLinearIssue}
+        review={hoverReview}
+        comment={hoverComment}
+        branchName={showBranchIdentityHover ? branch : undefined}
+        workspaceTitle={showBranchIdentityHover ? cardTitleDisplay : undefined}
+        detailsAfter={
+          workspacePorts.length > 0 ? <WorktreeCardPortsDetails ports={workspacePorts} /> : null
+        }
+        openDelay={100}
+        hoverControl={detailsHoverControl}
+        onEditIssue={affiliateListMode ? undefined : handleEditIssue}
+        onEditComment={affiliateListMode ? undefined : handleEditComment}
+        onOpenGitHubIssueInOrca={
+          hoverIssue && 'url' in hoverIssue && hoverIssue.url
+            ? handleOpenGitHubIssueInOrca
+            : undefined
+        }
+        onOpenLinearIssueInOrca={linearIssue?.url ? handleOpenLinearIssueInOrca : undefined}
+        onOpenReviewInOrca={
+          hoverReview?.url && hoverReview.provider === 'github' ? handleOpenReviewInOrca : undefined
+        }
+        // Why: branch lookup can show a review without persisted metadata. Only
+        // expose unlink when this workspace has an explicit linked PR/MR.
+        onUnlinkReview={
+          !affiliateListMode && hasExplicitLinkedReview ? handleUnlinkReview : undefined
+        }
+      >
+        {cardBody}
+      </WorktreeCardDetailsHover>
+    ) : (
+      cardBody
+    )
+
   return (
     <>
       {affiliateListMode ? (
-        cardBody
+        cardBodyWithHoverDetails
       ) : (
         <WorktreeContextMenu
           worktree={worktree}
           selectedWorktrees={selectedWorktrees}
           onContextMenuSelect={handleContextMenuSelect}
         >
-          {cardBody}
+          {cardBodyWithHoverDetails}
         </WorktreeContextMenu>
       )}
 

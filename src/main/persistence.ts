@@ -2705,6 +2705,10 @@ export class Store {
               this.loadNeedsSave = true
             }
             const rawCardProps = parsed.ui?.worktreeCardProperties
+            const hasWorktreeCardModeDefaultedMarker = Object.prototype.hasOwnProperty.call(
+              parsed.ui ?? {},
+              '_worktreeCardModeDefaulted'
+            )
             const worktreeCardModeDefaulted = parsed.ui?._worktreeCardModeDefaulted === true
             const worktreeCardMode =
               (parsed.settings?.compactWorktreeCards ??
@@ -2717,6 +2721,11 @@ export class Store {
               if (!Array.isArray(rawCardProps)) {
                 return modeProps
               }
+              // Why: the compact/default switcher was removed; old compact
+              // users keep compact visuals via the equivalent card toggles.
+              if (worktreeCardMode === 'Compact' && worktreeCardModeDefaulted) {
+                return modeProps
+              }
               if (worktreeCardModeDefaulted) {
                 return normalizeWorktreeCardProperties(rawCardProps)
               }
@@ -2724,13 +2733,23 @@ export class Store {
               // that once only for profiles that had persisted card properties
               // before the two-mode default marker existed; fresh defaults
               // keep the reviewed no-branch surface.
-              if (worktreeCardMode === 'Default' && Array.isArray(rawCardProps)) {
+              if (
+                !hasWorktreeCardModeDefaultedMarker &&
+                worktreeCardMode === 'Default' &&
+                Array.isArray(rawCardProps)
+              ) {
                 return normalizeWorktreeCardProperties([...modeProps, 'branch'])
               }
-              return modeProps
+              if (!hasWorktreeCardModeDefaultedMarker) {
+                return modeProps
+              }
+              return normalizeWorktreeCardProperties(rawCardProps)
             })()
+            const nextWorktreeCardModeDefaulted = hasWorktreeCardModeDefaultedMarker
+              ? worktreeCardModeDefaulted
+              : true
             if (
-              !worktreeCardModeDefaulted ||
+              !hasWorktreeCardModeDefaultedMarker ||
               !areWorktreeCardPropertiesEqual(
                 Array.isArray(rawCardProps)
                   ? normalizeWorktreeCardProperties(rawCardProps)
@@ -2774,7 +2793,7 @@ export class Store {
               _workspaceStatusesDefaultVisualsMigrated: true,
               _sortBySmartMigrated: true,
               worktreeCardProperties: migratedCardProps,
-              _worktreeCardModeDefaulted: true,
+              _worktreeCardModeDefaulted: nextWorktreeCardModeDefaulted,
               // Why: keep stamping the legacy flag for forward-compat with
               // a rollback to a pre-default-on build that still reads it.
               // The mode marker is the one that now gates card-property migration.

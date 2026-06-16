@@ -17,7 +17,6 @@ type WorktreeCardStatusSlotProps = {
   unreadTooltip: string
   onToggleUnread: React.MouseEventHandler<HTMLButtonElement>
   onPointerDown: React.PointerEventHandler<HTMLButtonElement>
-  showReviewStatus?: boolean
   prDisplay?: WorktreeCardPrDisplay | null
   className?: string
 }
@@ -53,14 +52,13 @@ export function WorktreeCardStatusSlot({
   unreadTooltip,
   onToggleUnread,
   onPointerDown,
-  showReviewStatus = false,
   prDisplay = null,
   className
 }: WorktreeCardStatusSlotProps): React.JSX.Element | null {
   const status = useWorktreeActivityStatus(worktreeId)
   const statusLabel = getWorktreeStatusLabel(status) || status
   const canShowReviewStatus =
-    showReviewStatus && prDisplay !== null && (status === 'active' || status === 'done')
+    showStatus && prDisplay !== null && (status === 'active' || status === 'done')
   const passiveStatusLabel =
     canShowReviewStatus && prDisplay ? getReviewStatusTooltip(prDisplay) : statusLabel
   const passiveStatus =

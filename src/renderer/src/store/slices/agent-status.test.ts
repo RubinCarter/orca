@@ -672,7 +672,7 @@ describe('agent status PR refresh handoff', () => {
     vi.useFakeTimers()
     const enqueuePRRefresh = stubGitHubPRRefreshApi()
     const store = createTestStore()
-    seedAgentPRRefreshFixture(store, ['pr'])
+    seedAgentPRRefreshFixture(store, ['status'])
 
     store
       .getState()
@@ -699,7 +699,7 @@ describe('agent status PR refresh handoff', () => {
     vi.useFakeTimers()
     const enqueuePRRefresh = stubGitHubPRRefreshApi()
     const store = createTestStore()
-    seedAgentPRRefreshFixture(store, ['pr'])
+    seedAgentPRRefreshFixture(store, ['status'])
     store.setState({ tabsByWorktree: { 'wt-1': [] } } as Partial<AppState>)
     const paneKey = 'tab-worker:11111111-1111-4111-8111-111111111111'
 
@@ -736,7 +736,7 @@ describe('agent status PR refresh handoff', () => {
     })
   })
 
-  it('does not spend a PR refresh when no PR surface is visible', async () => {
+  it('does not spend a PR refresh when no status lane or PR surface is visible', async () => {
     vi.useFakeTimers()
     const enqueuePRRefresh = stubGitHubPRRefreshApi()
     const store = createTestStore()
@@ -758,7 +758,7 @@ describe('agent status PR refresh handoff', () => {
     vi.useFakeTimers()
     const enqueuePRRefresh = stubGitHubPRRefreshApi()
     const store = createTestStore()
-    seedAgentPRRefreshFixture(store, ['pr'])
+    seedAgentPRRefreshFixture(store, ['status'])
 
     store
       .getState()

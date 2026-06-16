@@ -1,4 +1,4 @@
-import type { AgentActivityDisplayMode, WorktreeCardMode } from '../../../../shared/types'
+import type { AgentActivityDisplayMode } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 
 export const GROUP_BY_OPTIONS = [
@@ -27,21 +27,6 @@ export const GROUP_BY_OPTIONS = [
     }
   }
 ] as const
-
-export const WORKTREE_CARD_MODE_OPTIONS: { id: WorktreeCardMode; label: string }[] = [
-  {
-    id: 'Default',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.2d4f0eb933', 'Default')
-    }
-  },
-  {
-    id: 'Compact',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.25105b28cb', 'Compact')
-    }
-  }
-]
 
 export const AGENT_ACTIVITY_DISPLAY_OPTIONS: { id: AgentActivityDisplayMode; label: string }[] = [
   {

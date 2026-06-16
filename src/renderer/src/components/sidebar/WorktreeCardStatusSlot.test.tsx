@@ -77,7 +77,6 @@ describe('WorktreeCardStatusSlot', () => {
         unreadTooltip="Mark as unread"
         onPointerDown={vi.fn()}
         onToggleUnread={vi.fn()}
-        showReviewStatus
         prDisplay={review}
       />
     )
@@ -98,7 +97,6 @@ describe('WorktreeCardStatusSlot', () => {
         unreadTooltip="Mark as unread"
         onPointerDown={vi.fn()}
         onToggleUnread={vi.fn()}
-        showReviewStatus
         prDisplay={review}
       />
     )
@@ -118,7 +116,6 @@ describe('WorktreeCardStatusSlot', () => {
         unreadTooltip="Mark as unread"
         onPointerDown={vi.fn()}
         onToggleUnread={vi.fn()}
-        showReviewStatus
         prDisplay={review}
       />
     )
@@ -138,7 +135,6 @@ describe('WorktreeCardStatusSlot', () => {
         unreadTooltip="Mark as read"
         onPointerDown={vi.fn()}
         onToggleUnread={vi.fn()}
-        showReviewStatus
         prDisplay={review}
       />
     )

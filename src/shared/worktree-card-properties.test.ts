@@ -13,17 +13,23 @@ describe('worktree card properties', () => {
 
     expect(props).toContain('inline-agents')
     expect(props).not.toContain('branch')
+    expect(props).not.toContain('pr')
     expect(props).toEqual(DEFAULT_WORKTREE_CARD_PROPERTIES)
   })
 
-  it('defines Compact without inline agents or branch', () => {
+  it('defines Compact without extra rows or branch metadata', () => {
     const props = getWorktreeCardModeProperties('Compact')
 
     expect(props).not.toContain('inline-agents')
+    expect(props).not.toContain('issue')
+    expect(props).not.toContain('linear-issue')
+    expect(props).not.toContain('comment')
+    expect(props).not.toContain('ports')
     expect(props).not.toContain('branch')
+    expect(props).not.toContain('pr')
   })
 
-  it('keeps status and unread fixed in both modes', () => {
+  it('keeps status and unread enabled in both presets', () => {
     expect(getWorktreeCardModeProperties('Default')).toEqual(
       expect.arrayContaining(['status', 'unread'])
     )
@@ -32,22 +38,14 @@ describe('worktree card properties', () => {
     )
   })
 
-  it('keeps provider-specific task metadata together in both modes', () => {
+  it('keeps provider-specific task metadata together in Default mode', () => {
     expect(getWorktreeCardModeProperties('Default')).toEqual(
-      expect.arrayContaining(TASK_WORKTREE_CARD_PROPERTIES)
-    )
-    expect(getWorktreeCardModeProperties('Compact')).toEqual(
       expect.arrayContaining(TASK_WORKTREE_CARD_PROPERTIES)
     )
   })
 
-  it('normalizes legacy ci away while preserving branch', () => {
-    expect(normalizeWorktreeCardProperties(['ci', 'branch', 'pr'])).toEqual([
-      'status',
-      'unread',
-      'branch',
-      'pr'
-    ])
+  it('normalizes legacy ci and pr away while preserving selected properties', () => {
+    expect(normalizeWorktreeCardProperties(['ci', 'branch', 'pr'])).toEqual(['branch'])
   })
 
   it('returns combined mode update payloads', () => {

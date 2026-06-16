@@ -1,4 +1,5 @@
-import type { AgentActivityDisplayMode, WorktreeCardMode } from '../../../../shared/types'
+import type { WorktreeCardProperty } from '../../../../shared/types'
+import { TASK_WORKTREE_CARD_PROPERTIES } from '../../../../shared/constants'
 import { translate } from '@/i18n/i18n'
 
 export const GROUP_BY_OPTIONS = [
@@ -28,37 +29,60 @@ export const GROUP_BY_OPTIONS = [
   }
 ] as const
 
-export const WORKTREE_CARD_MODE_OPTIONS: { id: WorktreeCardMode; label: string }[] = [
-  {
-    id: 'Default',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.2d4f0eb933', 'Default')
-    }
-  },
-  {
-    id: 'Compact',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.25105b28cb', 'Compact')
-    }
-  }
-]
-
-export const AGENT_ACTIVITY_DISPLAY_OPTIONS: {
-  id: AgentActivityDisplayMode
+export type WorktreeCardPropertyOption = {
+  id: string
+  properties: readonly WorktreeCardProperty[]
   label: string
-}[] = [
+}
+
+export const WORKTREE_CARD_PROPERTY_OPTIONS: WorktreeCardPropertyOption[] = [
   {
-    id: 'compact',
+    id: 'status',
+    // Why: unread is rendered in the same tiny status lane, so users should
+    // only have one Status display decision instead of a separate Unread knob.
+    properties: ['status', 'unread'],
     get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.25105b28cb', 'Compact')
+      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.1a0eec0d35', 'Status')
     }
   },
   {
-    id: 'full',
+    id: 'tasks',
+    properties: TASK_WORKTREE_CARD_PROPERTIES,
+    get label() {
+      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.b5536d5a88', 'Tasks')
+    }
+  },
+  {
+    id: 'comment',
+    properties: ['comment'],
+    get label() {
+      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.8d62c68b35', 'Notes')
+    }
+  },
+  {
+    id: 'ports',
+    properties: ['ports'],
+    get label() {
+      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.2d74665a56', 'Ports')
+    }
+  },
+  {
+    id: 'inline-agents',
+    properties: ['inline-agents'],
     get label() {
       return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.2a81e07366',
-        'Full list'
+        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.65a9820bd1',
+        'Agent statuses'
+      )
+    }
+  },
+  {
+    id: 'branch',
+    properties: ['branch'],
+    get label() {
+      return translate(
+        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.219ebf1961',
+        'Branch name'
       )
     }
   }

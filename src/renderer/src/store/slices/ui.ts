@@ -791,6 +791,7 @@ export type UISlice = {
   worktreeCardProperties: WorktreeCardProperty[]
   _worktreeCardModeDefaulted: boolean
   setWorktreeCardMode: (mode: WorktreeCardMode) => void
+  setWorktreeCardProperties: (properties: readonly WorktreeCardProperty[]) => void
   agentActivityDisplayMode: AgentActivityDisplayMode
   setAgentActivityDisplayMode: (mode: AgentActivityDisplayMode) => void
   workspaceStatuses: WorkspaceStatusDefinition[]
@@ -1947,6 +1948,13 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       }),
       window.api.ui.set(updates.ui)
     ]).catch(console.error)
+  },
+  setWorktreeCardProperties: (properties) => {
+    const normalized = normalizeWorktreeCardProperties(properties)
+    set({ worktreeCardProperties: normalized, _worktreeCardModeDefaulted: false })
+    window.api.ui
+      .set({ worktreeCardProperties: normalized, _worktreeCardModeDefaulted: false })
+      .catch(console.error)
   },
   agentActivityDisplayMode: DEFAULT_AGENT_ACTIVITY_DISPLAY_MODE,
   setAgentActivityDisplayMode: (mode) => {

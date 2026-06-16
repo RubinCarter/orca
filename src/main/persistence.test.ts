@@ -4375,11 +4375,11 @@ describe('Store', () => {
     expect(trackMock).not.toHaveBeenCalled()
   })
 
-  it('updateUI restores fixed card properties from direct UI writes', async () => {
+  it('updateUI preserves selected card properties from direct UI writes', async () => {
     const store = await createStore()
     store.updateUI({ worktreeCardProperties: ['inline-agents'] })
 
-    expect(store.getUI().worktreeCardProperties).toEqual(['status', 'unread', 'inline-agents'])
+    expect(store.getUI().worktreeCardProperties).toEqual(['inline-agents'])
   })
 
   it('persists updater reminder metadata in UI state', async () => {
@@ -4833,7 +4833,6 @@ describe('Store', () => {
       'branch',
       'issue',
       'linear-issue',
-      'pr',
       'comment',
       'ports',
       'inline-agents'
@@ -4842,7 +4841,7 @@ describe('Store', () => {
     expect(store.getUI()._worktreeCardModeDefaulted).toBe(true)
   })
 
-  it('keeps branch and inline agents hidden for legacy compact profiles', async () => {
+  it('keeps branch, tasks, notes, ports, and inline agents hidden for legacy compact profiles', async () => {
     writeDataFile({
       schemaVersion: 1,
       repos: [],
@@ -4863,15 +4862,7 @@ describe('Store', () => {
       workspaceSession: {}
     })
     const store = await createStore()
-    expect(store.getUI().worktreeCardProperties).toEqual([
-      'status',
-      'unread',
-      'issue',
-      'linear-issue',
-      'pr',
-      'comment',
-      'ports'
-    ])
+    expect(store.getUI().worktreeCardProperties).toEqual(['status', 'unread'])
     expect(store.getUI().worktreeCardProperties).not.toContain('branch')
     expect(store.getUI().worktreeCardProperties).not.toContain('inline-agents')
     expect(store.getUI()._worktreeCardModeDefaulted).toBe(true)
@@ -4894,7 +4885,6 @@ describe('Store', () => {
       'unread',
       'issue',
       'linear-issue',
-      'pr',
       'comment',
       'ports',
       'inline-agents'
@@ -4918,9 +4908,29 @@ describe('Store', () => {
     })
     const store = await createStore()
 
-    expect(store.getUI().worktreeCardProperties).toEqual(['status', 'unread', 'issue', 'pr'])
+    expect(store.getUI().worktreeCardProperties).toEqual(['status', 'unread', 'issue'])
     expect(store.getUI().worktreeCardProperties).not.toContain('ci')
     expect(store.getUI().worktreeCardProperties).not.toContain('branch')
+  })
+
+  it('preserves custom card properties after the mode marker exists', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: { compactWorktreeCards: false },
+      ui: {
+        worktreeCardProperties: ['status', 'pr'],
+        _worktreeCardModeDefaulted: false
+      },
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+    const store = await createStore()
+
+    expect(store.getUI().worktreeCardProperties).toEqual(['status'])
+    expect(store.getUI().worktreeCardProperties).not.toContain('branch')
+    expect(store.getUI()._worktreeCardModeDefaulted).toBe(false)
   })
 
   it('does not re-add branch after an explicit Default mode selection', async () => {
@@ -4948,6 +4958,7 @@ describe('Store', () => {
     const store = await createStore()
 
     expect(store.getUI().worktreeCardProperties).not.toContain('branch')
+    expect(store.getUI().worktreeCardProperties).not.toContain('pr')
     expect(store.getUI().worktreeCardProperties).toContain('inline-agents')
   })
 
@@ -4975,6 +4986,7 @@ describe('Store', () => {
     const store = await createStore()
 
     expect(store.getSettings().compactWorktreeCards).toBe(true)
+    expect(store.getUI().worktreeCardProperties).toEqual(['status', 'unread'])
     expect(store.getUI().worktreeCardProperties).not.toContain('branch')
     expect(store.getUI().worktreeCardProperties).not.toContain('inline-agents')
   })
@@ -4994,15 +5006,7 @@ describe('Store', () => {
     const store = await createStore()
 
     expect(store.getSettings().compactWorktreeCards).toBe(true)
-    expect(store.getUI().worktreeCardProperties).toEqual([
-      'status',
-      'unread',
-      'issue',
-      'linear-issue',
-      'pr',
-      'comment',
-      'ports'
-    ])
+    expect(store.getUI().worktreeCardProperties).toEqual(['status', 'unread'])
     expect(store.getUI().worktreeCardProperties).not.toContain('inline-agents')
   })
 

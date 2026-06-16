@@ -991,7 +991,7 @@ describe('createUISlice hydratePersistedUI', () => {
     expect(store.getState().hideDefaultBranchWorkspace).toBe(true)
   })
 
-  it('restores fixed card properties during hydration', () => {
+  it('restores selected card properties during hydration', () => {
     const store = createUIStore()
 
     store.getState().hydratePersistedUI(
@@ -1000,7 +1000,7 @@ describe('createUISlice hydratePersistedUI', () => {
       })
     )
 
-    expect(store.getState().worktreeCardProperties).toEqual(['status', 'unread', 'inline-agents'])
+    expect(store.getState().worktreeCardProperties).toEqual(['inline-agents'])
   })
 
   it('adds default-on status items once for older persisted UI', () => {
@@ -1398,6 +1398,21 @@ describe('createUISlice hydratePersistedUI', () => {
     expect(setUI).toHaveBeenCalledWith({
       worktreeCardProperties: expected,
       _worktreeCardModeDefaulted: true
+    })
+  })
+
+  it('sets custom worktree card properties', () => {
+    const setUI = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('window', { api: { ui: { set: setUI } } })
+    const store = createUIStore()
+
+    store.getState().setWorktreeCardProperties(['inline-agents', 'pr', 'pr'])
+
+    expect(store.getState().worktreeCardProperties).toEqual(['inline-agents'])
+    expect(store.getState()._worktreeCardModeDefaulted).toBe(false)
+    expect(setUI).toHaveBeenCalledWith({
+      worktreeCardProperties: ['inline-agents'],
+      _worktreeCardModeDefaulted: false
     })
   })
 
