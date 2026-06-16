@@ -233,6 +233,12 @@
     left: 0;
     bottom: 0;
     z-index: 30;
+    /* Why: the panel width is JS-driven (resize handle) with a 200px floor, but
+       the absolute overlay has no flex sibling to bound it, so below ~200px of
+       container width that floor would overflow the preview. Cap the overlay to
+       the visible container width (min-width:0 lets it shrink past the floor). */
+    min-width: 0;
+    max-width: calc(100cqw - 44px);
     box-shadow: 10px 0 24px rgb(0 0 0 / 0.14);
   }
 }
