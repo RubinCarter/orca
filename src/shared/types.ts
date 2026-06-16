@@ -494,6 +494,8 @@ export type GitPushTarget = {
 
 export type GitHubPrStartPoint = {
   baseBranch: string
+  /** Review target branch to use for Source Control compare after creating from a PR head SHA. */
+  compareBaseRef?: string
   pushTarget?: GitPushTarget
   /** Verified PR head commit. Present when checkout can be tied to a stable SHA. */
   headSha?: string
@@ -1054,6 +1056,8 @@ export type PRInfo = {
   // Keeping the head SHA in cached PR metadata lets the checks panel poll the
   // correct commit without re-querying GitHub or guessing from local branch refs.
   headSha?: string
+  /** Target branch name for PR-created worktree compare-base repair. */
+  baseRefName?: string
   prRepo?: GitHubRepositoryIdentity
   headRepo?: GitHubRepositoryIdentity
   conflictSummary?: PRConflictSummary
@@ -1894,6 +1898,8 @@ export type CreateWorktreeArgs = {
    *  Linear artifact whose title should remain readable in the sidebar. */
   displayName?: string
   baseBranch?: string
+  /** Source Control compare target when it differs from the checkout start point. */
+  compareBaseRef?: string
   /** Optional git branch to create, separate from the filesystem-safe worktree
    *  name. Used when creating from an existing branch whose local branch name
    *  legitimately contains `/` while the worktree directory must not. */

@@ -1928,6 +1928,13 @@ function mapRestPullRequest(pr: RestPullRequest): PullRequestLookupData {
   }
 }
 
+function isMergedImplicitPR(data: PullRequestLookupData, linkedPRNumber?: number | null): boolean {
+  // Why: merged PRs are historical branch matches unless the worktree has an
+  // explicit PR link. Showing them as implicit review context leaves nothing
+  // meaningful to unlink after the branch has been rebased or merged.
+  return typeof linkedPRNumber !== 'number' && mapPRState(data.state, data.isDraft) === 'merged'
+}
+
 function normalizePullRequestLookupData(data: PullRequestLookupData): PullRequestLookupData {
   return {
     ...data,
@@ -2423,6 +2430,11 @@ export async function getPRForBranchOutcome(
         }
       }
     }
+    if (data && isMergedImplicitPR(data, linkedPRNumber)) {
+      data = null
+      dataRepo = null
+      dataHeadRepo = headRepo
+    }
     if (!data && typeof linkedPRNumber !== 'number' && typeof fallbackPRNumber === 'number') {
       const fallbackLookup = await lookupPRByNumber({
         candidates,
@@ -2433,6 +2445,9 @@ export async function getPRForBranchOutcome(
       dataRepo = fallbackLookup.dataRepo
     }
     if (!data) {
+      return { kind: 'no-pr', fetchedAt: Date.now() }
+    }
+    if (isMergedImplicitPR(data, linkedPRNumber)) {
       return { kind: 'no-pr', fetchedAt: Date.now() }
     }
 
@@ -2468,6 +2483,7 @@ export async function getPRForBranchOutcome(
           : {}),
         ...(data.mergeStateStatus !== undefined ? { mergeStateStatus: data.mergeStateStatus } : {}),
         headSha: data.headRefOid,
+        ...(data.baseRefName ? { baseRefName: data.baseRefName } : {}),
         prRepo: dataRepo ?? undefined,
         headRepo: dataHeadRepo ?? undefined,
         conflictSummary

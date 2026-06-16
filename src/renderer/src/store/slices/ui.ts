@@ -650,6 +650,9 @@ export type UISlice = {
     // Why: repo-scoped start ref selected via the "Start from" picker.
     // Absent means "use the repo's effective base ref".
     baseBranch?: string
+    // Why: review-created worktrees can start from a head ref/SHA while Source
+    // Control must compare against the provider target branch.
+    compareBaseRef?: string
   } | null
   openTaskPage: (
     data?: UISlice['taskPageData'],

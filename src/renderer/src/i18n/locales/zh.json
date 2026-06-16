@@ -2686,7 +2686,7 @@
             "97957ad3a3": "连接 AI 提供商账户，即可实时查看使用量并在账户间快速切换。",
             "9a542f46c7": "从状态栏隐藏",
             "84c3b15dca": "Agent 用量限制",
-            "d663430cf9": "连接AI账户查看使用情况"
+            "d663430cf9": "设置用量跟踪"
           },
           "UpdateStatusSegment": {
             "5cd13105a3": "更新失败。单击以展开。",
@@ -8373,7 +8373,25 @@
             "e283b50179": "提交信息",
             "f394c6128a": "没有可用于解释此提交的代理",
             "04a5d7239b": "此仓库没有受支持的网页远程库",
-            "15b6e834ac": "无法在浏览器中打开提交"
+            "15b6e834ac": "无法在浏览器中打开提交",
+            "d37e68f61d": "正在准备分支以供评审…",
+            "8d8f5c6c94": "正在生成 commit 消息…",
+            "fda060d6ce": "请先检查 commit 消息，然后重试创建 PR。",
+            "b75cb1fd0c": "正在提交更改…",
+            "995c5e67ec": "评审设置需要处理。",
+            "d7492cafce": "无法刷新 Source Control。请重试创建 PR。",
+            "473f18758e": "Source Control AI 设置",
+            "createPrIntentConfigureAi": "请添加 commit 消息或配置 Source Control AI 设置。",
+            "createPrIntentGenerateFailed": "无法生成 commit 消息。请添加一条消息后重试。",
+            "createPrIntentCommitFailed": "无法提交更改。请修复问题后重试创建 PR。",
+            "createPrIntentNeedsSync": "创建评审前请先同步此分支。",
+            "createPrIntentBranchNotReady": "分支尚未准备好创建评审。",
+            "createPrIntentPublishing": "正在发布分支…",
+            "createPrIntentForcePushing": "正在使用 lease 强制推送…",
+            "createPrIntentPushing": "正在推送 commits…",
+            "createPrIntentRemoteFailed": "无法更新远程分支。请重试创建 PR。",
+            "createPrIntentGeneratingDetails": "Generating review details…",
+            "createPrIntentCreatingReview": "Creating review…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "无法启动选定的 Agent。",
@@ -8505,7 +8523,8 @@
                 "d91f2a6c39": "发送 {{value0}} 条已排队评论",
                 "a6de3e5a20": "清除已排队评论",
                 "49ea0937e4": "将评论添加到解决列表",
-                "9fecebb29d": "添加"
+                "9fecebb29d": "添加",
+                "b8c4e2a1f7": "View full logs"
               },
               "empty": {
                 "state": {
@@ -8659,7 +8678,10 @@
                   "484f45c439": "{{value0}} 正在进行中...",
                   "74fc171e99": "强制推送正在进行中...",
                   "16aee3a5c1": "正在进行中……",
-                  "e61b0d7a3c": "Check out a branch before publishing commits."
+                  "e61b0d7a3c": "请先检出分支再发布 commits。",
+                  "8c6d15a07d": "创建 PR",
+                  "d37e68f61d": "正在准备分支以供评审…",
+                  "c72e5e65d1": "准备此分支并创建 {{value0}}"
                 }
               }
             }
@@ -10438,7 +10460,30 @@
           "49731703ea": "Jobs",
           "ee07b33924": "unknown",
           "07eccfa397": "No details are available for this check.",
-          "a916648574": "Open details"
+          "a916648574": "Open details",
+          "834cb3f23d": "Fix with AI",
+          "c8f1a2d4e7": "Choose the agent and edit the full command input before launch.",
+          "b3e7f9a1c2": "Check fix context unavailable",
+          "d5a8c2f1b9": "Start the default AI agent to fix this check",
+          "e2b4d7c8a1": "Choose an agent for this check",
+          "f1c9e3a6d4": "Choose agent to fix check"
+        },
+        "check": {
+          "run": {
+            "details": {
+              "fix": {
+                "with": {
+                  "ai": {
+                    "1a8c4e2b90": "Select a workspace before launching an AI action.",
+                    "4f2d9a8c17": "Select a repository before launching an AI action.",
+                    "7c3e1b5d42": "Open a PR or MR before launching an AI fix.",
+                    "9b2f6d4a81": "This check is not failing.",
+                    "2ef90c9819": "Started an AI agent for this check."
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "diff": {

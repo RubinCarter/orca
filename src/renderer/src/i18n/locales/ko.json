@@ -2686,7 +2686,7 @@
             "97957ad3a3": "AI 공급자 계정을 연결하면 실시간으로 사용량을 확인하고 계정 간을 쉽게 전환할 수 있습니다.",
             "9a542f46c7": "상태 표시줄에서 숨기기",
             "84c3b15dca": "Agent 사용량 한도",
-            "d663430cf9": "사용량을 확인하려면 AI 계정을 연결하세요."
+            "d663430cf9": "사용량 추적 설정"
           },
           "UpdateStatusSegment": {
             "5cd13105a3": "업데이트에 실패했습니다. 확장하려면 클릭하세요.",
@@ -8373,7 +8373,25 @@
             "e283b50179": "커밋 메시지",
             "f394c6128a": "이 커밋을 설명할 에이전트가 없습니다",
             "04a5d7239b": "이 저장소에는 지원되는 웹 원격이 없습니다",
-            "15b6e834ac": "브라우저에서 커밋을 열지 못했습니다"
+            "15b6e834ac": "브라우저에서 커밋을 열지 못했습니다",
+            "d37e68f61d": "검토를 위해 브랜치를 준비하는 중…",
+            "8d8f5c6c94": "커밋 메시지를 생성하는 중…",
+            "fda060d6ce": "커밋 메시지를 검토한 다음 Create PR을 다시 시도하세요.",
+            "b75cb1fd0c": "변경 사항을 커밋하는 중…",
+            "995c5e67ec": "검토 설정에 확인이 필요합니다.",
+            "d7492cafce": "Source Control을 새로 고칠 수 없습니다. Create PR을 다시 시도하세요.",
+            "473f18758e": "Source Control AI 설정",
+            "createPrIntentConfigureAi": "커밋 메시지를 추가하거나 Source Control AI 설정을 구성하세요.",
+            "createPrIntentGenerateFailed": "커밋 메시지를 생성할 수 없습니다. 메시지를 추가한 다음 다시 시도하세요.",
+            "createPrIntentCommitFailed": "변경 사항을 커밋할 수 없습니다. 문제를 수정한 다음 Create PR을 다시 시도하세요.",
+            "createPrIntentNeedsSync": "리뷰를 만들기 전에 이 브랜치를 동기화하세요.",
+            "createPrIntentBranchNotReady": "브랜치가 아직 리뷰를 만들 준비가 되지 않았습니다.",
+            "createPrIntentPublishing": "브랜치를 게시하는 중…",
+            "createPrIntentForcePushing": "lease로 강제 푸시하는 중…",
+            "createPrIntentPushing": "커밋을 푸시하는 중…",
+            "createPrIntentRemoteFailed": "원격 브랜치를 업데이트할 수 없습니다. Create PR을 다시 시도하세요.",
+            "createPrIntentGeneratingDetails": "Generating review details…",
+            "createPrIntentCreatingReview": "Creating review…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "선택한 agent를 시작할 수 없습니다.",
@@ -8505,7 +8523,8 @@
                 "d91f2a6c39": "대기 중인 댓글 {{value0}}개 보내기",
                 "a6de3e5a20": "대기 중인 댓글 지우기",
                 "49ea0937e4": "댓글을 해결 목록에 추가",
-                "9fecebb29d": "추가"
+                "9fecebb29d": "추가",
+                "b8c4e2a1f7": "View full logs"
               },
               "empty": {
                 "state": {
@@ -8659,7 +8678,10 @@
                   "484f45c439": "{{value0}} 진행 중…",
                   "74fc171e99": "강제 푸시 진행 중…",
                   "16aee3a5c1": "Commit 진행 중…",
-                  "e61b0d7a3c": "Check out a branch before publishing commits."
+                  "e61b0d7a3c": "커밋을 게시하기 전에 브랜치를 체크아웃하세요.",
+                  "8c6d15a07d": "PR 생성",
+                  "d37e68f61d": "검토를 위해 브랜치를 준비하는 중…",
+                  "c72e5e65d1": "이 브랜치를 준비하고 {{value0}} 생성"
                 }
               }
             }
@@ -10438,7 +10460,30 @@
           "49731703ea": "Jobs",
           "ee07b33924": "unknown",
           "07eccfa397": "No details are available for this check.",
-          "a916648574": "Open details"
+          "a916648574": "Open details",
+          "834cb3f23d": "Fix with AI",
+          "c8f1a2d4e7": "Choose the agent and edit the full command input before launch.",
+          "b3e7f9a1c2": "Check fix context unavailable",
+          "d5a8c2f1b9": "Start the default AI agent to fix this check",
+          "e2b4d7c8a1": "Choose an agent for this check",
+          "f1c9e3a6d4": "Choose agent to fix check"
+        },
+        "check": {
+          "run": {
+            "details": {
+              "fix": {
+                "with": {
+                  "ai": {
+                    "1a8c4e2b90": "Select a workspace before launching an AI action.",
+                    "4f2d9a8c17": "Select a repository before launching an AI action.",
+                    "7c3e1b5d42": "Open a PR or MR before launching an AI fix.",
+                    "9b2f6d4a81": "This check is not failing.",
+                    "2ef90c9819": "Started an AI agent for this check."
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "diff": {

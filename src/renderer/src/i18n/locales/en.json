@@ -2686,7 +2686,7 @@
             "97957ad3a3": "Connect your AI provider accounts to see their usage in real time and easily switch between accounts.",
             "9a542f46c7": "Hide from status bar",
             "84c3b15dca": "Agent usage limits",
-            "d663430cf9": "Connect an AI account to see usage"
+            "d663430cf9": "Configure usage tracking"
           },
           "UpdateStatusSegment": {
             "5cd13105a3": "Update failed. Click to expand.",
@@ -8366,14 +8366,32 @@
             "e2b7a1c0d9f4": "Failed to create {{value0}}",
             "hugeRepoIgnorePrompt": "This repository has too many active changes. Add \"{{value0}}\" to .gitignore?",
             "hugeRepoIgnoreAction": "Add to .gitignore",
-            "tooManyChanges": "Too many changes detected. Only the first {{value0}} are shown.",
+            "tooManyChanges": "Too many changes detected. Only the first {{value0}} changes are shown.",
             "bf5082de46": "{{value0}} copied",
             "c06193ef57": "Failed to copy {{value0}}",
             "d172a4f068": "Commit hash",
             "e283b50179": "Commit message",
             "f394c6128a": "No agent available to explain this commit",
             "04a5d7239b": "This repository has no supported web remote",
-            "15b6e834ac": "Failed to open commit in browser"
+            "15b6e834ac": "Failed to open commit in browser",
+            "d37e68f61d": "Preparing branch for review…",
+            "8d8f5c6c94": "Generating commit message…",
+            "fda060d6ce": "Review the commit message, then retry Create PR.",
+            "b75cb1fd0c": "Committing changes…",
+            "995c5e67ec": "Review setup needs attention.",
+            "d7492cafce": "Could not refresh Source Control. Retry Create PR.",
+            "473f18758e": "Source Control AI settings",
+            "createPrIntentConfigureAi": "Add a commit message or configure Source Control AI settings.",
+            "createPrIntentGenerateFailed": "Could not generate a commit message. Add one and retry.",
+            "createPrIntentCommitFailed": "Could not commit changes. Fix the issue, then retry Create PR.",
+            "createPrIntentNeedsSync": "Sync this branch before creating a review.",
+            "createPrIntentBranchNotReady": "Branch is not ready to create a review yet.",
+            "createPrIntentPublishing": "Publishing branch…",
+            "createPrIntentForcePushing": "Force pushing with lease…",
+            "createPrIntentPushing": "Pushing commits…",
+            "createPrIntentRemoteFailed": "Could not update the remote branch. Retry Create PR.",
+            "createPrIntentGeneratingDetails": "Generating review details…",
+            "createPrIntentCreatingReview": "Creating review…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "Could not start the selected agent.",
@@ -8471,6 +8489,7 @@
                 "fd46a70f1a": "Started",
                 "a54ae21c6f": "Status:",
                 "e4e3af15ee": "View full details",
+                "b8c4e2a1f7": "View full logs",
                 "2524d1fb83": "Log tail available in full details.",
                 "a2fb3f4408": "Showing first 100 jobs",
                 "df137989b3": "Showing first 20 annotations",
@@ -8659,7 +8678,10 @@
                   "484f45c439": "{{value0}} in progress…",
                   "74fc171e99": "Force Push in progress…",
                   "16aee3a5c1": "Commit in progress…",
-                  "e61b0d7a3c": "Check out a branch before publishing commits."
+                  "e61b0d7a3c": "Check out a branch before publishing commits.",
+                  "8c6d15a07d": "Create PR",
+                  "d37e68f61d": "Preparing branch for review…",
+                  "c72e5e65d1": "Prepare this branch and create a {{value0}}"
                 }
               }
             }
@@ -10438,7 +10460,30 @@
           "49731703ea": "Jobs",
           "ee07b33924": "unknown",
           "07eccfa397": "No details are available for this check.",
-          "a916648574": "Open details"
+          "a916648574": "Open details",
+          "834cb3f23d": "Fix with AI",
+          "c8f1a2d4e7": "Choose the agent and edit the full command input before launch.",
+          "b3e7f9a1c2": "Check fix context unavailable",
+          "d5a8c2f1b9": "Start the default AI agent to fix this check",
+          "e2b4d7c8a1": "Choose an agent for this check",
+          "f1c9e3a6d4": "Choose agent to fix check"
+        },
+        "check": {
+          "run": {
+            "details": {
+              "fix": {
+                "with": {
+                  "ai": {
+                    "1a8c4e2b90": "Select a workspace before launching an AI action.",
+                    "4f2d9a8c17": "Select a repository before launching an AI action.",
+                    "7c3e1b5d42": "Open a PR or MR before launching an AI fix.",
+                    "9b2f6d4a81": "This check is not failing.",
+                    "2ef90c9819": "Started an AI agent for this check."
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "diff": {

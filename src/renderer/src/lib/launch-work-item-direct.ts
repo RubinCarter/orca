@@ -143,6 +143,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
   let resolvedBaseBranch = baseBranch
   let resolvedPushTarget: GitPushTarget | undefined
   let resolvedBranchNameOverride: string | undefined
+  let resolvedCompareBaseRef: string | undefined
   if (!resolvedBaseBranch && item.type === 'pr' && item.number) {
     try {
       // Why: direct "Use PR" launches bypass the Start-from picker, so they
@@ -151,6 +152,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
       resolvedBaseBranch = result.baseBranch
       resolvedPushTarget = result.pushTarget
       resolvedBranchNameOverride = result.branchNameOverride
+      resolvedCompareBaseRef = result.compareBaseRef
     } catch (error) {
       toast.error(error instanceof Error ? error.message : resolvePrHeadErrorMessage())
       openModalFallback()
@@ -187,7 +189,11 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
       undefined,
       undefined,
       item.linearWorkspaceId,
-      item.linearOrganizationUrlKey
+      item.linearOrganizationUrlKey,
+      undefined,
+      undefined,
+      undefined,
+      resolvedCompareBaseRef
     )
     worktreeId = result.worktree.id
     const worktreePath = result.worktree.path

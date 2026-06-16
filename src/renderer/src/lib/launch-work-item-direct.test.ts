@@ -139,6 +139,7 @@ describe('launchWorkItemDirect', () => {
     })
     mocks.resolvePrBase.mockResolvedValue({
       baseBranch: 'abc123',
+      compareBaseRef: 'refs/remotes/origin/main',
       headSha: 'abc123',
       branchNameOverride: 'feature/fix',
       pushTarget: { remoteName: 'origin', branchName: 'feature/fix' }
@@ -242,7 +243,11 @@ describe('launchWorkItemDirect', () => {
       undefined,
       undefined,
       undefined,
-      undefined
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'refs/remotes/origin/main'
     )
   })
 
@@ -276,6 +281,10 @@ describe('launchWorkItemDirect', () => {
       undefined,
       undefined,
       'ENG-42',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
       undefined,
       undefined,
       undefined,

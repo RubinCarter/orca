@@ -11,6 +11,7 @@ import {
   getAzureDevOpsPullRequestForBranch,
   getAzureDevOpsRepoSlug
 } from '../azure-devops/client'
+import { createAzureDevOpsPullRequest } from '../azure-devops/pull-request-creation'
 import type { AzureDevOpsPullRequestInfo } from '../azure-devops/pull-request-mappers'
 import {
   getBitbucketPullRequest,
@@ -23,6 +24,7 @@ import {
   getGiteaPullRequestForBranch,
   getGiteaRepoSlug
 } from '../gitea/client'
+import { createGiteaPullRequest } from '../gitea/pull-request-creation'
 import type { GiteaPullRequestInfo } from '../gitea/pull-request-mappers'
 import { createGitHubPullRequest, getPRForBranch, getRepoSlug } from '../github/client'
 import { getMergeRequest, getMergeRequestForBranch, getProjectSlug } from '../gitlab/client'
@@ -80,6 +82,7 @@ function mapGitLabReview(mr: MRInfo): HostedReviewInfo {
     updatedAt: mr.updatedAt,
     mergeable: mr.mergeable,
     ...(mr.headSha ? { headSha: mr.headSha } : {}),
+    ...(mr.baseRefName ? { baseRefName: mr.baseRefName } : {}),
     ...(mr.conflictSummary ? { conflictSummary: mr.conflictSummary } : {})
   }
 }
@@ -198,7 +201,7 @@ const bitbucketForgeProvider = {
 
 const azureDevOpsForgeProvider = {
   id: 'azure-devops',
-  supportsReviewCreation: false,
+  supportsReviewCreation: true,
   resolveRepository: ({ repoPath, connectionId }) => getAzureDevOpsRepoSlug(repoPath, connectionId),
   async getReviewForBranch(input) {
     const pr = await getAzureDevOpsPullRequestForBranch(
@@ -212,12 +215,13 @@ const azureDevOpsForgeProvider = {
   async getReviewByNumber(input) {
     const pr = await getAzureDevOpsPullRequest(input.repoPath, input.number, input.connectionId)
     return pr ? mapAzureDevOpsReview(pr) : null
-  }
+  },
+  createReview: createAzureDevOpsPullRequest
 } satisfies ForgeProvider
 
 const giteaForgeProvider = {
   id: 'gitea',
-  supportsReviewCreation: false,
+  supportsReviewCreation: true,
   resolveRepository: ({ repoPath, connectionId }) => getGiteaRepoSlug(repoPath, connectionId),
   async getReviewForBranch(input) {
     const pr = await getGiteaPullRequestForBranch(
@@ -231,7 +235,8 @@ const giteaForgeProvider = {
   async getReviewByNumber(input) {
     const pr = await getGiteaPullRequest(input.repoPath, input.number, input.connectionId)
     return pr ? mapGiteaReview(pr) : null
-  }
+  },
+  createReview: createGiteaPullRequest
 } satisfies ForgeProvider
 
 // Why: provider order preserves existing branch-status behavior when remotes

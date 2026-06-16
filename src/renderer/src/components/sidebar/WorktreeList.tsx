@@ -571,8 +571,8 @@ function getHostHeaderDetail(row: HostHeaderRow): { text: string; isWarning: boo
       isWarning: false
     }
   }
-  // Why: the transport suffix only earns space on remote hosts; "This
-  // computer" on Local Mac is noise.
+  // Why: the transport suffix only earns space on remote hosts; repeating
+  // "This computer" under the local host label is noise.
   if (row.kind !== 'local') {
     return { text: row.detail, isWarning: false }
   }
@@ -651,7 +651,7 @@ function HostSectionHeader({
           ) : null}
           <SectionMetricsBadge count={row.count} />
         </div>
-        <div className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/60 opacity-0 transition-opacity group-hover/host-header:opacity-100">
+        <div className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/60 can-hover:opacity-0 transition-opacity group-hover/host-header:opacity-100">
           <ChevronDown
             className={cn('size-3.5 transition-transform', row.collapsed && '-rotate-90')}
           />
@@ -3507,7 +3507,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                       </div>
                     </div>
 
-                    <div className="flex size-4 shrink-0 cursor-pointer items-center justify-center text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="flex size-4 shrink-0 cursor-pointer items-center justify-center text-muted-foreground/60 can-hover:opacity-0 transition-opacity group-hover:opacity-100">
                       <ChevronDown
                         className={cn(
                           'size-3.5 cursor-pointer transition-transform [&_path]:cursor-pointer',
@@ -3524,7 +3524,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                             variant="ghost"
                             size="icon-xs"
                             data-repo-header-action=""
-                            className="size-5 shrink-0 rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                            className="size-5 shrink-0 rounded-md text-muted-foreground can-hover:opacity-0 transition-opacity hover:bg-accent/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
                             aria-label={translate(
                               'auto.components.sidebar.WorktreeList.79465e9034',
                               'Group actions for {{value0}}',
@@ -3593,7 +3593,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                             size="icon-xs"
                             data-repo-header-action=""
                             className={cn(
-                              'size-5 shrink-0 rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100',
+                              'size-5 shrink-0 rounded-md text-muted-foreground can-hover:opacity-0 transition-opacity hover:bg-accent/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100',
                               folderWorkspaceCreateDisabled &&
                                 'cursor-not-allowed text-muted-foreground/60 hover:bg-transparent hover:text-muted-foreground/60'
                             )}
@@ -3645,7 +3645,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                                 variant="ghost"
                                 size="icon-xs"
                                 data-repo-header-action=""
-                                className="size-5 shrink-0 rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                                className="size-5 shrink-0 rounded-md text-muted-foreground can-hover:opacity-0 transition-opacity hover:bg-accent/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
                                 aria-label={translate(
                                   'auto.components.sidebar.WorktreeList.609633a9e6',
                                   'Project actions for {{value0}}',
@@ -3800,7 +3800,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                           {createState?.disabled ? (
                             <span
                               data-repo-header-action=""
-                              className="inline-flex cursor-not-allowed opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
+                              className="inline-flex cursor-not-allowed can-hover:opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
                               tabIndex={0}
                               aria-label={createState.ariaLabel}
                               onKeyDown={stopRepoHeaderKeyboardToggle}
@@ -3824,7 +3824,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                               variant="ghost"
                               size="icon-xs"
                               data-repo-header-action=""
-                              className="size-5 shrink-0 rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+                              className="size-5 shrink-0 rounded-md text-muted-foreground can-hover:opacity-0 transition-opacity hover:bg-accent/70 hover:text-foreground focus:opacity-100 group-hover:opacity-100"
                               aria-label={
                                 createState?.ariaLabel ??
                                 translate(

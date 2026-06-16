@@ -78,6 +78,7 @@ import {
 } from '../git/huge-folder-ignore'
 import { assertGitPushTargetShape } from '../../shared/git-push-target-validation'
 import { getCommitMessageModelDiscoveryHostKey } from '../../shared/commit-message-host-key'
+import type { HostedReviewProvider } from '../../shared/hosted-review'
 import type { ResolvedSourceControlAiGenerationParams } from '../../shared/source-control-ai'
 import { validateGitPushTarget } from '../git/push-target-validation'
 import { getRemoteCommitUrl, getRemoteFileUrl } from '../git/repo'
@@ -101,6 +102,7 @@ import {
   getSshGitProvider,
   SSH_GIT_PROVIDER_UNAVAILABLE_MESSAGE
 } from '../providers/ssh-git-dispatch'
+import { resolveHostedReviewBodyForGeneration } from '../source-control/pull-request-template'
 import {
   prepareLocalCommitMessageAgentEnv,
   type CommitMessageAgentEnvironmentResolvers
@@ -1130,6 +1132,8 @@ export function registerFilesystemHandlers(
         title: string
         body: string
         draft: boolean
+        provider?: HostedReviewProvider
+        useTemplate?: boolean
         connectionId?: string
         sourceControlAiResolvedParams?: ResolvedSourceControlAiGenerationParams
         sourceControlAi?: GlobalSettings['sourceControlAi']
@@ -1166,12 +1170,19 @@ export function registerFilesystemHandlers(
         }
         let context: Awaited<ReturnType<typeof getPullRequestDraftContext>>
         try {
+          const currentBody = await resolveHostedReviewBodyForGeneration({
+            body: args.body,
+            repoPath: args.worktreePath,
+            connectionId: args.connectionId,
+            provider: args.provider,
+            useTemplate: args.useTemplate
+          })
           context = await getPullRequestDraftContext(
             (argv) => provider.exec(argv, args.worktreePath),
             {
               base: args.base,
               currentTitle: args.title,
-              currentBody: args.body,
+              currentBody,
               currentDraft: args.draft
             }
           )
@@ -1197,12 +1208,19 @@ export function registerFilesystemHandlers(
       const worktreePath = await resolveRegisteredWorktreePath(args.worktreePath, store)
       let context: Awaited<ReturnType<typeof getPullRequestDraftContext>>
       try {
+        const currentBody = await resolveHostedReviewBodyForGeneration({
+          body: args.body,
+          repoPath: worktreePath,
+          connectionId: args.connectionId,
+          provider: args.provider,
+          useTemplate: args.useTemplate
+        })
         context = await getPullRequestDraftContext(
           (argv, options) => gitExecFileAsync(argv, { cwd: worktreePath, ...options }),
           {
             base: args.base,
             currentTitle: args.title,
-            currentBody: args.body,
+            currentBody,
             currentDraft: args.draft
           }
         )

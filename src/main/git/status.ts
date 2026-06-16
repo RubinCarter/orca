@@ -1072,6 +1072,8 @@ function buildDiffResult(
     } as GitDiffResult
   }
 
+  // Why: if the diff exceeds safe render limits, avoid sending large text
+  // payloads and return metadata so the renderer can show fallback UI.
   const largeDiffRenderLimit = getLargeDiffRenderLimit({ originalContent, modifiedContent })
   if (largeDiffRenderLimit.limited) {
     return {

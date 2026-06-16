@@ -2686,7 +2686,7 @@
             "97957ad3a3": "Conecte las cuentas de su proveedor de IA para ver su uso en tiempo real y cambiar fácilmente entre cuentas.",
             "9a542f46c7": "Ocultar de la barra de estado",
             "84c3b15dca": "Límites de uso del Agent",
-            "d663430cf9": "Conecte una cuenta de IA para ver el uso"
+            "d663430cf9": "Configurar seguimiento de uso"
           },
           "UpdateStatusSegment": {
             "5cd13105a3": "La actualización falló. Haga clic para ampliar.",
@@ -8373,7 +8373,25 @@
             "e283b50179": "Mensaje del commit",
             "f394c6128a": "No hay ningún agente disponible para explicar este commit",
             "04a5d7239b": "Este repositorio no tiene un remoto web compatible",
-            "15b6e834ac": "No se pudo abrir el commit en el navegador"
+            "15b6e834ac": "No se pudo abrir el commit en el navegador",
+            "d37e68f61d": "Preparando la rama para revisión…",
+            "8d8f5c6c94": "Generando mensaje de commit…",
+            "fda060d6ce": "Revisa el mensaje de commit y vuelve a intentar Crear PR.",
+            "b75cb1fd0c": "Confirmando cambios…",
+            "995c5e67ec": "La configuración de revisión necesita atención.",
+            "d7492cafce": "No se pudo actualizar Source Control. Vuelve a intentar Crear PR.",
+            "473f18758e": "Configuración de IA de Source Control",
+            "createPrIntentConfigureAi": "Agrega un mensaje de commit o configura la IA de Source Control.",
+            "createPrIntentGenerateFailed": "No se pudo generar un mensaje de commit. Agrega uno y vuelve a intentarlo.",
+            "createPrIntentCommitFailed": "No se pudieron confirmar los cambios. Corrige el problema y vuelve a intentar Crear PR.",
+            "createPrIntentNeedsSync": "Sincroniza esta rama antes de crear una revisión.",
+            "createPrIntentBranchNotReady": "La rama aún no está lista para crear una revisión.",
+            "createPrIntentPublishing": "Publicando rama…",
+            "createPrIntentForcePushing": "Haciendo force push con lease…",
+            "createPrIntentPushing": "Subiendo commits…",
+            "createPrIntentRemoteFailed": "No se pudo actualizar la rama remota. Vuelve a intentar Crear PR.",
+            "createPrIntentGeneratingDetails": "Generating review details…",
+            "createPrIntentCreatingReview": "Creating review…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "No se pudo iniciar el agente seleccionado.",
@@ -8505,7 +8523,8 @@
                 "d91f2a6c39": "Enviar {{value0}} comentarios en cola",
                 "a6de3e5a20": "Borrar comentarios en cola",
                 "49ea0937e4": "Agregar comentario a la lista de resolución",
-                "9fecebb29d": "Agregar"
+                "9fecebb29d": "Agregar",
+                "b8c4e2a1f7": "View full logs"
               },
               "empty": {
                 "state": {
@@ -8659,7 +8678,10 @@
                   "484f45c439": "{{value0}} en progreso…",
                   "74fc171e99": "Empuje forzado en progreso...",
                   "16aee3a5c1": "Compromiso en progreso...",
-                  "e61b0d7a3c": "Check out a branch before publishing commits."
+                  "e61b0d7a3c": "Cambia a una rama antes de publicar commits.",
+                  "8c6d15a07d": "Crear PR",
+                  "d37e68f61d": "Preparando la rama para revisión…",
+                  "c72e5e65d1": "Prepara esta rama y crea un {{value0}}"
                 }
               }
             }
@@ -10438,7 +10460,30 @@
           "49731703ea": "Jobs",
           "ee07b33924": "unknown",
           "07eccfa397": "No details are available for this check.",
-          "a916648574": "Open details"
+          "a916648574": "Open details",
+          "834cb3f23d": "Fix with AI",
+          "c8f1a2d4e7": "Choose the agent and edit the full command input before launch.",
+          "b3e7f9a1c2": "Check fix context unavailable",
+          "d5a8c2f1b9": "Start the default AI agent to fix this check",
+          "e2b4d7c8a1": "Choose an agent for this check",
+          "f1c9e3a6d4": "Choose agent to fix check"
+        },
+        "check": {
+          "run": {
+            "details": {
+              "fix": {
+                "with": {
+                  "ai": {
+                    "1a8c4e2b90": "Select a workspace before launching an AI action.",
+                    "4f2d9a8c17": "Select a repository before launching an AI action.",
+                    "7c3e1b5d42": "Open a PR or MR before launching an AI fix.",
+                    "9b2f6d4a81": "This check is not failing.",
+                    "2ef90c9819": "Started an AI agent for this check."
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "diff": {

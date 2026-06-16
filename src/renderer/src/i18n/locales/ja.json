@@ -2686,7 +2686,7 @@
             "97957ad3a3": "AI プロバイダー アカウントに接続すると、その使用状況をリアルタイムで確認し、アカウント間を簡単に切り替えることができます。",
             "9a542f46c7": "ステータスバーから隠す",
             "84c3b15dca": "Agent の使用制限",
-            "d663430cf9": "AI アカウントに接続して使用状況を確認する"
+            "d663430cf9": "使用状況の追跡を設定"
           },
           "UpdateStatusSegment": {
             "5cd13105a3": "アップデートに失敗しました。クリックして展開します。",
@@ -8373,7 +8373,25 @@
             "e283b50179": "コミットメッセージ",
             "f394c6128a": "このコミットを説明できるエージェントがありません",
             "04a5d7239b": "このリポジトリには対応するWebリモートがありません",
-            "15b6e834ac": "コミットをブラウザーで開けませんでした"
+            "15b6e834ac": "コミットをブラウザーで開けませんでした",
+            "d37e68f61d": "レビュー用にブランチを準備中…",
+            "8d8f5c6c94": "コミットメッセージを生成中…",
+            "fda060d6ce": "コミットメッセージを確認してから、Create PR を再試行してください。",
+            "b75cb1fd0c": "変更をコミット中…",
+            "995c5e67ec": "レビュー設定の確認が必要です。",
+            "d7492cafce": "Source Control を更新できませんでした。Create PR を再試行してください。",
+            "473f18758e": "Source Control AI 設定",
+            "createPrIntentConfigureAi": "コミットメッセージを追加するか、Source Control AI 設定を構成してください。",
+            "createPrIntentGenerateFailed": "コミットメッセージを生成できませんでした。追加してから再試行してください。",
+            "createPrIntentCommitFailed": "変更をコミットできませんでした。問題を修正してから Create PR を再試行してください。",
+            "createPrIntentNeedsSync": "レビューを作成する前にこのブランチを同期してください。",
+            "createPrIntentBranchNotReady": "このブランチはまだレビューを作成できる状態ではありません。",
+            "createPrIntentPublishing": "ブランチを公開中…",
+            "createPrIntentForcePushing": "lease 付きで強制プッシュ中…",
+            "createPrIntentPushing": "コミットをプッシュ中…",
+            "createPrIntentRemoteFailed": "リモートブランチを更新できませんでした。Create PR を再試行してください。",
+            "createPrIntentGeneratingDetails": "Generating review details…",
+            "createPrIntentCreatingReview": "Creating review…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "選択した agent を開始できませんでした。",
@@ -8505,7 +8523,8 @@
                 "d91f2a6c39": "キュー内の {{value0}} 件のコメントを送信",
                 "a6de3e5a20": "キュー内のコメントをクリア",
                 "49ea0937e4": "コメントを解決リストに追加",
-                "9fecebb29d": "追加"
+                "9fecebb29d": "追加",
+                "b8c4e2a1f7": "View full logs"
               },
               "empty": {
                 "state": {
@@ -8659,7 +8678,10 @@
                   "484f45c439": "{{value0}} が進行中です…",
                   "74fc171e99": "強制プッシュ中です…",
                   "16aee3a5c1": "Commit 中です…",
-                  "e61b0d7a3c": "Check out a branch before publishing commits."
+                  "e61b0d7a3c": "コミットを公開する前にブランチをチェックアウトしてください。",
+                  "8c6d15a07d": "PR を作成",
+                  "d37e68f61d": "レビュー用にブランチを準備中…",
+                  "c72e5e65d1": "このブランチを準備して {{value0}} を作成"
                 }
               }
             }
@@ -10438,7 +10460,30 @@
           "49731703ea": "Jobs",
           "ee07b33924": "unknown",
           "07eccfa397": "No details are available for this check.",
-          "a916648574": "Open details"
+          "a916648574": "Open details",
+          "834cb3f23d": "Fix with AI",
+          "c8f1a2d4e7": "Choose the agent and edit the full command input before launch.",
+          "b3e7f9a1c2": "Check fix context unavailable",
+          "d5a8c2f1b9": "Start the default AI agent to fix this check",
+          "e2b4d7c8a1": "Choose an agent for this check",
+          "f1c9e3a6d4": "Choose agent to fix check"
+        },
+        "check": {
+          "run": {
+            "details": {
+              "fix": {
+                "with": {
+                  "ai": {
+                    "1a8c4e2b90": "Select a workspace before launching an AI action.",
+                    "4f2d9a8c17": "Select a repository before launching an AI action.",
+                    "7c3e1b5d42": "Open a PR or MR before launching an AI fix.",
+                    "9b2f6d4a81": "This check is not failing.",
+                    "2ef90c9819": "Started an AI agent for this check."
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "diff": {

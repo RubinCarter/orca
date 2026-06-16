@@ -596,6 +596,54 @@ describe('resolveDropdownItems', () => {
     expect(byKind.push_create_pr.disabled).toBe(false)
   })
 
+  it.each(['azure-devops', 'gitea'] as const)(
+    'enables push-before-PR recovery for %s review creation',
+    (provider) => {
+      const items = resolveDropdownItems(
+        inputs({
+          upstreamStatus: { hasUpstream: true, ahead: 2, behind: 0 },
+          hostedReviewCreation: {
+            provider,
+            review: null,
+            canCreate: false,
+            blockedReason: 'needs_push',
+            nextAction: 'push'
+          }
+        })
+      )
+      const byKind = Object.fromEntries(
+        items.filter((e) => e.kind !== 'separator').map((e) => [e.kind, e])
+      )
+      expect(byKind.create_pr.label).toBe('Create PR')
+      expect(byKind.create_pr.hint).toBe('Push first')
+      expect(byKind.push_create_pr.label).toBe('Push before PR')
+      expect(byKind.push_create_pr.title).toBe('Push local commits before creating a pull request')
+      expect(byKind.push_create_pr.disabled).toBe(false)
+    }
+  )
+
+  it.each([
+    ['azure-devops', 'Set ORCA_AZURE_DEVOPS_TOKEN in this environment'],
+    ['gitea', 'Set ORCA_GITEA_TOKEN in this environment']
+  ] as const)('uses token auth copy when %s PR creation needs authentication', (provider, hint) => {
+    const items = resolveDropdownItems(
+      inputs({
+        upstreamStatus: { hasUpstream: true, ahead: 0, behind: 0 },
+        hostedReviewCreation: {
+          provider,
+          review: null,
+          canCreate: false,
+          blockedReason: 'auth_required',
+          nextAction: 'authenticate'
+        }
+      })
+    )
+    const byKind = Object.fromEntries(
+      items.filter((e) => e.kind !== 'separator').map((e) => [e.kind, e])
+    )
+    expect(byKind.create_pr.hint).toBe(hint)
+  })
+
   it('uses GitLab auth copy when MR creation needs authentication', () => {
     const items = resolveDropdownItems(
       inputs({

@@ -1060,6 +1060,7 @@ describe('registerWorktreeHandlers', () => {
       repoId: 'repo-1',
       name: 'fix-title',
       baseBranch: 'abc123',
+      compareBaseRef: 'refs/remotes/origin/main',
       branchNameOverride: 'feature/fix',
       linkedPR: 42,
       pushTarget: { remoteName: 'origin', branchName: 'feature/fix' }
@@ -1076,7 +1077,52 @@ describe('registerWorktreeHandlers', () => {
       ['branch', '--set-upstream-to', 'origin/feature/fix', 'feature/fix'],
       { cwd: '/workspace/fix-title' }
     )
+    expect(store.setWorktreeMeta).toHaveBeenCalledWith(
+      'repo-1::/workspace/fix-title',
+      expect.objectContaining({
+        baseRef: 'refs/remotes/origin/main',
+        linkedPR: 42
+      })
+    )
     expect(getPRForBranchMock).toHaveBeenCalledWith('/workspace/repo', 'feature/fix')
+  })
+
+  it('persists an explicit compare base ahead of the checkout remote-tracking base', async () => {
+    runtimeStub.resolveRemoteTrackingBase.mockResolvedValueOnce({
+      base: 'origin/source-branch',
+      remote: 'origin',
+      branch: 'source-branch',
+      ref: 'refs/remotes/origin/source-branch'
+    })
+    runtimeStub.hasRemoteTrackingRef.mockResolvedValueOnce(true)
+    listWorktreesMock.mockResolvedValue([
+      {
+        path: '/workspace/fix-title',
+        head: 'abc123',
+        branch: 'refs/heads/feature/fix',
+        isBare: false,
+        isMainWorktree: false
+      }
+    ])
+    store.setWorktreeMeta.mockImplementation((_worktreeId, meta) => meta)
+
+    await handlers['worktrees:create'](null, {
+      repoId: 'repo-1',
+      name: 'fix-title',
+      baseBranch: 'origin/source-branch',
+      compareBaseRef: 'refs/remotes/origin/main',
+      branchNameOverride: 'feature/fix',
+      linkedGitLabMR: 7,
+      pushTarget: { remoteName: 'origin', branchName: 'feature/fix' }
+    })
+
+    expect(store.setWorktreeMeta).toHaveBeenCalledWith(
+      'repo-1::/workspace/fix-title',
+      expect.objectContaining({
+        baseRef: 'refs/remotes/origin/main',
+        linkedGitLabMR: 7
+      })
+    )
   })
 
   it('allows a selected Bitbucket PR branch override to match its remote push target', async () => {
