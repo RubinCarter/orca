@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_WORKTREE_CARD_PROPERTIES,
+  TASK_WORKTREE_CARD_PROPERTIES,
   getWorktreeCardModeProperties,
   getWorktreeCardModeUpdates,
   normalizeWorktreeCardProperties
@@ -28,6 +29,15 @@ describe('worktree card properties', () => {
     )
     expect(getWorktreeCardModeProperties('Compact')).toEqual(
       expect.arrayContaining(['status', 'unread'])
+    )
+  })
+
+  it('keeps provider-specific task metadata together in both modes', () => {
+    expect(getWorktreeCardModeProperties('Default')).toEqual(
+      expect.arrayContaining(TASK_WORKTREE_CARD_PROPERTIES)
+    )
+    expect(getWorktreeCardModeProperties('Compact')).toEqual(
+      expect.arrayContaining(TASK_WORKTREE_CARD_PROPERTIES)
     )
   })
 

@@ -33,6 +33,7 @@ export { DEFAULT_STATUS_BAR_ITEMS } from './status-bar-defaults'
 export {
   COMPACT_WORKTREE_CARD_PROPERTIES,
   DEFAULT_WORKTREE_CARD_PROPERTIES,
+  TASK_WORKTREE_CARD_PROPERTIES,
   getWorktreeCardModeProperties,
   getWorktreeCardModeUpdates,
   normalizeWorktreeCardProperties

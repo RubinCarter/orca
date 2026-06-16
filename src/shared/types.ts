@@ -2868,9 +2868,9 @@ export type WorktreeCardProperty =
   // Internal migration-only property for legacy detailed cards that showed
   // branch identity as a visible row.
   | 'branch'
-  // GitHub issue metadata shown on workspace cards.
+  // Task metadata shown on workspace cards. Kept as provider-specific
+  // persisted values so older profiles and provider-specific fetch paths work.
   | 'issue'
-  // Linear issue metadata shown on workspace cards.
   | 'linear-issue'
   | 'pr'
   | 'comment'

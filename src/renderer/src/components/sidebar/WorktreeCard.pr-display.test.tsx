@@ -190,7 +190,7 @@ describe('WorktreeCard linked PR display', () => {
     expect(markup).toContain('Linked PR #789')
   })
 
-  it('shows issue, Linear issue, PR, and notes metadata in detailed cards', async () => {
+  it('shows task, PR, and notes metadata in detailed cards', async () => {
     worktreeCardProperties = ['issue', 'linear-issue', 'pr', 'comment']
     const { default: WorktreeCard } = await import('./WorktreeCard')
 
@@ -217,7 +217,7 @@ describe('WorktreeCard linked PR display', () => {
     expect(markup).not.toContain('Reviewer handoff note')
   })
 
-  it('keeps issue, Linear issue, PR, and notes metadata out of compact cards', async () => {
+  it('keeps task, PR, and notes metadata out of compact cards', async () => {
     settings = { compactWorktreeCards: true }
     worktreeCardProperties = ['issue', 'linear-issue', 'pr', 'comment']
     const { default: WorktreeCard } = await import('./WorktreeCard')
