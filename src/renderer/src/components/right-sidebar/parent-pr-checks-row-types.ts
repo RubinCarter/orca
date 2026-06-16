@@ -57,6 +57,7 @@ export type ParentPrChecksRow = {
   provider: HostedReviewInfo['provider'] | null
   summary: string
   detailNames: string[]
+  checks: PRCheckDetail[]
   isRefreshing: boolean
   hasLinkedReview: boolean
 }

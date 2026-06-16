@@ -3,10 +3,18 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { FolderWorkspace, Repo, Worktree, WorkspaceLineage } from '../../../../shared/types'
+import type {
+  FolderWorkspace,
+  PRCheckDetail,
+  Repo,
+  Worktree,
+  WorkspaceLineage
+} from '../../../../shared/types'
 import type { HostedReviewInfo } from '../../../../shared/hosted-review'
 import { folderWorkspaceKey, worktreeWorkspaceKey } from '../../../../shared/workspace-scope'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
+import { getGitHubRepoCacheKey } from '@/store/slices/github-cache-key'
+import { prChecksCacheSuffix } from '@/store/slices/github'
 
 type MockStoreState = {
   activeWorktreeId: string | null
@@ -19,9 +27,10 @@ type MockStoreState = {
   settings: null
   hostedReviewCache: Record<string, { data: HostedReviewInfo | null; fetchedAt: number }>
   prCache: Record<string, never>
-  checksCache: Record<string, never>
+  checksCache: Record<string, { data: PRCheckDetail[]; fetchedAt: number; headSha?: string }>
   fetchHostedReviewForBranch: ReturnType<typeof vi.fn>
   fetchPRChecks: ReturnType<typeof vi.fn>
+  fetchPRCheckDetails: ReturnType<typeof vi.fn>
   setActiveWorktree: ReturnType<typeof vi.fn>
   setRightSidebarTab: ReturnType<typeof vi.fn>
 }
@@ -72,7 +81,15 @@ vi.mock('./checks-panel-content', () => ({
     neutral: (props: { className?: string }) => <span data-icon="neutral" {...props} />
   },
   PullRequestIcon: (props: { className?: string }) => <span data-icon="review" {...props} />,
-  prStateColor: () => 'state-color'
+  prStateColor: () => 'state-color',
+  ChecksList: ({ checks, checksLoading }: { checks: PRCheckDetail[]; checksLoading: boolean }) => (
+    <div data-testid="checks-list">
+      {checksLoading ? 'Loading checks' : null}
+      {checks.map((check) => (
+        <div key={check.name}>{check.name}</div>
+      ))}
+    </div>
+  )
 }))
 
 import FolderWorkspacePrChecksPanel from './FolderWorkspacePrChecksPanel'
@@ -142,7 +159,17 @@ function makeReview(): HostedReviewInfo {
     url: 'https://example.test/pr/12',
     status: 'success',
     updatedAt: '2026-01-01T00:00:00.000Z',
-    mergeable: 'MERGEABLE'
+    mergeable: 'MERGEABLE',
+    headSha: 'abc'
+  }
+}
+
+function makeCheck(): PRCheckDetail {
+  return {
+    name: 'verify',
+    status: 'completed',
+    conclusion: 'success',
+    url: 'https://example.test/check/verify'
   }
 }
 
@@ -186,9 +213,16 @@ describe('FolderWorkspacePrChecksPanel', () => {
         }
       },
       prCache: {},
-      checksCache: {},
+      checksCache: {
+        [getGitHubRepoCacheKey(repo.path, repo.id, prChecksCacheSuffix(12, null, 'abc'), null)]: {
+          data: [makeCheck()],
+          fetchedAt: 1,
+          headSha: 'abc'
+        }
+      },
       fetchHostedReviewForBranch: vi.fn(async () => makeReview()),
-      fetchPRChecks: vi.fn(async () => []),
+      fetchPRChecks: vi.fn(async () => [makeCheck()]),
+      fetchPRCheckDetails: vi.fn(async () => null),
       setActiveWorktree: vi.fn(),
       setRightSidebarTab: vi.fn()
     }
@@ -199,19 +233,24 @@ describe('FolderWorkspacePrChecksPanel', () => {
     container.remove()
   })
 
-  it('renders compact rows and opens the child Checks tab on row click', () => {
+  it('renders compact rows and expands inline checks on row click', () => {
     renderPanel()
 
     expect(container.textContent).toContain('Child worktree')
     expect(container.textContent).toContain('#12')
     expect(container.textContent).toContain('Checks passing')
+    expect(container.querySelector('[data-testid="checks-list"]')).toBeNull()
 
     act(() => {
-      container.querySelector<HTMLElement>('[aria-label="Open Child worktree Checks tab"]')?.click()
+      container
+        .querySelector<HTMLElement>('[aria-label="Show Child worktree PR check details"]')
+        ?.click()
     })
 
-    expect(mockState.store.setActiveWorktree).toHaveBeenCalledWith('repo-1::/child')
-    expect(mockState.store.setRightSidebarTab).toHaveBeenCalledWith('checks')
+    expect(container.querySelector('[data-testid="checks-list"]')).not.toBeNull()
+    expect(container.textContent).toContain('verify')
+    expect(mockState.store.setActiveWorktree).not.toHaveBeenCalled()
+    expect(mockState.store.setRightSidebarTab).not.toHaveBeenCalled()
   })
 
   it('opens external review links without activating the row', () => {

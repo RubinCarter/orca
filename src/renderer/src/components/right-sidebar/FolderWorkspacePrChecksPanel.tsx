@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ExternalLink, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { openHttpLink } from '@/lib/http-link-routing'
 import { translate } from '@/i18n/i18n'
+import type { PRCheckDetail, PRCheckRunDetails } from '../../../../shared/types'
 import { getAttachedWorktreesForFolderWorkspace } from './folder-workspace-attached-worktrees'
-import { CHECK_COLOR, CHECK_ICON, prStateColor, PullRequestIcon } from './checks-panel-content'
+import { FolderWorkspacePrChecksRow } from './FolderWorkspacePrChecksRow'
 import {
   buildParentPrChecksProjection,
   type ParentPrChecksRefreshOutcome,
@@ -38,11 +38,11 @@ export default function FolderWorkspacePrChecksPanel({
   const checksCache = useAppStore((s) => s.checksCache)
   const fetchHostedReviewForBranch = useAppStore((s) => s.fetchHostedReviewForBranch)
   const fetchPRChecks = useAppStore((s) => s.fetchPRChecks)
-  const setActiveWorktree = useAppStore((s) => s.setActiveWorktree)
-  const setRightSidebarTab = useAppStore((s) => s.setRightSidebarTab)
+  const fetchPRCheckDetails = useAppStore((s) => s.fetchPRCheckDetails)
   const [refreshOutcomes, setRefreshOutcomes] = useState<
     ReadonlyMap<string, ParentPrChecksRefreshOutcome>
   >(() => new Map())
+  const [expandedRowIds, setExpandedRowIds] = useState<ReadonlySet<string>>(() => new Set())
   const [manualRefreshGeneration, setManualRefreshGeneration] = useState(0)
   const lastForcedManualRefreshGenerationRef = useRef(0)
 
@@ -149,10 +149,45 @@ export default function FolderWorkspacePrChecksPanel({
     ([identity, outcome]) => currentRefreshIdentities.has(identity) && outcome.kind === 'loading'
   )
 
-  const activateChecksRow = (row: ParentPrChecksRow): void => {
-    setActiveWorktree(row.worktree.id)
-    setRightSidebarTab('checks')
-  }
+  useEffect(() => {
+    const validRowIds = new Set(projection.rows.map((row) => row.id))
+    setExpandedRowIds((current) => {
+      const next = new Set([...current].filter((id) => validRowIds.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [projection.rows])
+
+  const toggleRowExpanded = useCallback((rowId: string): void => {
+    setExpandedRowIds((current) => {
+      const next = new Set(current)
+      if (next.has(rowId)) {
+        next.delete(rowId)
+      } else {
+        next.add(rowId)
+      }
+      return next
+    })
+  }, [])
+
+  const loadCheckDetails = useCallback(
+    (row: ParentPrChecksRow, check: PRCheckDetail): Promise<PRCheckRunDetails | null> => {
+      if (!row.repo) {
+        return Promise.resolve(null)
+      }
+      return fetchPRCheckDetails(
+        row.repo.path,
+        {
+          checkRunId: check.checkRunId,
+          workflowRunId: check.workflowRunId,
+          checkName: check.name,
+          url: check.url,
+          prRepo: null
+        },
+        { repoId: row.repo.id }
+      )
+    },
+    [fetchPRCheckDetails]
+  )
 
   if (!folderWorkspace) {
     return (
@@ -220,114 +255,19 @@ export default function FolderWorkspacePrChecksPanel({
         </div>
       ) : (
         <div className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto px-2 py-2">
-          <div className="space-y-3">
-            {projection.groups.map((group) => (
-              <section key={group.key}>
-                <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {group.label}
-                </div>
-                <div className="space-y-1">
-                  {group.rows.map((row) => (
-                    <PrChecksRow key={row.id} row={row} onActivate={() => activateChecksRow(row)} />
-                  ))}
-                </div>
-              </section>
+          <div className="space-y-1">
+            {projection.rows.map((row) => (
+              <FolderWorkspacePrChecksRow
+                key={row.id}
+                row={row}
+                expanded={expandedRowIds.has(row.id)}
+                onToggle={() => toggleRowExpanded(row.id)}
+                onLoadCheckDetails={(check) => loadCheckDetails(row, check)}
+              />
             ))}
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-function PrChecksRow({
-  row,
-  onActivate
-}: {
-  row: ParentPrChecksRow
-  onActivate: () => void
-}): React.JSX.Element {
-  const Icon = CHECK_ICON[row.checkTone] ?? CHECK_ICON.neutral
-  const reviewProviderLabel = row.provider === 'gitlab' ? 'MR' : 'PR'
-  const openChecksLabel = translate(
-    'auto.components.rightSidebar.FolderWorkspacePrChecksPanel.openChecksTab',
-    'Open {{value0}} Checks tab',
-    { value0: row.worktree.displayName }
-  )
-  const openExternalLabel = translate(
-    'auto.components.rightSidebar.FolderWorkspacePrChecksPanel.openReviewExternally',
-    'Open {{value0}} externally',
-    { value0: reviewProviderLabel }
-  )
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      className="group flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      onClick={onActivate}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') {
-          return
-        }
-        event.preventDefault()
-        onActivate()
-      }}
-      aria-label={openChecksLabel}
-    >
-      <Icon className={cn('mt-0.5 size-3.5 shrink-0', CHECK_COLOR[row.checkTone])} />
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-[13px] font-medium text-foreground">
-            {row.worktree.displayName}
-          </span>
-          {row.reviewLabel ? (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-              <PullRequestIcon className="size-3" />
-              {row.reviewLabel}
-            </span>
-          ) : null}
-          {row.reviewState ? (
-            <span
-              className={cn(
-                'shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide',
-                prStateColor(row.reviewState)
-              )}
-            >
-              {row.reviewState}
-            </span>
-          ) : null}
-        </div>
-        <div className="mt-1 truncate text-[12px] text-foreground/90">{row.title}</div>
-        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="truncate">{row.summary}</span>
-          {row.repo ? <span className="shrink-0">· {row.repo.displayName}</span> : null}
-          {row.branch ? <span className="truncate">· {row.branch}</span> : null}
-        </div>
-        {row.detailNames.length > 0 ? (
-          <div className="mt-1 truncate text-[11px] text-muted-foreground">
-            {row.detailNames.join(', ')}
-          </div>
-        ) : null}
-      </div>
-      {row.reviewUrl ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="rounded p-1 text-muted-foreground opacity-80 hover:bg-accent hover:text-foreground group-hover:opacity-100"
-              aria-label={openExternalLabel}
-              onClick={(event) => {
-                event.stopPropagation()
-                void openHttpLink(row.reviewUrl!)
-              }}
-              onKeyDown={(event) => event.stopPropagation()}
-            >
-              <ExternalLink className="size-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="left">{openExternalLabel}</TooltipContent>
-        </Tooltip>
-      ) : null}
     </div>
   )
 }

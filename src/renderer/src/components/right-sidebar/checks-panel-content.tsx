@@ -527,7 +527,7 @@ function CheckRunDetails({
                 {translate(
                   'auto.components.right.sidebar.checks.panel.content.fd46a70f1a',
                   'Started'
-                )}
+                )}{' '}
                 {startedAt}
               </span>
             )}
@@ -536,7 +536,7 @@ function CheckRunDetails({
                 {translate(
                   'auto.components.right.sidebar.checks.panel.content.00e1c1658a',
                   'Completed'
-                )}
+                )}{' '}
                 {completedAt}
               </span>
             )}
@@ -778,7 +778,7 @@ export function CheckRunDetailsDialog({
         <DialogTitle className="truncate text-base">{check.name}</DialogTitle>
         <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           <span>
-            {translate('auto.components.right.sidebar.checks.panel.content.a54ae21c6f', 'Status:')}
+            {translate('auto.components.right.sidebar.checks.panel.content.a54ae21c6f', 'Status:')}{' '}
             {details ? getCheckStatusLabel(detailsStatusCheck) : getCheckStatusLabel(check)}
           </span>
           {startedAt && (
@@ -786,7 +786,7 @@ export function CheckRunDetailsDialog({
               {translate(
                 'auto.components.right.sidebar.checks.panel.content.fd46a70f1a',
                 'Started'
-              )}
+              )}{' '}
               {startedAt}
             </span>
           )}
@@ -795,7 +795,7 @@ export function CheckRunDetailsDialog({
               {translate(
                 'auto.components.right.sidebar.checks.panel.content.00e1c1658a',
                 'Completed'
-              )}
+              )}{' '}
               {completedAt}
             </span>
           )}

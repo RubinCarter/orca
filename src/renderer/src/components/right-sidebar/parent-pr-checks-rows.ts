@@ -107,7 +107,8 @@ function buildParentPrChecksRow(
     outcome,
     hasFallbackReview: fallbackDisplay !== null
   })
-  const detailNames = getCheckDetailNames(args, review, branch)
+  const checkDetails = getCheckDetails(args, review, branch)
+  const detailNames = getCheckDetailNames(checkDetails)
 
   return {
     id: args.worktree.id,
@@ -125,6 +126,7 @@ function buildParentPrChecksRow(
     provider: review?.provider ?? fallbackDisplay?.provider ?? null,
     summary: getRowSummary(status, review, detailNames),
     detailNames,
+    checks: checkDetails,
     isRefreshing: outcome?.kind === 'loading',
     hasLinkedReview: hasLinkedReview(args.worktree)
   }
@@ -180,15 +182,18 @@ function getReviewLabel(
   return provider === 'gitlab' ? `!${number}` : `#${number}`
 }
 
-function getCheckDetailNames(
+function getCheckDetails(
   args: BuildParentPrChecksRowsArgs & { repo: Repo | null },
   review: HostedReviewInfo | null | undefined,
   branch: string | null
-): string[] {
+): PRCheckDetail[] {
   if (!args.repo || !branch || review?.provider !== 'github') {
     return []
   }
-  const checks = getGitHubChecksEntry({ ...args, repo: args.repo }, review)?.data ?? []
+  return getGitHubChecksEntry({ ...args, repo: args.repo }, review)?.data ?? []
+}
+
+function getCheckDetailNames(checks: readonly PRCheckDetail[]): string[] {
   const interesting = checks.filter(
     (check) =>
       check.conclusion === 'failure' ||
