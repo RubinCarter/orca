@@ -278,6 +278,27 @@ describe('DashboardAgentRow', () => {
     expect(markup).not.toContain('lucide-circle-check')
   })
 
+  it('renders sleeping rows as muted provider rows without dismiss controls', () => {
+    const markup = renderRow(
+      makeAgent(
+        { agentType: 'codex', sleeping: true, state: 'idle', startedAt: 60_000 },
+        {
+          state: 'done',
+          prompt: '',
+          lastAssistantMessage: 'Old prompt response',
+          agentType: 'codex'
+        }
+      )
+    )
+
+    expect(markup).toContain('Codex')
+    expect(markup).toContain('Slept · resume saved')
+    expect(markup).toContain('aria-label="Agent session is sleeping"')
+    expect(markup).not.toContain('Old prompt response')
+    expect(markup).not.toContain('aria-label="Dismiss agent"')
+    expect(classTokens(markup)).not.toContain('font-semibold')
+  })
+
   it('reserves a real working tool line before tool metadata arrives', () => {
     const emptyToolMarkup = renderRow(makeAgent())
     const activeToolMarkup = renderRow(

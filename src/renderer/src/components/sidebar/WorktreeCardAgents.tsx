@@ -104,6 +104,10 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
   const unvisitedByPaneKey = useMemo(() => {
     const out: Record<string, boolean> = {}
     for (const a of agents) {
+      if (a.sleeping) {
+        out[a.paneKey] = false
+        continue
+      }
       const ackAt = acknowledgedAgentsByPaneKey[a.paneKey] ?? 0
       out[a.paneKey] = ackAt < a.entry.stateStartedAt
     }
@@ -163,7 +167,11 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
   )
 
   const handleActivateAgentTab = useCallback(
-    (tabId: string, paneKey: string) => {
+    (tabId: string, paneKey: string, sleeping?: true) => {
+      if (sleeping) {
+        activateAndRevealWorktree(worktreeId)
+        return
+      }
       const parsed = parsePaneKey(paneKey)
       if (!parsed) {
         // Why: malformed or legacy numeric keys cannot be resolved safely after
@@ -278,10 +286,15 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
     // as soon as the parent appears; the disclosure remains available to fold noise.
     const expanded = !collapsedLineageParents.has(agent.paneKey)
     const sendTarget = isAgentSendTargetModeActive
-      ? (sendTargetsByPaneKey.get(agent.paneKey) ?? {
-          status: 'disabled' as const,
-          disabledReason: 'Agent is not available'
-        })
+      ? agent.sleeping
+        ? {
+            status: 'disabled' as const,
+            disabledReason: 'Sleeping agent is not available'
+          }
+        : (sendTargetsByPaneKey.get(agent.paneKey) ?? {
+            status: 'disabled' as const,
+            disabledReason: 'Agent is not available'
+          })
       : undefined
     const descendantAncestorPaneKeys = new Set(ancestorPaneKeys)
     descendantAncestorPaneKeys.add(agent.paneKey)
@@ -349,6 +362,17 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
     const hasChildAgents = childAgents.length > 0
     const isRootAgent = ancestorPaneKeys.size === 0
     const expanded = !collapsedLineageParents.has(agent.paneKey)
+    const sendTarget = isAgentSendTargetModeActive
+      ? agent.sleeping
+        ? {
+            status: 'disabled' as const,
+            disabledReason: 'Sleeping agent is not available'
+          }
+        : (sendTargetsByPaneKey.get(agent.paneKey) ?? {
+            status: 'disabled' as const,
+            disabledReason: 'Agent is not available'
+          })
+      : undefined
     const descendantAncestorPaneKeys = new Set(ancestorPaneKeys)
     descendantAncestorPaneKeys.add(agent.paneKey)
     return (
@@ -364,6 +388,9 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
           }
           reserveDisclosureGutter={isRootAgent && anyRootHasChildren && !hasChildAgents}
           isFocusedPane={agent.paneKey === focusedAgentPaneKey}
+          sendTargetStatus={sendTarget?.status}
+          sendTargetDisabledReason={sendTarget?.disabledReason}
+          onSendTargetClick={isAgentSendTargetModeActive ? handleSendTargetClick : undefined}
         />
         {hasChildAgents ? (
           <CompactAgentExpansion expanded={expanded}>

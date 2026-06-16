@@ -20,6 +20,7 @@ export type DashboardAgentRow = {
   tab: TerminalTab
   agentType: AgentType
   state: AgentStatusState | 'idle'
+  sleeping?: true
   /** When this agent first began reporting status. Derived from the oldest
    *  stateHistory entry, falling back to updatedAt when no history exists yet.
    *  Used to sort agents by when they started. */

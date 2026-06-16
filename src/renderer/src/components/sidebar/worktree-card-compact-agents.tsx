@@ -1,6 +1,6 @@
 import React, { useCallback, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
-import { AgentStateDot, agentStateLabel } from '@/components/AgentStateDot'
+import { AgentStateDot } from '@/components/AgentStateDot'
 import type { DashboardAgentRow as DashboardAgentRowData } from '@/components/dashboard/useDashboardData'
 import { AgentIcon } from '@/lib/agent-catalog'
 import { agentTypeToIconAgent, formatAgentTypeLabel } from '@/lib/agent-status'
@@ -13,69 +13,14 @@ import {
   summarizeAgentIdentities,
   summarizeAgents
 } from './worktree-card-agent-summary'
+import {
+  getCompactAgentPrimary,
+  getCompactAgentSecondary,
+  getCompactAgentTime
+} from './worktree-card-compact-agent-labels'
 import { translate } from '@/i18n/i18n'
 
 const MARKDOWN_IMAGE_PATTERN = /!\[[^\]\n]*\]\([^)]+\)/
-
-function formatShortTimeAgo(ts: number, now: number): string {
-  const delta = now - ts
-  if (delta < 60_000) {
-    return 'now'
-  }
-  const minutes = Math.floor(delta / 60_000)
-  if (minutes < 60) {
-    return `${minutes}m`
-  }
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) {
-    return `${hours}h`
-  }
-  return `${Math.floor(hours / 24)}d`
-}
-
-function lastEnteredDoneAt(agent: DashboardAgentRowData): number | null {
-  const entry = agent.entry
-  if (entry.state === 'done') {
-    return entry.stateStartedAt
-  }
-  for (let i = (entry.stateHistory?.length ?? 0) - 1; i >= 0; i--) {
-    if (entry.stateHistory[i].state === 'done') {
-      return entry.stateHistory[i].startedAt
-    }
-  }
-  return null
-}
-
-function getCompactAgentPrimary(agent: DashboardAgentRowData): string {
-  const prompt = agent.entry.prompt?.trim() ?? ''
-  return prompt || agentStateLabel(getAgentDotState(agent))
-}
-
-function getCompactAgentSecondary(agent: DashboardAgentRowData): string {
-  if (agent.entry.interrupted === true) {
-    return 'Interrupted by user'
-  }
-  if (agent.state === 'working') {
-    const toolName = agent.entry.toolName?.trim() ?? ''
-    const toolInput = agent.entry.toolInput?.trim() ?? ''
-    if (toolName && toolInput) {
-      return `${toolName}: ${toolInput}`
-    }
-    if (toolName) {
-      return toolName
-    }
-  }
-  return agent.entry.lastAssistantMessage?.trim() || formatAgentTypeLabel(agent.agentType)
-}
-
-function getCompactAgentTime(agent: DashboardAgentRowData, now: number): string | null {
-  const doneAt = lastEnteredDoneAt(agent)
-  if (doneAt !== null) {
-    return formatShortTimeAgo(doneAt, now)
-  }
-  const startedAt = agent.startedAt > 0 ? agent.startedAt : agent.entry.stateStartedAt
-  return startedAt > 0 ? formatShortTimeAgo(startedAt, now) : null
-}
 
 function stopActivationKeyPropagation(e: React.KeyboardEvent): void {
   // Why: the surrounding worktree list handles Enter/Space as row activation.
@@ -252,13 +197,16 @@ export function CompactAgentSummaryButton({
 type CompactAgentRowProps = {
   agent: DashboardAgentRowData
   now: number
-  onActivate: (tabId: string, paneKey: string) => void
+  onActivate: (tabId: string, paneKey: string, sleeping?: true) => void
   childAgentCount?: number
   childAgentsExpanded?: boolean
   onToggleChildAgents?: () => void
   reserveDisclosureGutter?: boolean
   isFocusedPane?: boolean
   hideIdentityIcon?: boolean
+  sendTargetStatus?: 'eligible' | 'disabled' | 'sending'
+  sendTargetDisabledReason?: string
+  onSendTargetClick?: (paneKey: string) => void
 }
 
 export const CompactAgentRow = React.memo(function CompactAgentRow({
@@ -270,7 +218,10 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
   onToggleChildAgents,
   reserveDisclosureGutter = false,
   isFocusedPane = false,
-  hideIdentityIcon = false
+  hideIdentityIcon = false,
+  sendTargetStatus,
+  sendTargetDisabledReason,
+  onSendTargetClick
 }: CompactAgentRowProps) {
   const hasChildDisclosure =
     typeof childAgentCount === 'number' &&
@@ -289,9 +240,15 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
   const handleActivate = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
-      onActivate(agent.tab.id, agent.paneKey)
+      if (sendTargetStatus) {
+        if (sendTargetStatus === 'eligible') {
+          onSendTargetClick?.(agent.paneKey)
+        }
+        return
+      }
+      onActivate(agent.tab.id, agent.paneKey, agent.sleeping)
     },
-    [agent.paneKey, agent.tab.id, onActivate]
+    [agent.paneKey, agent.sleeping, agent.tab.id, onActivate, onSendTargetClick, sendTargetStatus]
   )
   const handleToggleChildren = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -382,6 +339,8 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
         hasChildDisclosure && 'worktree-agent-lineage-parent-row',
         isLineageChild && 'worktree-agent-lineage-child-row',
         hasAssistantImage ? 'flex flex-col py-0.5' : 'flex h-6 items-center gap-1',
+        sendTargetStatus === 'disabled' && 'cursor-default opacity-60',
+        sendTargetStatus === 'sending' && 'cursor-progress opacity-75',
         isFocusedPane && 'bg-worktree-sidebar-accent'
       )}
       onClick={handleActivate}
@@ -389,6 +348,8 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
       onPointerDown={(e) => e.stopPropagation()}
       onDragStart={(e) => e.stopPropagation()}
       data-focused-agent-pane={isFocusedPane ? 'true' : undefined}
+      data-agent-send-target={sendTargetStatus}
+      data-disabled-reason={sendTargetDisabledReason}
       role={agent.lineage ? 'treeitem' : undefined}
       aria-level={agent.lineage ? agent.lineage.depth + 1 : undefined}
       aria-expanded={hasChildDisclosure ? childAgentsExpanded : undefined}

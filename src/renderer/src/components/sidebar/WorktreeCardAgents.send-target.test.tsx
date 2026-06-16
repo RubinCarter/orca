@@ -1,6 +1,12 @@
+// @vitest-environment happy-dom
+
 import { renderToStaticMarkup } from 'react-dom/server'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const READY_PANE_KEY = 'tab-1:11111111-1111-4111-8111-111111111111'
 const WORKING_PANE_KEY = 'tab-1:22222222-2222-4222-8222-222222222222'
@@ -9,11 +15,12 @@ let mockAgents: unknown[] = []
 let mockStoreState: Record<string, unknown> = {}
 const mockSendPromptToSidebarAgentTarget = vi.fn()
 
-function agentRow(paneKey: string, state: string, now: number): unknown {
+function agentRow(paneKey: string, state: string, now: number, sleeping?: true): unknown {
   return {
     paneKey,
     tab: { id: 'tab-1' },
     state,
+    sleeping,
     entry: { stateStartedAt: now, orchestration: undefined }
   }
 }
@@ -178,5 +185,83 @@ describe('WorktreeCardAgents send targets', () => {
     expect(markup).toContain('data-agent-send-target="sending"')
     expect(markup).toContain('data-disabled-reason="Sending..."')
     expect(markup).toContain(`data-pane-key="${READY_PANE_KEY}"`)
+  })
+
+  it('keeps sleeping rows unavailable as send targets', async () => {
+    const now = Date.now()
+    mockAgents = [agentRow(READY_PANE_KEY, 'idle', now, true)]
+    mockStoreState = {
+      ...targetStoreState(now),
+      agentSendPopoverTargetMode: activeTargetMode({
+        eligiblePaneKeys: [READY_PANE_KEY]
+      })
+    }
+    const { default: WorktreeCardAgents } = await import('./WorktreeCardAgents')
+
+    const markup = renderToStaticMarkup(<WorktreeCardAgents worktreeId="wt-1" />)
+
+    expect(markup).toContain('data-agent-send-target="disabled"')
+    expect(markup).toContain('data-disabled-reason="Sleeping agent is not available"')
+    expect(markup).toContain(`data-pane-key="${READY_PANE_KEY}"`)
+  })
+
+  it('marks compact live rows as send targets during target selection', async () => {
+    const now = Date.now()
+    mockAgents = [agentRow(READY_PANE_KEY, 'done', now)]
+    mockStoreState = {
+      ...targetStoreState(now),
+      agentSendPopoverTargetMode: activeTargetMode(),
+      agentActivityDisplayMode: 'compact'
+    }
+    const { default: WorktreeCardAgents } = await import('./WorktreeCardAgents')
+
+    const markup = renderToStaticMarkup(<WorktreeCardAgents worktreeId="wt-1" />)
+
+    expect(markup).toContain('data-agent-send-target="eligible"')
+  })
+
+  it('marks compact unavailable live rows as disabled send targets', async () => {
+    const now = Date.now()
+    mockAgents = [agentRow(WORKING_PANE_KEY, 'working', now)]
+    mockStoreState = {
+      ...targetStoreState(now),
+      agentSendPopoverTargetMode: activeTargetMode(),
+      agentActivityDisplayMode: 'compact'
+    }
+    const { default: WorktreeCardAgents } = await import('./WorktreeCardAgents')
+
+    const markup = renderToStaticMarkup(<WorktreeCardAgents worktreeId="wt-1" />)
+
+    expect(markup).toContain('data-agent-send-target="disabled"')
+    expect(markup).toContain('data-disabled-reason="Agent is working"')
+  })
+
+  it('sends to eligible compact live rows instead of navigating', async () => {
+    const now = Date.now()
+    mockAgents = [agentRow(READY_PANE_KEY, 'done', now)]
+    mockStoreState = {
+      ...targetStoreState(now),
+      agentSendPopoverTargetMode: activeTargetMode(),
+      agentActivityDisplayMode: 'compact'
+    }
+    const { default: WorktreeCardAgents } = await import('./WorktreeCardAgents')
+    const container = document.createElement('div')
+    const root: Root = createRoot(container)
+
+    try {
+      await act(async () => {
+        root.render(<WorktreeCardAgents worktreeId="wt-1" />)
+      })
+      const eligibleRow = container.querySelector('[data-agent-send-target="eligible"]')
+
+      await act(async () => {
+        eligibleRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(mockSendPromptToSidebarAgentTarget).toHaveBeenCalledWith(READY_PANE_KEY)
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
   })
 })
