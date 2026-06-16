@@ -84,7 +84,7 @@ export type TerminalTitleTrackerCallbacks = {
 
 export type TerminalTitleTracker = {
   /** Feed one raw PTY chunk; titles are applied synchronously in byte order. */
-  handleChunk: (data: string) => void
+  handleChunk: (data: string, options?: { titleScanData?: string }) => void
   /**
    * Apply a main-fabricated OSC title/BEL frame (agent hook spinner frames).
    * Parsed statelessly — never through the chunk bell detector — so a
@@ -172,7 +172,8 @@ export function createTerminalTitleTracker(
     agentTracker?.handleTitle(rawTitle)
   }
 
-  function handleChunk(data: string): void {
+  function handleChunk(data: string, options: { titleScanData?: string } = {}): void {
+    const titleScanData = options.titleScanData ?? data
     // Why: this is main's per-chunk hot path — scan for the OSC introducer
     // once and share the result with the bell detector's fast-path gate.
     const containsOscIntroducer = data.includes('\x1b]')
@@ -187,7 +188,7 @@ export function createTerminalTitleTracker(
     // last one. node-pty plus the main-process batch window commonly coalesce
     // multiple title updates into a single payload; a last-title reader drops
     // intra-chunk working→idle transitions (issue #1083).
-    const titles = containsOscIntroducer ? extractAllOscTitles(data) : []
+    const titles = titleScanData.includes('\x1b]') ? extractAllOscTitles(titleScanData) : []
     if (titles.length > 0) {
       clearStaleTitleTimer()
       for (const title of titles) {

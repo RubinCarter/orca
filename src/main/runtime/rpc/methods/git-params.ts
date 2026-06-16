@@ -196,6 +196,13 @@ export const GitTargetedRemote = WorktreeSelector.extend({
   pushTarget: GitPushTargetParam.optional()
 })
 
+export const GitForkSync = WorktreeSelector.extend({
+  expectedUpstream: z.object({
+    owner: z.string().trim().min(1),
+    repo: z.string().trim().min(1)
+  })
+})
+
 export const GitRebaseFromBase = WorktreeSelector.extend({
   baseRef: z
     .unknown()
@@ -208,10 +215,30 @@ export const GitRebaseFromBase = WorktreeSelector.extend({
     )
 })
 
+export const GitCheckout = WorktreeSelector.extend({
+  branch: z
+    .unknown()
+    .transform((v) => (typeof v === 'string' ? v : ''))
+    .pipe(
+      z
+        .string()
+        .min(1, 'Missing branch')
+        // Why: never let a branch arg be parsed as a git flag (arg injection).
+        .refine((value) => !value.startsWith('-'), 'Branch must not start with -')
+    )
+})
+
 export const GitRemoteFileUrl = WorktreeSelector.extend({
   relativePath: z
     .unknown()
     .transform((v) => (typeof v === 'string' ? v : ''))
     .pipe(z.string().min(1, 'Missing relative path')),
   line: z.number().int().min(1)
+})
+
+export const GitRemoteCommitUrl = WorktreeSelector.extend({
+  sha: z
+    .unknown()
+    .transform((v) => (typeof v === 'string' ? v : ''))
+    .pipe(FullGitObjectId)
 })

@@ -22,7 +22,12 @@ import { DEFAULT_APP_ICON_ID } from './app-icon'
 import { DEFAULT_OPEN_IN_APPLICATIONS } from './open-in-applications'
 import { DEFAULT_BROWSER_PAGE_ZOOM_LEVEL } from './browser-page-zoom'
 import { DEFAULT_DISABLED_TUI_AGENTS } from './tui-agent-selection'
+import { DEFAULT_TUI_AGENT_ARGS, DEFAULT_TUI_AGENT_ENV } from './tui-agent-launch-defaults'
 import { UI_LANGUAGE_SYSTEM } from './ui-language'
+import {
+  DEFAULT_LEFT_SIDEBAR_TINT_COLOR,
+  DEFAULT_LEFT_SIDEBAR_TINT_OPACITY
+} from './left-sidebar-appearance'
 
 export { DEFAULT_STATUS_BAR_ITEMS } from './status-bar-defaults'
 export {
@@ -42,8 +47,8 @@ export function normalizeAgentActivityDisplayMode(value: unknown): AgentActivity
 
 // Why: the onboarding wizard's last step index. Centralized so backfill,
 // clamps, and UI step references all agree on the same upper bound.
-export const ONBOARDING_FINAL_STEP = 4
-export const ONBOARDING_FLOW_VERSION = 3
+export const ONBOARDING_FINAL_STEP = 5
+export const ONBOARDING_FLOW_VERSION = 4
 
 export const ORCA_BROWSER_PARTITION = 'persist:orca-browser'
 // Why: blank browser tabs must start from an inert guest URL that does not
@@ -180,6 +185,9 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     branchPrefixCustom: '',
     enableGitHubAttribution: false,
     theme: 'system',
+    leftSidebarAppearanceMode: 'default',
+    leftSidebarTintColor: DEFAULT_LEFT_SIDEBAR_TINT_COLOR,
+    leftSidebarTintOpacity: DEFAULT_LEFT_SIDEBAR_TINT_OPACITY,
     uiLanguage: UI_LANGUAGE_SYSTEM,
     appIcon: DEFAULT_APP_ICON_ID,
     appFontFamily: DEFAULT_APP_FONT_FAMILY,
@@ -211,6 +219,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     terminalDividerColorDark: '#3f3f46',
     terminalUseSeparateLightTheme: true,
     terminalThemeLight: 'Builtin Tango Light',
+    terminalCustomThemes: [],
     terminalDividerColorLight: '#d4d4d8',
     terminalInactivePaneOpacity: 0.8,
     terminalActivePaneOpacity: 1,
@@ -243,7 +252,8 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     httpProxyUrl: '',
     httpProxyBypassRules: '',
     electronHttp1CompatibilityMode: false,
-    openLinksInApp: true,
+    openLinksInApp: false,
+    openLinksInAppPreferencePrompted: false,
     openInApplications: [...DEFAULT_OPEN_IN_APPLICATIONS],
     rightSidebarOpenByDefault: true,
     showGitIgnoredFiles: true,
@@ -292,6 +302,9 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     opencodeWorkspaceId: '',
     geminiCliOAuthEnabled: false,
     agentCmdOverrides: {},
+    agentDefaultArgs: { ...DEFAULT_TUI_AGENT_ARGS },
+    agentDefaultEnv: { ...DEFAULT_TUI_AGENT_ENV },
+    agentYoloDefaultsMigrated: true,
     agentStatusHooksEnabled: true,
     tabAutoGenerateTitle: false,
     keepComputerAwakeWhileAgentsRun: false,
@@ -317,6 +330,8 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     experimentalActivity: false,
     experimentalActivityDefaultedOffForAllUsers: true,
     experimentalTerminalAttention: false,
+    experimentalAgentHibernation: false,
+    agentHibernationIdleMs: 30 * 60 * 1000,
     compactWorktreeCards: false,
     experimentalWorktreeSymlinks: false,
     // Why: local desktop remains the default server until the user explicitly
@@ -380,21 +395,27 @@ export function getDefaultPersistedState(homedir: string): PersistedState {
   return {
     schemaVersion: SCHEMA_VERSION,
     repos: [],
+    projects: [],
+    projectHostSetups: [],
     projectGroups: [],
+    folderWorkspaces: [],
     sparsePresetsByRepo: {},
     worktreeMeta: {},
     worktreeLineageById: {},
+    workspaceLineageByChildKey: {},
     settings: getDefaultSettings(homedir),
     ui: getDefaultUIState(),
     githubCache: { pr: {}, issue: {} },
     workspaceSession: getDefaultWorkspaceSession(),
+    workspaceSessionsByHostId: {},
     sshTargets: [],
     sshRemotePtyLeases: [],
     migrationUnsupportedPtyEntries: [],
     legacyPaneKeyAliasEntries: [],
     automations: [],
     automationRuns: [],
-    onboarding: getDefaultOnboardingState()
+    onboarding: getDefaultOnboardingState(),
+    featureInteractionTelemetryBuckets: {}
   }
 }
 
@@ -405,12 +426,17 @@ export function getDefaultUIState(): PersistedUIState {
     sidebarWidth: 280,
     rightSidebarOpen: true,
     rightSidebarTab: 'explorer',
+    rightSidebarExplorerView: 'files',
     rightSidebarWidth: 350,
+    markdownTocPanelWidth: 240,
     groupBy: 'repo',
     sortBy: 'recent',
     projectOrderBy: 'manual',
     showActiveOnly: false,
     hideSleepingWorkspaces: DEFAULT_HIDE_SLEEPING_WORKSPACES,
+    workspaceHostScope: 'all',
+    visibleWorkspaceHostIds: null,
+    workspaceHostOrder: [],
     showSleepingWorkspaces: DEFAULT_SHOW_SLEEPING_WORKSPACES,
     hideDefaultBranchWorkspace: false,
     showDotfilesByWorktree: {},
@@ -437,6 +463,11 @@ export function getDefaultUIState(): PersistedUIState {
     setupGuideBrowserMilestoneMigrated: true,
     setupGuideBrowserMilestoneLegacyComplete: false,
     browserImportHintHidden: false,
+    mobileEmulatorTabIntroDismissed: false,
+    mobileEmulatorAgentSetupDismissed: false,
+    // Why: brand-new profiles never saw recent project ordering; only upgraded
+    // profiles get the one-time sidebar notice on first launch.
+    projectOrderManualDefaultNoticeDismissed: true,
     workspaceCleanup: { dismissals: {} },
     featureTipsSeenIds: [],
     featureInteractions: {},

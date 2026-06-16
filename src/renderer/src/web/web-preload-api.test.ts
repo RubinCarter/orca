@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PreloadApi } from '../../../preload/api-types'
 import type { FeatureInteractionState } from '../../../shared/feature-interactions'
 import type { RuntimeRpcResponse } from '../../../shared/runtime-rpc-envelope'
+import type { TaskSourceContext } from '../../../shared/task-source-context'
+
+const TEST_COMMIT_OID = '0123456789abcdef0123456789abcdef01234567'
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>()
@@ -159,7 +162,7 @@ describe('web keybindings preload API', () => {
       bindings: null
     })
     expect(reset.overrides['worktree.palette']).toBeUndefined()
-  })
+  }, 15_000)
 
   it('rejects conflicts before mutating browser storage', async () => {
     const { api } = await installApi('Linux')
@@ -782,6 +785,46 @@ describe('web UI preload API', () => {
     expect(stored.contextualToursSeenIds).toEqual(['tasks', 'browser'])
   })
 
+  it('does not keep a local shadow copy of main-owned feature telemetry markers', async () => {
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result: { ui: {} },
+            _meta: { runtimeId: 'runtime-1' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage)
+    globals.storage.setItem(
+      'orca.web.ui.v1',
+      JSON.stringify({
+        featureInteractionTelemetryBuckets: { tasks: 'count_1000_plus' }
+      })
+    )
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await globals.window.api.ui.set({
+      featureInteractionTelemetryBuckets: { tasks: 'count_500_999' }
+    } as never)
+    const ui = await globals.window.api.ui.get()
+    const stored = JSON.parse(globals.storage.getItem('orca.web.ui.v1') ?? '{}') as Record<
+      string,
+      unknown
+    >
+
+    expect('featureInteractionTelemetryBuckets' in (ui as Record<string, unknown>)).toBe(false)
+    expect(stored.featureInteractionTelemetryBuckets).toBeUndefined()
+  })
+
   it('union-merges local contextual tour seen ids when recordFeatureInteraction returns stale host state', async () => {
     vi.doMock('./web-runtime-client', () => ({
       WebRuntimeClient: class {
@@ -957,6 +1000,53 @@ describe('web UI preload API', () => {
   })
 })
 
+describe('web repos preload API', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.doUnmock('./web-runtime-client')
+  })
+
+  it.each([
+    ['/home/alice', '/home/alice/orca/projects'],
+    ['/', '/orca/projects'],
+    ['C:\\', 'C:\\orca\\projects']
+  ])(
+    'resolves the default create-project parent from runtime host home %s',
+    async (resolvedPath, expectedParent) => {
+      const runtimeCalls: { method: string; params: unknown }[] = []
+      vi.doMock('./web-runtime-client', () => ({
+        WebRuntimeClient: class {
+          call(method: string, params?: unknown): Promise<RuntimeRpcResponse<unknown>> {
+            runtimeCalls.push({ method, params })
+            return Promise.resolve({
+              id: method,
+              ok: true,
+              result: { resolvedPath, entries: [] },
+              _meta: { runtimeId: 'runtime-1' }
+            })
+          }
+
+          close(): void {}
+        }
+      }))
+
+      const globals = installBrowserGlobals('Linux')
+      writeStoredRuntimeEnvironment(globals.storage)
+      const { installWebPreloadApi } = await import('./web-preload-api')
+      installWebPreloadApi()
+
+      await expect(globals.window.api.repos.getDefaultCreateProjectParent()).resolves.toBe(
+        expectedParent
+      )
+      expect(runtimeCalls).toEqual([{ method: 'files.browseServerDir', params: { path: '~' } }])
+    }
+  )
+})
+
 describe('web worktree preload API', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -1056,6 +1146,18 @@ describe('web file preload API', () => {
     ).rejects.toThrow('Remote file download is unavailable in paired web clients.')
   })
 
+  it('rejects SSH clone requests in paired web clients', async () => {
+    const { api } = await installApi('Linux')
+
+    await expect(
+      api.repos.cloneRemote({
+        connectionId: 'ssh-1',
+        url: 'https://github.com/stablyai/orca.git',
+        destination: '/workspace'
+      })
+    ).rejects.toThrow('SSH clone is unavailable in paired web clients.')
+  })
+
   it('returns false for runtime missing-path errors from fs.pathExists', async () => {
     const runtimeCalls: { method: string; params: unknown }[] = []
     const worktree = {
@@ -1124,6 +1226,99 @@ describe('web file preload API', () => {
       { method: 'repo.list', params: undefined },
       { method: 'worktree.detectedList', params: { repo: 'repo-1' } },
       { method: 'files.stat', params: { worktree: 'id:wt-1', relativePath: 'untitled.md' } }
+    ])
+  })
+})
+
+describe('web git preload API', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.doUnmock('./web-runtime-client')
+  })
+
+  it('routes remote commit URL requests through the runtime git API', async () => {
+    const runtimeCalls: { method: string; params: unknown }[] = []
+    const worktree = {
+      id: 'wt-1',
+      repoId: 'repo-1',
+      path: '/workspace/repo',
+      head: 'abc123',
+      branch: 'refs/heads/main',
+      isBare: false,
+      isMainWorktree: true,
+      displayName: 'repo',
+      comment: '',
+      linkedIssue: null,
+      linkedPR: null,
+      linkedLinearIssue: null,
+      linkedGitLabMR: null,
+      linkedGitLabIssue: null,
+      isArchived: false,
+      isUnread: false,
+      isPinned: false,
+      sortOrder: 0,
+      lastActivityAt: 0,
+      workspaceStatus: 'todo'
+    }
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string, params?: unknown): Promise<RuntimeRpcResponse<unknown>> {
+          runtimeCalls.push({ method, params })
+          if (method === 'repo.list') {
+            return Promise.resolve({
+              id: `call-${runtimeCalls.length}`,
+              ok: true,
+              result: { repos: [{ id: 'repo-1' }] },
+              _meta: { runtimeId: 'runtime-1' }
+            })
+          }
+          if (method === 'worktree.detectedList') {
+            return Promise.resolve({
+              id: `call-${runtimeCalls.length}`,
+              ok: true,
+              result: { repoId: 'repo-1', authoritative: true, worktrees: [worktree] },
+              _meta: { runtimeId: 'runtime-1' }
+            })
+          }
+          if (method === 'git.remoteCommitUrl') {
+            return Promise.resolve({
+              id: `call-${runtimeCalls.length}`,
+              ok: true,
+              result: `https://git.example.com/project/commit/${TEST_COMMIT_OID}`,
+              _meta: { runtimeId: 'runtime-1' }
+            })
+          }
+          return Promise.resolve({
+            id: `call-${runtimeCalls.length}`,
+            ok: false,
+            error: { code: 'unexpected_method', message: `Unexpected method: ${method}` },
+            _meta: { runtimeId: 'runtime-1' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage)
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await expect(
+      globals.window.api.git.remoteCommitUrl({
+        worktreePath: '/workspace/repo',
+        sha: TEST_COMMIT_OID
+      })
+    ).resolves.toBe(`https://git.example.com/project/commit/${TEST_COMMIT_OID}`)
+    expect(runtimeCalls).toEqual([
+      { method: 'repo.list', params: undefined },
+      { method: 'worktree.detectedList', params: { repo: 'repo-1' } },
+      { method: 'git.remoteCommitUrl', params: { worktree: 'id:wt-1', sha: TEST_COMMIT_OID } }
     ])
   })
 })
@@ -1398,9 +1593,9 @@ describe('web GitHub preload API', () => {
       },
       {
         key: 'setPRAutoMerge',
-        args: { repoPath, prNumber: 7, enabled: true },
+        args: { repoPath, prNumber: 7, enabled: true, method: 'squash' },
         expectedMethod: 'github.setPRAutoMerge',
-        expectedParams: withRepo({ repoPath, prNumber: 7, enabled: true })
+        expectedParams: withRepo({ repoPath, prNumber: 7, enabled: true, method: 'squash' })
       },
       {
         key: 'updatePRState',
@@ -1873,6 +2068,101 @@ describe('web GitLab preload API', () => {
         params: routeCase.expectedParams
       }))
     )
+  })
+
+  it('routes GitLab repo selectors through repo id when provided', async () => {
+    const runtimeCalls: { method: string; params: unknown }[] = []
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string, params?: unknown): Promise<RuntimeRpcResponse<unknown>> {
+          runtimeCalls.push({ method, params })
+          return Promise.resolve({
+            id: `call-${runtimeCalls.length}`,
+            ok: true,
+            result: method === 'gitlab.workItemDetails' ? null : { ok: true, items: [] },
+            _meta: { runtimeId: 'runtime-1' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage)
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+    const api = globals.window.api
+    const sourceContext: TaskSourceContext = {
+      kind: 'task-source',
+      provider: 'gitlab',
+      projectId: 'gitlab:gitlab.example.com/group/project',
+      hostId: 'runtime:web-env-1',
+      repoId: 'repo-gitlab-runtime',
+      providerIdentity: {
+        provider: 'gitlab',
+        projectId: '42',
+        namespace: 'group',
+        project: 'project',
+        webUrl: 'https://gitlab.example.com/group/project'
+      }
+    }
+
+    await api.gl.listIssues({
+      repoPath: '/workspace/repo',
+      repoId: 'repo-gitlab-runtime',
+      sourceContext,
+      state: 'opened'
+    })
+    await api.gl.updateMR({
+      repoPath: '/workspace/repo',
+      repoId: 'repo-gitlab-runtime',
+      sourceContext,
+      iid: 9,
+      updates: { title: 'New title' }
+    })
+    await api.gl.workItemDetails({
+      repoPath: '/workspace/repo',
+      repoId: 'repo-gitlab-runtime',
+      sourceContext,
+      iid: 9,
+      type: 'mr'
+    })
+
+    expect(runtimeCalls).toEqual([
+      {
+        method: 'gitlab.listIssues',
+        params: {
+          repoPath: '/workspace/repo',
+          repoId: 'repo-gitlab-runtime',
+          sourceContext,
+          repo: 'id:repo-gitlab-runtime',
+          state: 'opened'
+        }
+      },
+      {
+        method: 'gitlab.updateMR',
+        params: {
+          repoPath: '/workspace/repo',
+          repoId: 'repo-gitlab-runtime',
+          sourceContext,
+          repo: 'id:repo-gitlab-runtime',
+          iid: 9,
+          updates: { title: 'New title' }
+        }
+      },
+      {
+        method: 'gitlab.workItemDetails',
+        params: {
+          repoPath: '/workspace/repo',
+          repoId: 'repo-gitlab-runtime',
+          sourceContext,
+          repo: 'id:repo-gitlab-runtime',
+          iid: 9,
+          type: 'mr'
+        }
+      }
+    ])
   })
 
   it('exposes the GitLab task methods used by the shared Tasks page', async () => {

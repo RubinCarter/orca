@@ -10,6 +10,7 @@ import * as path from 'path'
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { execFileSync } from 'child_process'
+import { MAX_RENDERED_DIFF_COMBINED_CHARACTERS } from '../shared/large-diff-render-limit'
 import {
   createMockDispatcher,
   gitInit,
@@ -71,12 +72,15 @@ describe('GitHandler', () => {
     expect(methods).toContain('git.bulkUnstage')
     expect(methods).toContain('git.abortMerge')
     expect(methods).toContain('git.abortRebase')
+    expect(methods).toContain('git.checkout')
+    expect(methods).toContain('git.localBranches')
     expect(methods).toContain('git.discard')
     expect(methods).toContain('git.bulkDiscard')
     expect(methods).toContain('git.conflictOperation')
     expect(methods).toContain('git.branchCompare')
     expect(methods).toContain('git.upstreamStatus')
     expect(methods).toContain('git.fetch')
+    expect(methods).toContain('git.forkSync')
     expect(methods).toContain('git.fetchRemoteTrackingRef')
     expect(methods).toContain('git.push')
     expect(methods).toContain('git.pull')
@@ -90,6 +94,7 @@ describe('GitHandler', () => {
     expect(methods).toContain('git.refreshLocalBaseRefForWorktreeCreate')
     expect(methods).toContain('git.renameCurrentBranch')
     expect(methods).toContain('git.exec')
+    expect(methods).toContain('git.clone')
     expect(methods).toContain('git.isGitRepo')
   })
 
@@ -150,6 +155,43 @@ describe('GitHandler', () => {
       await expect(fs.access(path.join(tmpDir, '.git', 'rebase-merge'))).rejects.toThrow()
       await expect(fs.access(path.join(tmpDir, '.git', 'rebase-apply'))).rejects.toThrow()
       await expect(fs.readFile(path.join(tmpDir, 'file.txt'), 'utf-8')).resolves.toBe('feature\n')
+    })
+  })
+
+  describe('checkout / localBranches', () => {
+    it('switches to an existing local branch and lists branches current-first', async () => {
+      gitInit(tmpDir)
+      writeFileSync(path.join(tmpDir, 'file.txt'), 'base\n')
+      gitCommit(tmpDir, 'initial')
+      const baseBranch = execFileSync('git', ['branch', '--show-current'], {
+        cwd: tmpDir,
+        encoding: 'utf-8',
+        stdio: 'pipe'
+      }).trim()
+      execFileSync('git', ['branch', 'feature'], { cwd: tmpDir, stdio: 'pipe' })
+
+      const before = (await dispatcher.callRequest('git.localBranches', {
+        worktreePath: tmpDir
+      })) as { current: string | null; branches: string[] }
+      expect(before.current).toBe(baseBranch)
+      expect(before.branches).toContain('feature')
+      expect(before.branches[0]).toBe(baseBranch)
+
+      await dispatcher.callRequest('git.checkout', { worktreePath: tmpDir, branch: 'feature' })
+
+      expect(
+        execFileSync('git', ['branch', '--show-current'], {
+          cwd: tmpDir,
+          encoding: 'utf-8',
+          stdio: 'pipe'
+        }).trim()
+      ).toBe('feature')
+
+      const after = (await dispatcher.callRequest('git.localBranches', {
+        worktreePath: tmpDir
+      })) as { current: string | null; branches: string[] }
+      expect(after.current).toBe('feature')
+      expect(after.branches[0]).toBe('feature')
     })
   })
 
@@ -449,6 +491,34 @@ describe('GitHandler', () => {
       expect(result.kind).toBe('text')
       expect(result.originalContent).toBe('original')
       expect(result.modifiedContent).toBe('staged-content')
+    })
+
+    it('omits over-limit text bodies before returning diff payloads', async () => {
+      gitInit(tmpDir)
+      writeFileSync(path.join(tmpDir, 'file.txt'), 'original')
+      gitCommit(tmpDir, 'initial')
+      const oversizedText = 'a'.repeat(MAX_RENDERED_DIFF_COMBINED_CHARACTERS + 1)
+      writeFileSync(path.join(tmpDir, 'file.txt'), oversizedText)
+
+      const result = (await dispatcher.callRequest('git.diff', {
+        worktreePath: tmpDir,
+        filePath: 'file.txt',
+        staged: false
+      })) as {
+        kind: string
+        originalContent: string
+        modifiedContent: string
+        largeDiffRenderLimit?: { limited: boolean; reason?: string; characterCount?: number }
+      }
+
+      expect(result.kind).toBe('text')
+      expect(result.originalContent).toBe('')
+      expect(result.modifiedContent).toBe('')
+      expect(result.largeDiffRenderLimit?.limited).toBe(true)
+      expect(result.largeDiffRenderLimit?.reason).toBe('character-count')
+      expect(result.largeDiffRenderLimit?.characterCount).toBe(
+        oversizedText.length + 'original'.length
+      )
     })
 
     it('returns diff for tracked files in valid dot-dot-prefixed directories', async () => {
@@ -992,6 +1062,37 @@ describe('GitHandler', () => {
         await fs.rm(bareDir, { recursive: true, force: true })
         await fs.rm(producerParent, { recursive: true, force: true })
       }
+    })
+
+    it('rejects malformed fork sync expected upstream metadata', async () => {
+      await expect(
+        dispatcher.callRequest('git.forkSync', {
+          worktreePath: tmpDir,
+          expectedUpstream: { owner: '   ', repo: 'orca' }
+        })
+      ).rejects.toThrow('Invalid expected upstream.')
+    })
+
+    it('rejects fork sync requests without expected upstream metadata', async () => {
+      await expect(
+        dispatcher.callRequest('git.forkSync', {
+          worktreePath: tmpDir
+        })
+      ).rejects.toThrow('Expected upstream is required.')
+    })
+
+    it('aborts fork sync when the relay request is canceled', async () => {
+      gitInit(tmpDir)
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(
+        dispatcher.callRequest(
+          'git.forkSync',
+          { worktreePath: tmpDir, expectedUpstream: { owner: 'stablyai', repo: 'orca' } },
+          { isStale: () => false, signal: controller.signal }
+        )
+      ).rejects.toThrow(/abort/i)
     })
 
     it('refreshes one remote-tracking ref from a configured remote', async () => {

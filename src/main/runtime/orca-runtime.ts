@@ -3,10 +3,12 @@
 /* eslint-disable no-control-regex -- Why: terminal normalization must strip ANSI and OSC control sequences from PTY output before returning bounded text to agents. */
 import {
   detectAgentStatusFromTitle,
+  isClaudeManagementTitle,
   isCursorNativeAgentTitle,
   isShellProcess,
   normalizeTerminalTitle
 } from '../../shared/agent-detection'
+import { extractOscTitleScanTail } from '../../shared/osc-title-scan-tail'
 import type { AgentStatus } from '../../shared/agent-detection'
 import {
   createTerminalTitleTracker,
@@ -21,6 +23,7 @@ import type {
 import type { TerminalGitHubPRLink } from '../../shared/terminal-github-pr-link-detector'
 import {
   AGENT_STATUS_STALE_AFTER_MS,
+  type AgentStatusIpcPayload,
   type ParsedAgentStatusPayload,
   type AgentStatusOrchestrationContext,
   type AgentStatusEntry
@@ -36,6 +39,7 @@ import {
   deriveValidatedClonePath,
   getClonePathComparisonKey
 } from '../git/repo-clone-path'
+import { getGitCloneFailureMessage } from '../../shared/git-clone-failure-message'
 import { createHash, randomUUID } from 'crypto'
 import { homedir } from 'os'
 import { isAbsolute, join, resolve } from 'path'
@@ -62,11 +66,24 @@ import type {
   GitHubOwnerRepo,
   GlobalSettings,
   PersistedUIState,
+  Project,
+  ProjectHostSetup,
+  ProjectHostSetupCloneArgs,
+  ProjectHostSetupCreateArgs,
+  ProjectHostSetupCreateResult,
+  ProjectHostSetupDeleteArgs,
+  ProjectHostSetupDeleteResult,
+  ProjectHostSetupExistingFolderArgs,
+  ProjectHostSetupResult,
+  ProjectHostSetupUpdateArgs,
+  ProjectHostSetupUpdateResult,
   Repo,
   RemoveWorktreeResult,
   StatsSummary,
   Worktree,
   WorktreeLineage,
+  WorkspaceLineage,
+  WorkspaceKey,
   WorktreeLineageWarning,
   WorktreeMeta,
   WorktreeBaseStatusEvent,
@@ -79,9 +96,11 @@ import type {
   JiraIssueUpdate,
   JiraSiteSelection,
   LinearIssueUpdate,
+  LinearProjectSummary,
   LinearWorkspaceSelection,
   NestedRepoScanResult,
   ProjectGroup,
+  FolderWorkspace,
   ProjectGroupImportMode,
   ProjectGroupImportResult,
   MemorySnapshot,
@@ -94,9 +113,43 @@ import type {
 } from '../../shared/types'
 import type { RuntimeClientEvent } from '../../shared/runtime-client-events'
 import { toRuntimeActivateWorktreeEvent } from '../../shared/runtime-client-events'
+import type {
+  LinearCurrentIssueContextHints,
+  LinearAttachResult,
+  LinearCommentAddResult,
+  LinearCreateResult,
+  LinearErrorCode,
+  LinearIssueListFilter,
+  LinearIssueListResult,
+  LinearProjectListResult,
+  LinearIssueSummary,
+  LinearIssueRequest,
+  LinearIssueTaskUpdateRequest,
+  LinearIssueTaskUpdateResult,
+  LinearTeamLabelsResult,
+  LinearTeamListResult,
+  LinearTeamMembersResult,
+  LinearTeamStatesResult,
+  LinearStatusSetResult
+} from '../../shared/linear-agent-access'
+import {
+  LINEAR_SEARCH_MAX_LIMIT,
+  LINEAR_WRITE_BODY_CAP,
+  clampLinearSearchLimit
+} from '../../shared/linear-agent-access'
+import { isLinearUuid } from '../../shared/linear-uuid'
 import type { FeatureInteractionId } from '../../shared/feature-interactions'
 import type { TerminalPaneSplitSource } from '../../shared/feature-education-telemetry'
-import { FOLDER_WORKSPACE_INSTANCE_SEPARATOR, splitWorktreeId } from '../../shared/worktree-id'
+import {
+  FOLDER_WORKSPACE_INSTANCE_SEPARATOR,
+  splitWorktreeId,
+  splitWorktreeIdForFilesystem
+} from '../../shared/worktree-id'
+import {
+  getProjectHostSetupForRepo,
+  getProjectHostSetupWorktreeMeta
+} from '../../shared/project-host-setup-projection'
+import { parsePtySessionId } from '../../shared/pty-session-id-format'
 import { clampLinearIssueListLimit } from '../../shared/linear-issue-read-limits'
 import { isFolderRepo } from '../../shared/repo-kind'
 import { DEFAULT_WORKSPACE_STATUS_ID } from '../../shared/workspace-statuses'
@@ -107,9 +160,17 @@ import { isTerminalLeafId, makePaneKey, parsePaneKey } from '../../shared/stable
 import { parseAppSshPtyId } from '../../shared/ssh-pty-id'
 import { isValidHostTerminalTabId } from '../../shared/terminal-tab-id'
 import { buildAgentDraftLaunchPlan, buildAgentStartupPlan } from '../../shared/tui-agent-startup'
-import { isExpectedAgentProcess } from '../../shared/agent-process-recognition'
+import {
+  isAgentForegroundWrapperProcess,
+  isExpectedAgentProcess,
+  recognizeAgentProcess
+} from '../../shared/agent-process-recognition'
 import { isTuiAgentEnabled, pickTuiAgent } from '../../shared/tui-agent-selection'
-import { TUI_AGENT_CONFIG, isTuiAgent } from '../../shared/tui-agent-config'
+import {
+  resolveTuiAgentLaunchArgs,
+  resolveTuiAgentLaunchEnv
+} from '../../shared/tui-agent-launch-defaults'
+import { isTuiAgent, TUI_AGENT_CONFIG } from '../../shared/tui-agent-config'
 import { detectInstalledAgents, detectRemoteAgents } from '../ipc/preflight'
 import {
   markCodexProjectTrusted,
@@ -123,6 +184,16 @@ import {
   isPathInsideOrEqual,
   normalizeRuntimePathForComparison
 } from '../../shared/cross-platform-path'
+import {
+  folderWorkspaceKey,
+  isWorkspaceKey,
+  parseWorkspaceKey,
+  worktreeWorkspaceKey
+} from '../../shared/workspace-scope'
+import type {
+  FolderWorkspacePathStatus,
+  FolderWorkspacePathStatusRequest
+} from '../../shared/folder-workspace-path-status'
 import {
   buildKnownOrcaWorkspaceLayouts,
   isLegacyRepoForExternalWorktreeVisibility,
@@ -163,7 +234,10 @@ import type {
   RuntimeTerminalWaitBlockedReason,
   RuntimeTerminalWaitCondition,
   RuntimeWorktreePsSummary,
+  RuntimeWorktreeAgentRow,
   RuntimeWorktreeStatus,
+  RuntimeSpeechModelSummary,
+  RuntimeSpeechSetupState,
   RuntimeTerminalShow,
   RuntimeTerminalSummary,
   RuntimeSyncedLeaf,
@@ -242,6 +316,7 @@ import {
   listAssignableUsers
 } from '../github/client'
 import { resolveGitHubPrStartPoint } from '../github/pr-start-point'
+import { fetchPrHeadTrackingRef } from '../github/pr-head-tracking-ref'
 import { getWorkItemDetails, getPRFileContents } from '../github/work-item-details'
 import { getRateLimit } from '../github/rate-limit'
 import {
@@ -297,6 +372,7 @@ import type {
   HostedReviewInfo
 } from '../../shared/hosted-review'
 import { getHostedReviewForBranch as getHostedReviewForBranchFromRepo } from '../source-control/hosted-review'
+import type { ForgeProviderId } from '../source-control/forge-provider'
 import {
   createHostedReview as createHostedReviewFromRepo,
   getHostedReviewCreationEligibility as getHostedReviewCreationEligibilityFromRepo
@@ -305,19 +381,42 @@ import {
   connect as connectLinear,
   disconnect as disconnectLinear,
   getStatus as getLinearStatus,
+  isAuthError as isLinearAuthError,
   selectWorkspace as selectLinearWorkspace,
   testConnection as testLinearConnection
 } from '../linear/client'
 import {
   addIssueComment as addLinearIssueComment,
+  addIssueCommentForAgent as addLinearIssueCommentForAgent,
+  createIssueAttachment as createLinearIssueAttachment,
+  createIssueForAgent as createLinearIssueForAgent,
   createIssue as createLinearIssue,
+  getAttachmentByUuidForAgent as getLinearAttachmentByUuidForAgent,
+  getCommentByUuidForAgent as getLinearCommentByUuidForAgent,
   getIssue as getLinearIssue,
+  getIssueByUuidForAgent as getLinearIssueByUuidForAgent,
+  getIssueCommentThreadRoot as getLinearIssueCommentThreadRoot,
   getIssueComments as getLinearIssueComments,
   listIssues as listLinearIssues,
   searchIssues as searchLinearIssues,
+  updateIssueForAgent as updateLinearIssueForAgent,
   updateIssue as updateLinearIssue,
+  LinearWriteFailure,
   type LinearListFilter
 } from '../linear/issues'
+import {
+  LinearAgentAccessError,
+  getLinearCurrentIssueFromWorktree,
+  readLinearIssueContext,
+  resolveLegacyLinearLinkWorkspace,
+  searchLinearIssuesForAgents
+} from '../linear/issue-context'
+import {
+  classifyLinearError,
+  linearError,
+  linearMessage,
+  sanitizeLinearErrorMessage
+} from '../linear/issue-context-errors'
 import {
   createProject as createLinearProject,
   getCustomView as getLinearCustomView,
@@ -325,15 +424,23 @@ import {
   listCustomViewIssues as listLinearCustomViewIssues,
   listCustomViewProjects as listLinearCustomViewProjects,
   listCustomViews as listLinearCustomViews,
+  listProjectsByExactName as listLinearProjectsByExactName,
   listProjectIssues as listLinearProjectIssues,
+  listProjectTeams as listLinearProjectTeams,
   listProjects as listLinearProjects,
   type LinearProjectCreateInput
 } from '../linear/projects'
 import {
   getTeamLabels as getLinearTeamLabels,
+  getTeamLabelsOrThrow as getLinearTeamLabelsOrThrow,
   getTeamMembers as getLinearTeamMembers,
+  getTeamMembersOrThrow as getLinearTeamMembersOrThrow,
   getTeamStates as getLinearTeamStates,
-  listTeams as listLinearTeams
+  getTeamStatesOrThrow as getLinearTeamStatesOrThrow,
+  getViewerForWorkspaceOrThrow as getLinearViewerForWorkspaceOrThrow,
+  listTeamsForAgent as listLinearTeamsForAgent,
+  listTeams as listLinearTeams,
+  listTeamsOrThrow as listLinearTeamsOrThrow
 } from '../linear/teams'
 import {
   connect as connectJira,
@@ -411,6 +518,7 @@ import {
   getRemoteDrift,
   getRecentDriftSubjects
 } from '../git/repo'
+import { hasLocalCommitObject } from '../git/commit-object-ref'
 import {
   listWorktrees,
   addWorktree,
@@ -478,6 +586,8 @@ import {
 } from '../worktree-removal-safety'
 import { prefetchWorktreeCreateBase } from '../worktree-create-base-prefetch'
 import { invalidateAuthorizedRootsCache } from '../ipc/filesystem-auth'
+import { prepareLocalWorktreeRootForRepo } from '../worktree-root-preparation'
+import { closeLocalWatcherForWorktreePath } from '../ipc/filesystem-watcher'
 import { HeadlessEmulator } from '../daemon/headless-emulator'
 import {
   isNativeWindowsConptyPty,
@@ -492,6 +602,12 @@ import { killAllProcessesForWorktree } from './worktree-teardown'
 import { MOBILE_SUBSCRIBE_SCROLLBACK_ROWS } from './scrollback-limits'
 import type { IFilesystemProvider, IPtyProvider } from '../providers/types'
 import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
+import {
+  assertFolderWorkspacePathUsable,
+  getFolderWorkspacePathStatus,
+  getFolderWorkspacePathStatusForPath,
+  inferFolderWorkspacePathConnection
+} from '../project-groups/folder-workspace-path-status'
 import { getSshGitProvider, requireSshGitProvider } from '../providers/ssh-git-dispatch'
 import { detectRepoIconAndUpstream } from '../repo-icon-autodetect'
 import { githubAvatarIcon } from '../../shared/repo-icon'
@@ -502,6 +618,7 @@ import type { ClaudeRateLimitAccountsState, CodexRateLimitAccountsState } from '
 import type { RateLimitState } from '../../shared/rate-limit-types'
 import type { VoiceSettings } from '../../shared/speech-types'
 import { getSpeechModelManager, getSpeechSttService } from '../speech/speech-runtime-service'
+import { getCatalogModel, isLocalSpeechModel, SPEECH_MODEL_CATALOG } from '../speech/model-catalog'
 import type { CommitMessageAgentEnvironmentResolvers } from '../text-generation/commit-message-agent-environment'
 import { scanNestedRepos } from '../project-groups/nested-repo-discovery'
 import {
@@ -540,11 +657,20 @@ type RuntimeStore = {
   getRepo: Store['getRepo']
   addRepo: Store['addRepo']
   updateRepo: Store['updateRepo']
+  getProjects?: Store['getProjects']
+  getProjectHostSetups?: Store['getProjectHostSetups']
+  createProjectHostSetup?: Store['createProjectHostSetup']
+  updateProjectHostSetup?: Store['updateProjectHostSetup']
+  deleteProjectHostSetup?: Store['deleteProjectHostSetup']
   getProjectGroups?: Store['getProjectGroups']
   createProjectGroup?: Store['createProjectGroup']
   updateProjectGroup?: Store['updateProjectGroup']
   deleteProjectGroup?: Store['deleteProjectGroup']
   moveProjectToGroup?: Store['moveProjectToGroup']
+  getFolderWorkspaces?: Store['getFolderWorkspaces']
+  createFolderWorkspace?: Store['createFolderWorkspace']
+  updateFolderWorkspace?: Store['updateFolderWorkspace']
+  removeFolderWorkspace?: Store['removeFolderWorkspace']
   removeProject?: Store['removeProject']
   reorderRepos?: Store['reorderRepos']
   getAllWorktreeMeta: Store['getAllWorktreeMeta']
@@ -555,6 +681,9 @@ type RuntimeStore = {
   getAllWorktreeLineage?: Store['getAllWorktreeLineage']
   setWorktreeLineage?: Store['setWorktreeLineage']
   removeWorktreeLineage?: Store['removeWorktreeLineage']
+  getAllWorkspaceLineage?: Store['getAllWorkspaceLineage']
+  setWorkspaceLineage?: Store['setWorkspaceLineage']
+  removeWorkspaceLineage?: Store['removeWorkspaceLineage']
   getGitHubCache: Store['getGitHubCache']
   getWorkspaceSession?: Store['getWorkspaceSession']
   setWorkspaceSession?: Store['setWorkspaceSession']
@@ -579,6 +708,8 @@ type RuntimeStore = {
     defaultTuiAgent?: GlobalSettings['defaultTuiAgent']
     disabledTuiAgents?: GlobalSettings['disabledTuiAgents']
     agentCmdOverrides?: GlobalSettings['agentCmdOverrides']
+    agentDefaultArgs?: GlobalSettings['agentDefaultArgs']
+    agentDefaultEnv?: GlobalSettings['agentDefaultEnv']
     agentStatusHooksEnabled?: GlobalSettings['agentStatusHooksEnabled']
     defaultTaskSource?: GlobalSettings['defaultTaskSource']
     defaultTaskViewPreset?: GlobalSettings['defaultTaskViewPreset']
@@ -671,6 +802,7 @@ type RuntimeLeafRecord = RuntimeSyncedLeaf & {
   lastExitCode: number | null
   tailBuffer: string[]
   tailPartialLine: string
+  tailPendingAnsi: string
   tailTruncated: boolean
   tailLinesTotal: number
   preview: string
@@ -681,6 +813,8 @@ type RuntimeLeafRecord = RuntimeSyncedLeaf & {
   // serving a stale `lastAgentStatus` after the agent process exits and the
   // shell takes over the title — the bug behind issue #1437.
   lastOscTitle: string | null
+  lastOscTitleAt: number | null
+  paneTitleUpdatedAt: number | null
 }
 
 function isCursorAgentOrchestrationTarget(
@@ -721,10 +855,15 @@ type RuntimePtyWorktreeRecord = {
   lastExitCode: number | null
   lastAgentStatus: AgentStatus | null
   lastOscTitle: string | null
+  lastOscTitleAt: number | null
+  managementTitle: string | null
+  managementTitleAt: number | null
   title: string | null
+  titleUpdatedAt: number | null
   lastOutputAt: number | null
   tailBuffer: string[]
   tailPartialLine: string
+  tailPendingAnsi: string
   tailTruncated: boolean
   tailLinesTotal: number
   preview: string
@@ -762,6 +901,21 @@ type RuntimePtyTitleTrackerEntry = {
   commandCodeDetector: { observe: (data: string) => boolean } | null
 }
 
+// Why: the full OSC 9999 payload flows through emitTerminalAgentStatusEvents and
+// is then forwarded to the renderer and dropped. Mobile is served by the main
+// process and has no renderer store, so we retain the latest payload per pane
+// here to feed worktree.ps's inline agent rows (1:1 with the desktop sidebar).
+type RuntimeAgentRowSnapshot = {
+  paneKey: string
+  ptyId: string
+  worktreeId?: string
+  tabId?: string
+  payload: ParsedAgentStatusPayload
+  // When the current payload.state was first observed for this pane (ms).
+  stateStartedAt: number
+  updatedAt: number
+}
+
 type RuntimeHeadlessTerminal = {
   emulator: HeadlessEmulator
   // Why: serialize can race with newer writes appended to writeChain; return
@@ -797,6 +951,7 @@ type RuntimePtyController = {
   }): Promise<{ id: string }>
   write(ptyId: string, data: string): boolean
   kill(ptyId: string): boolean
+  stopAndWait?(ptyId: string, opts?: { keepHistory?: boolean }): Promise<boolean>
   getForegroundProcess(ptyId: string): Promise<string | null>
   hasChildProcesses?(ptyId: string): Promise<boolean>
   clearBuffer?(ptyId: string): Promise<void>
@@ -830,6 +985,8 @@ function getAgentLaunchPlatformForRepo(repo: Pick<Repo, 'connectionId' | 'path'>
   return isWindowsAbsolutePathLike(repo.path) ? 'win32' : 'linux'
 }
 
+const FOREGROUND_AGENT_WRAPPER_RETRY_INTERVAL_MS = 150
+const FOREGROUND_AGENT_WRAPPER_RETRY_TIMEOUT_MS = 6_500
 const DECSET_BRACKETED_PASTE = '\x1b[?2004h'
 const CODEX_COMPOSER_PROMPT = '›'
 const BRACKETED_PASTE_BEGIN = '\x1b[200~'
@@ -839,7 +996,7 @@ const DRAFT_PASTE_READY_TIMEOUT_MS = 8000
 const RECENT_PTY_OUTPUT_LIMIT = 4096
 
 type RuntimeNotifier = {
-  worktreesChanged(repoId: string): void
+  worktreesChanged(repoId: string, renamed?: { oldWorktreeId: string; newWorktreeId: string }): void
   worktreeBaseStatus?(event: WorktreeBaseStatusEvent): void
   worktreeRemoteBranchConflict?(event: WorktreeRemoteBranchConflictEvent): void
   reposChanged(): void
@@ -1014,6 +1171,11 @@ function mergeRuntimeFolderWorkspace(repo: Repo, worktreeId: string, meta: Workt
     id: worktreeId,
     ...(meta.instanceId !== undefined ? { instanceId: meta.instanceId } : {}),
     repoId: repo.id,
+    ...(meta.projectId !== undefined ? { projectId: meta.projectId } : {}),
+    ...(meta.hostId !== undefined ? { hostId: meta.hostId } : {}),
+    ...(meta.projectHostSetupId !== undefined
+      ? { projectHostSetupId: meta.projectHostSetupId }
+      : {}),
     path: repo.path,
     head: '',
     branch: '',
@@ -1024,8 +1186,13 @@ function mergeRuntimeFolderWorkspace(repo: Repo, worktreeId: string, meta: Workt
     linkedIssue: meta.linkedIssue ?? null,
     linkedPR: meta.linkedPR ?? null,
     linkedLinearIssue: meta.linkedLinearIssue ?? null,
+    linkedLinearIssueWorkspaceId: meta.linkedLinearIssueWorkspaceId ?? null,
+    linkedLinearIssueOrganizationUrlKey: meta.linkedLinearIssueOrganizationUrlKey ?? null,
     linkedGitLabMR: meta.linkedGitLabMR ?? null,
     linkedGitLabIssue: meta.linkedGitLabIssue ?? null,
+    linkedBitbucketPR: meta.linkedBitbucketPR ?? null,
+    linkedAzureDevOpsPR: meta.linkedAzureDevOpsPR ?? null,
+    linkedGiteaPR: meta.linkedGiteaPR ?? null,
     isArchived: meta.isArchived ?? false,
     isUnread: meta.isUnread ?? false,
     isPinned: meta.isPinned ?? false,
@@ -1035,7 +1202,8 @@ function mergeRuntimeFolderWorkspace(repo: Repo, worktreeId: string, meta: Workt
     ...(meta.createdAt !== undefined ? { createdAt: meta.createdAt } : {}),
     ...(meta.createdWithAgent !== undefined ? { createdWithAgent: meta.createdWithAgent } : {}),
     workspaceStatus: meta.workspaceStatus ?? DEFAULT_WORKSPACE_STATUS_ID,
-    diffComments: meta.diffComments
+    diffComments: meta.diffComments,
+    mobileDiffReview: meta.mobileDiffReview
   }
 }
 
@@ -1108,6 +1276,32 @@ function normalizeLocalBranchName(branchName: string | undefined): string {
   return branchName?.replace(/^refs\/heads\//, '') ?? ''
 }
 
+// Clamp terminal dimensions to the PTY's supported range (cols 20–240, rows 8–120).
+function clampTerminalViewport(cols: number, rows: number): { cols: number; rows: number } {
+  return {
+    cols: Math.max(20, Math.min(240, Math.round(cols))),
+    rows: Math.max(8, Math.min(120, Math.round(rows)))
+  }
+}
+
+// Subscribe a listener to a per-key Set, pruning the key's entry once its last
+// listener unsubscribes. Returns the unsubscribe callback.
+function addListenerToMap<T>(map: Map<string, Set<T>>, key: string, listener: T): () => void {
+  let listeners = map.get(key)
+  if (!listeners) {
+    listeners = new Set<T>()
+    map.set(key, listeners)
+  }
+  const set = listeners
+  set.add(listener)
+  return () => {
+    set.delete(listener)
+    if (set.size === 0) {
+      map.delete(key)
+    }
+  }
+}
+
 async function canCheckoutExistingLocalBranch(
   repoPath: string,
   branchName: string,
@@ -1145,22 +1339,57 @@ async function canCheckoutExistingLocalBranch(
   return !worktrees.some((worktree) => normalizeLocalBranchName(worktree.branch) === branchName)
 }
 
-type SelectedPrBranchInput = {
+type SelectedReviewBranchInput = {
   branchNameOverride?: string
   linkedPR?: number | null
+  linkedGitLabMR?: number | null
+  linkedBitbucketPR?: number | null
+  linkedAzureDevOpsPR?: number | null
+  linkedGiteaPR?: number | null
   pushTarget?: GitPushTarget
 }
 
+type SelectedReviewBranch = {
+  provider: ForgeProviderId
+  number: number
+}
+
+function getSelectedReviewBranch(args: SelectedReviewBranchInput): SelectedReviewBranch | null {
+  if (typeof args.linkedPR === 'number') {
+    return { provider: 'github', number: args.linkedPR }
+  }
+  if (typeof args.linkedGitLabMR === 'number') {
+    return { provider: 'gitlab', number: args.linkedGitLabMR }
+  }
+  if (typeof args.linkedBitbucketPR === 'number') {
+    return { provider: 'bitbucket', number: args.linkedBitbucketPR }
+  }
+  if (typeof args.linkedAzureDevOpsPR === 'number') {
+    return { provider: 'azure-devops', number: args.linkedAzureDevOpsPR }
+  }
+  if (typeof args.linkedGiteaPR === 'number') {
+    return { provider: 'gitea', number: args.linkedGiteaPR }
+  }
+  return null
+}
+
 function isSelectedGitHubPrBranchOverride(
-  args: SelectedPrBranchInput,
+  args: SelectedReviewBranchInput,
   branchName: string
 ): boolean {
   return typeof args.linkedPR === 'number' && args.branchNameOverride === branchName
 }
 
+function isSelectedReviewBranchOverride(
+  args: SelectedReviewBranchInput,
+  branchName: string
+): boolean {
+  return getSelectedReviewBranch(args) !== null && args.branchNameOverride === branchName
+}
+
 function isMatchingSelectedGitHubPr(
   existingPR: Awaited<ReturnType<typeof getPRForBranch>>,
-  args: SelectedPrBranchInput,
+  args: SelectedReviewBranchInput,
   branchName: string
 ): boolean {
   return Boolean(
@@ -1173,13 +1402,54 @@ function isMatchingSelectedGitHubPr(
 function isAllowedPushTargetRemoteConflict(
   conflictKind: 'local' | 'remote' | null,
   branchName: string,
-  args: SelectedPrBranchInput
+  args: SelectedReviewBranchInput
 ): boolean {
   return (
     conflictKind === 'remote' &&
-    isSelectedGitHubPrBranchOverride(args, branchName) &&
+    isSelectedReviewBranchOverride(args, branchName) &&
     args.pushTarget?.branchName === branchName
   )
+}
+
+function getSelectedReviewLookupHints(args: SelectedReviewBranchInput): {
+  linkedGitHubPR?: number | null
+  linkedGitLabMR?: number | null
+  linkedBitbucketPR?: number | null
+  linkedAzureDevOpsPR?: number | null
+  linkedGiteaPR?: number | null
+} {
+  return {
+    linkedGitHubPR: args.linkedPR ?? null,
+    linkedGitLabMR: args.linkedGitLabMR ?? null,
+    linkedBitbucketPR: args.linkedBitbucketPR ?? null,
+    linkedAzureDevOpsPR: args.linkedAzureDevOpsPR ?? null,
+    linkedGiteaPR: args.linkedGiteaPR ?? null
+  }
+}
+
+async function getSelectedHostedReviewForBranch(
+  repo: Pick<Repo, 'path' | 'connectionId'>,
+  branchName: string,
+  args: SelectedReviewBranchInput
+): Promise<{ matchesSelected: boolean; number: number } | null> {
+  const selectedReview = getSelectedReviewBranch(args)
+  if (!selectedReview) {
+    return null
+  }
+  const review = await getHostedReviewForBranchFromRepo({
+    repoPath: repo.path,
+    connectionId: repo.connectionId ?? null,
+    branch: branchName,
+    ...getSelectedReviewLookupHints(args)
+  })
+  if (!review) {
+    return null
+  }
+  return {
+    matchesSelected:
+      review.provider === selectedReview.provider && review.number === selectedReview.number,
+    number: review.number
+  }
 }
 
 async function pathExists(pathValue: string): Promise<boolean> {
@@ -1220,7 +1490,53 @@ type ResolvedWorktree = Worktree & {
   git: GitWorktreeInfo
 }
 
+type LinearAgentWriteTarget = {
+  issue: LinearIssueSummary
+  workspaceId: string
+}
+
+type LinearCreateFieldIntent = {
+  stateId?: string
+  assigneeId?: string | null
+  priority?: number
+  estimate?: number | null
+  dueDate?: string | null
+  labelIds?: string[]
+  projectId?: string
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+  const rightSet = new Set(right)
+  return left.every((value) => rightSet.has(value))
+}
+
+function labelsForIds(
+  ids: string[],
+  labels: { id?: string | null; name?: string | null; color?: string | null }[]
+): { id: string; name: string; color?: string | null }[] {
+  return ids.map((id) => {
+    const label = labels.find((candidate) => candidate.id === id)
+    return {
+      id,
+      name: label?.name ?? id,
+      ...(label?.color ? { color: label.color } : {})
+    }
+  })
+}
+
+type TerminalWorkspaceLaunchScope = {
+  id: string
+  path: string
+  connectionId: string | null
+  folderWorkspace: FolderWorkspace | null
+}
+
 type WorktreeLineageInput = {
+  parentWorkspace?: string
+  envParentWorkspace?: string
   parentWorktree?: string
   cwdParentWorktree?: string
   noParent?: boolean
@@ -1234,10 +1550,24 @@ type WorktreeLineageInput = {
   }
 }
 
+type ResolvedWorkspaceParent =
+  | {
+      type: 'worktree'
+      workspaceKey: WorkspaceKey
+      worktree: ResolvedWorktree
+      instanceId: string | null
+    }
+  | {
+      type: 'folder'
+      workspaceKey: WorkspaceKey
+      folderWorkspace: FolderWorkspace
+      instanceId: string | null
+    }
+
 type WorktreeLineageResolution =
   | {
       kind: 'lineage'
-      parent: ResolvedWorktree
+      parent: ResolvedWorkspaceParent
       origin: WorktreeLineage['origin']
       capture: WorktreeLineage['capture']
       orchestrationRunId?: string
@@ -1255,8 +1585,8 @@ type RuntimeWorktreeScanResult =
   | { ok: false; worktrees: GitWorktreeInfo[] }
 
 type WorktreeLineageCandidate = {
-  source: 'cwd-context' | 'terminal-context' | 'orchestration-context'
-  parent: ResolvedWorktree
+  source: 'env-workspace' | 'cwd-context' | 'terminal-context' | 'orchestration-context'
+  parent: ResolvedWorkspaceParent
   orchestrationRunId?: string
   taskId?: string
   coordinatorHandle?: string
@@ -1421,6 +1751,7 @@ export class OrcaRuntimeService {
   // iterates them all. Listeners are cleaned up via subscriptionCleanups.
   private notificationListeners = new Set<(event: MobileNotificationEvent) => void>()
   private ptysById = new Map<string, RuntimePtyWorktreeRecord>()
+  private titleObservationSequence = 0
   private headlessTerminals = new Map<string, RuntimeHeadlessTerminal>()
   private ptyOutputSequenceById = new Map<string, number>()
   // Why: OSC 9999 status can span PTY chunks. Keeping parser state in the
@@ -1439,6 +1770,14 @@ export class OrcaRuntimeService {
   // when known (banner detection covers user-typed launches), mirroring the
   // renderer detector's startupCommand seed.
   private terminalSpawnCommandsByPtyId = new Map<string, string>()
+  // Why: ordinary OSC 0/1/2 titles can split across PTY chunks, especially over
+  // SSH/relay buffering. Keep a small raw scan tail and feed reconstructed
+  // chunks into the title tracker instead of falling back to last-title scans.
+  private oscTitleScanTailByPtyId = new Map<string, string>()
+  // Why: latest agent-status payload per pane, retained so worktree.ps can serve
+  // mobile the same inline agent rows the desktop sidebar renders. Cleared on pty
+  // teardown so dead agents don't linger. See RuntimeAgentRowSnapshot.
+  private latestAgentStatusByPaneKey = new Map<string, RuntimeAgentRowSnapshot>()
   // Why: per-PTY hydration state guards against double-hydration. Keys:
   //   'pending'  → maybeHydrateHeadlessFromRenderer is in flight
   //   'done'     → hydration completed (success or skip); never run again
@@ -1651,6 +1990,7 @@ export class OrcaRuntimeService {
   private readonly onPtyStopped: ((ptyId: string) => void) | null
   private readonly onTerminalAgentStatus: ((event: RuntimeTerminalAgentStatusEvent) => void) | null
   private readonly onTerminalSideEffects: ((batch: TerminalSideEffectBatch) => void) | null
+  private readonly getAgentStatusSnapshotFn: (() => AgentStatusIpcPayload[]) | null
   private accountServices: RuntimeAccountServices | null = null
   private commitMessageAgentEnv: CommitMessageAgentEnvironmentResolvers | null = null
   private automationService: AutomationService | null = null
@@ -1674,6 +2014,10 @@ export class OrcaRuntimeService {
       onPtyStopped?: (ptyId: string) => void
       onTerminalAgentStatus?: (event: RuntimeTerminalAgentStatusEvent) => void
       onTerminalSideEffects?: (batch: TerminalSideEffectBatch) => void
+      // Why: agent status mostly arrives via hooks (agent-hooks/server), not OSC
+      // terminal output. worktree.ps reads this at query time so mobile shows the
+      // same inline agent rows the desktop sidebar does — same source, 1:1.
+      getAgentStatusSnapshot?: () => AgentStatusIpcPayload[]
     }
   ) {
     this.store = store
@@ -1681,6 +2025,7 @@ export class OrcaRuntimeService {
       this.stats = stats
       this.agentDetector = new AgentDetector(stats)
     }
+    this.getAgentStatusSnapshotFn = deps?.getAgentStatusSnapshot ?? null
     // Why: the daemon adapter is installed via `setLocalPtyProvider()` during
     // attachMainWindowServices, AFTER this service is constructed. Capturing
     // `getLocalPtyProvider()` at construction time would freeze a reference to
@@ -1748,6 +2093,8 @@ export class OrcaRuntimeService {
     | 'defaultTuiAgent'
     | 'disabledTuiAgents'
     | 'agentCmdOverrides'
+    | 'agentDefaultArgs'
+    | 'agentDefaultEnv'
     | 'agentStatusHooksEnabled'
     | 'defaultTaskSource'
     | 'defaultTaskViewPreset'
@@ -1764,6 +2111,8 @@ export class OrcaRuntimeService {
       defaultTuiAgent: settings.defaultTuiAgent ?? null,
       disabledTuiAgents: settings.disabledTuiAgents ?? [],
       agentCmdOverrides: settings.agentCmdOverrides ?? {},
+      agentDefaultArgs: settings.agentDefaultArgs ?? {},
+      agentDefaultEnv: settings.agentDefaultEnv ?? {},
       agentStatusHooksEnabled: settings.agentStatusHooksEnabled !== false,
       defaultTaskSource: settings.defaultTaskSource ?? 'github',
       defaultTaskViewPreset: settings.defaultTaskViewPreset ?? 'issues',
@@ -1780,6 +2129,8 @@ export class OrcaRuntimeService {
       | 'agentStatusHooksEnabled'
       | 'defaultTuiAgent'
       | 'disabledTuiAgents'
+      | 'agentDefaultArgs'
+      | 'agentDefaultEnv'
       | 'defaultTaskSource'
       | 'defaultTaskViewPreset'
       | 'visibleTaskProviders'
@@ -1792,6 +2143,8 @@ export class OrcaRuntimeService {
     | 'defaultTuiAgent'
     | 'disabledTuiAgents'
     | 'agentCmdOverrides'
+    | 'agentDefaultArgs'
+    | 'agentDefaultEnv'
     | 'agentStatusHooksEnabled'
     | 'defaultTaskSource'
     | 'defaultTaskViewPreset'
@@ -1849,6 +2202,8 @@ export class OrcaRuntimeService {
       prompt: input.prompt,
       precheck: input.precheck,
       agentId: input.agentId,
+      runContext: input.runContext,
+      sourceContext: input.sourceContext,
       projectId: target.projectId,
       workspaceMode: target.workspaceMode,
       workspaceId: target.workspaceId,
@@ -1879,6 +2234,12 @@ export class OrcaRuntimeService {
     }
     if (hasRuntimeAutomationUpdateValue(updates, 'agentId')) {
       patch.agentId = updates.agentId
+    }
+    if (hasRuntimeAutomationUpdateValue(updates, 'runContext')) {
+      patch.runContext = updates.runContext
+    }
+    if (hasRuntimeAutomationUpdateValue(updates, 'sourceContext')) {
+      patch.sourceContext = updates.sourceContext
     }
     if (hasRuntimeAutomationUpdateValue(updates, 'baseBranch')) {
       patch.baseBranch = updates.baseBranch
@@ -2020,6 +2381,9 @@ export class OrcaRuntimeService {
   }
 
   getStatus(): RuntimeStatus {
+    const capabilities = this.getAvailableAuthoritativeWindow()
+      ? [...RUNTIME_CAPABILITIES]
+      : RUNTIME_CAPABILITIES.filter((capability) => capability !== 'browser.screencast.v1')
     return {
       runtimeId: this.runtimeId,
       rendererGraphEpoch: this.rendererGraphEpoch,
@@ -2029,7 +2393,9 @@ export class OrcaRuntimeService {
       liveLeafCount: this.leaves.size,
       runtimeProtocolVersion: RUNTIME_PROTOCOL_VERSION,
       minCompatibleRuntimeClientVersion: MIN_COMPATIBLE_RUNTIME_CLIENT_VERSION,
-      capabilities: [...RUNTIME_CAPABILITIES],
+      // Why: headless orca serve cannot create/stream BrowserViews, so clients
+      // must not treat browser panes as supported just because runtime RPC is up.
+      capabilities,
       hostPlatform: process.platform,
       protocolVersion: RUNTIME_PROTOCOL_VERSION,
       minCompatibleMobileVersion: MIN_COMPATIBLE_RUNTIME_CLIENT_VERSION
@@ -2123,6 +2489,7 @@ export class OrcaRuntimeService {
     this.tabs = new Map(graph.tabs.map((tab) => [tab.tabId, tab]))
     this.syncMobileSessionTabs(graph.mobileSessionTabs)
     const nextLeaves = new Map<string, RuntimeLeafRecord>()
+    const graphSyncedAt = this.nextTitleObservationSequence()
 
     // Why: renderer reloads can briefly republish the same leaf with no ptyId;
     // keep live CLI handles usable while the UI graph rebuilds.
@@ -2138,6 +2505,8 @@ export class OrcaRuntimeService {
         existing && existing.ptyId !== ptyId
           ? existing.ptyGeneration + 1
           : (existing?.ptyGeneration ?? 0)
+      const existingPty = ptyId ? this.ptysById.get(ptyId) : undefined
+      const tailSource = existing?.ptyId === ptyId ? existing : existingPty
 
       nextLeaves.set(leafKey, {
         ...leaf,
@@ -2145,15 +2514,21 @@ export class OrcaRuntimeService {
         ptyGeneration,
         connected: ptyId !== null,
         writable: this.graphStatus === 'ready' && ptyId !== null,
-        lastOutputAt: existing?.ptyId === ptyId ? existing.lastOutputAt : null,
-        lastExitCode: existing?.ptyId === ptyId ? existing.lastExitCode : null,
-        tailBuffer: existing?.ptyId === ptyId ? existing.tailBuffer : [],
-        tailPartialLine: existing?.ptyId === ptyId ? existing.tailPartialLine : '',
-        tailTruncated: existing?.ptyId === ptyId ? existing.tailTruncated : false,
-        tailLinesTotal: existing?.ptyId === ptyId ? existing.tailLinesTotal : 0,
-        preview: existing?.ptyId === ptyId ? existing.preview : '',
-        lastAgentStatus: existing?.ptyId === ptyId ? existing.lastAgentStatus : null,
-        lastOscTitle: existing?.ptyId === ptyId ? existing.lastOscTitle : null
+        lastOutputAt: tailSource?.lastOutputAt ?? null,
+        lastExitCode: tailSource?.lastExitCode ?? null,
+        tailBuffer: tailSource?.tailBuffer ?? [],
+        tailPartialLine: tailSource?.tailPartialLine ?? '',
+        tailPendingAnsi: tailSource?.tailPendingAnsi ?? '',
+        tailTruncated: tailSource?.tailTruncated ?? false,
+        tailLinesTotal: tailSource?.tailLinesTotal ?? 0,
+        preview: tailSource?.preview ?? '',
+        lastAgentStatus: tailSource?.lastAgentStatus ?? null,
+        lastOscTitle: tailSource?.lastOscTitle ?? null,
+        lastOscTitleAt: tailSource?.lastOscTitleAt ?? null,
+        paneTitleUpdatedAt:
+          existing?.ptyId === ptyId && existing.paneTitle === leaf.paneTitle
+            ? existing.paneTitleUpdatedAt
+            : graphSyncedAt
       })
 
       if (leaf.ptyId) {
@@ -2414,7 +2789,7 @@ export class OrcaRuntimeService {
     args: { tabId: string; leafId: string; title: string | null; activate: boolean }
   ): void {
     const existing = this.mobileSessionTabsByWorktree.get(worktreeId)
-    const title = args.title ?? pty.title ?? pty.lastOscTitle ?? 'Terminal'
+    const title = args.title ?? getLatestPtyTitle(pty) ?? 'Terminal'
     const existingTab = existing?.tabs.find(
       (candidate): candidate is RuntimeMobileSessionTerminalTab =>
         candidate.type === 'terminal' &&
@@ -2805,11 +3180,18 @@ export class OrcaRuntimeService {
       if (shouldMaterializePendingTerminal) {
         const sessionId = tab.ptyId ?? tab.parentLayout?.ptyIdsByLeafId?.[tab.leafId] ?? undefined
         try {
-          await this.createHeadlessMobileSessionTerminal(worktreeId, true, undefined, undefined, {
-            tabId: tab.parentTabId,
-            leafId: tab.leafId,
-            sessionId
-          })
+          await this.createHeadlessMobileSessionTerminal(
+            worktreeId,
+            true,
+            undefined,
+            undefined,
+            {
+              tabId: tab.parentTabId,
+              leafId: tab.leafId,
+              sessionId
+            },
+            tab.launchAgent
+          )
         } catch (err) {
           if (sessionId && parseAppSshPtyId(sessionId)) {
             // Why: an expired SSH reattach clears durable bindings in the store,
@@ -2830,6 +3212,15 @@ export class OrcaRuntimeService {
                 candidate.isActive
             )
       const targetTab = activeSibling ?? tab
+      if (!this.notifier?.focusTerminal) {
+        if (
+          !targetTab.isActive &&
+          this.shouldPersistHeadlessMobileSessionActivation(snapshot!, targetTab)
+        ) {
+          this.activateHeadlessMobileSessionTerminalTab(worktreeId, snapshot!, targetTab)
+        }
+        return this.getMobileSessionTabsForWorktree(worktreeId)
+      }
       this.notifier?.focusTerminal(targetTab.parentTabId, worktreeId, targetTab.leafId)
     } else if (tab.type === 'browser') {
       // Why: browser mobile tabs are renderer-owned unified tabs; focusing the
@@ -2849,6 +3240,79 @@ export class OrcaRuntimeService {
       this.isHeadlessMobileSessionPublication(snapshot.publicationEpoch) ||
       this.hasServeOwnedPtyBinding(tab)
     )
+  }
+
+  private shouldPersistHeadlessMobileSessionActivation(
+    snapshot: RuntimeMobileSessionTabsSnapshot,
+    tab: RuntimeMobileSessionTerminalTab
+  ): boolean {
+    if (snapshot.publicationEpoch.includes(':headless-merge:')) {
+      return false
+    }
+    if (this.authoritativeWindowId !== null && this.graphStatus === 'ready') {
+      return false
+    }
+    return this.shouldMaterializeHeadlessMobileSessionTab(snapshot, tab)
+  }
+
+  private activateHeadlessMobileSessionTerminalTab(
+    worktreeId: string,
+    snapshot: RuntimeMobileSessionTabsSnapshot,
+    activeTab: RuntimeMobileSessionTerminalTab
+  ): void {
+    const tabs = snapshot.tabs.map((candidate) => ({
+      ...candidate,
+      isActive: candidate.id === activeTab.id
+    }))
+    const terminalTabs = tabs.filter(
+      (candidate): candidate is RuntimeMobileSessionTerminalTab => candidate.type === 'terminal'
+    )
+    const nextSnapshot: RuntimeMobileSessionTabsSnapshot = {
+      ...snapshot,
+      publicationEpoch: `headless:${Date.now().toString(36)}`,
+      snapshotVersion: snapshot.snapshotVersion + 1,
+      activeTabId: activeTab.id,
+      activeTabType: 'terminal',
+      tabGroups: this.buildHeadlessMobileSessionTabGroups(
+        worktreeId,
+        terminalTabs,
+        activeTab,
+        snapshot.tabGroups
+      ),
+      tabs
+    }
+    this.persistHeadlessTerminalActiveLeaf(worktreeId, activeTab)
+    this.mobileSessionTabsByWorktree.set(worktreeId, nextSnapshot)
+    this.emitMobileSessionTabsSnapshot(nextSnapshot)
+  }
+
+  private persistHeadlessTerminalActiveLeaf(
+    worktreeId: string,
+    tab: RuntimeMobileSessionTerminalTab
+  ): void {
+    const session = this.store?.getWorkspaceSession?.()
+    if (!session || !this.store?.setWorkspaceSession) {
+      return
+    }
+    const existingLayout = session.terminalLayoutsByTabId?.[tab.parentTabId]
+    const nextLayouts = existingLayout
+      ? {
+          ...session.terminalLayoutsByTabId,
+          [tab.parentTabId]: {
+            ...this.cloneTerminalLayoutSnapshot(existingLayout),
+            activeLeafId: tab.leafId
+          }
+        }
+      : session.terminalLayoutsByTabId
+    this.store.setWorkspaceSession({
+      ...session,
+      activeTabId: tab.parentTabId,
+      activeTabIdByWorktree: {
+        ...session.activeTabIdByWorktree,
+        [worktreeId]: tab.parentTabId
+      },
+      terminalLayoutsByTabId: nextLayouts
+    })
   }
 
   async closeMobileSessionTab(worktreeSelector: string, tabId: string): Promise<{ closed: true }> {
@@ -3171,6 +3635,8 @@ export class OrcaRuntimeService {
   readMobileFile: RuntimeFileCommands['readMobileFile'] = this.fileCommands.readMobileFile.bind(
     this.fileCommands
   )
+  resolveTerminalPath: RuntimeFileCommands['resolveTerminalPath'] =
+    this.fileCommands.resolveTerminalPath.bind(this.fileCommands)
   readFileExplorerDir: RuntimeFileCommands['readFileExplorerDir'] =
     this.fileCommands.readFileExplorerDir.bind(this.fileCommands)
   watchFileExplorer: RuntimeFileCommands['watchFileExplorer'] =
@@ -3225,6 +3691,10 @@ export class OrcaRuntimeService {
     this.gitCommands.abortRuntimeGitMerge.bind(this.gitCommands)
   abortRuntimeGitRebase: RuntimeGitCommands['abortRuntimeGitRebase'] =
     this.gitCommands.abortRuntimeGitRebase.bind(this.gitCommands)
+  checkoutRuntimeGitBranch: RuntimeGitCommands['checkoutRuntimeGitBranch'] =
+    this.gitCommands.checkoutRuntimeGitBranch.bind(this.gitCommands)
+  listRuntimeGitLocalBranches: RuntimeGitCommands['listRuntimeGitLocalBranches'] =
+    this.gitCommands.listRuntimeGitLocalBranches.bind(this.gitCommands)
   getRuntimeGitDiff: RuntimeGitCommands['getRuntimeGitDiff'] =
     this.gitCommands.getRuntimeGitDiff.bind(this.gitCommands)
   getRuntimeGitBranchCompare: RuntimeGitCommands['getRuntimeGitBranchCompare'] =
@@ -3236,6 +3706,8 @@ export class OrcaRuntimeService {
   fetchRuntimeGit: RuntimeGitCommands['fetchRuntimeGit'] = this.gitCommands.fetchRuntimeGit.bind(
     this.gitCommands
   )
+  syncRuntimeGitForkDefaultBranch: RuntimeGitCommands['syncRuntimeGitForkDefaultBranch'] =
+    this.gitCommands.syncRuntimeGitForkDefaultBranch.bind(this.gitCommands)
   pullRuntimeGit: RuntimeGitCommands['pullRuntimeGit'] = this.gitCommands.pullRuntimeGit.bind(
     this.gitCommands
   )
@@ -3277,6 +3749,8 @@ export class OrcaRuntimeService {
     this.gitCommands.discardRuntimeGitPath.bind(this.gitCommands)
   getRuntimeGitRemoteFileUrl: RuntimeGitCommands['getRuntimeGitRemoteFileUrl'] =
     this.gitCommands.getRuntimeGitRemoteFileUrl.bind(this.gitCommands)
+  getRuntimeGitRemoteCommitUrl: RuntimeGitCommands['getRuntimeGitRemoteCommitUrl'] =
+    this.gitCommands.getRuntimeGitRemoteCommitUrl.bind(this.gitCommands)
 
   private async resolveRuntimeGitTarget(
     worktreeSelector: string
@@ -3380,16 +3854,12 @@ export class OrcaRuntimeService {
     this.maybeHydrateHeadlessFromRenderer(ptyId)
     this.trackHeadlessTerminalData(ptyId, data, outputSequence, forwardQueryReplies)
 
-    let normalizedData: string | null = null
-    const getNormalizedData = (): string => {
-      normalizedData ??= normalizeTerminalChunk(data)
-      return normalizedData
-    }
     const pty = this.getOrCreatePtyWorktreeRecord(ptyId)
     const ptyTailBefore = pty
       ? {
           lines: pty.tailBuffer,
           partialLine: pty.tailPartialLine,
+          pendingAnsi: pty.tailPendingAnsi,
           truncated: pty.tailTruncated,
           linesTotal: pty.tailLinesTotal
         }
@@ -3399,10 +3869,12 @@ export class OrcaRuntimeService {
       pty.connected = true
       pty.disconnectedAt = null
       pty.lastOutputAt = at
+      const normalized = normalizeTerminalChunk(data, pty.tailPendingAnsi)
+      pty.tailPendingAnsi = normalized.pendingAnsi
       const nextTail = appendNormalizedToTailBuffer(
         pty.tailBuffer,
         pty.tailPartialLine,
-        getNormalizedData()
+        normalized.text
       )
       ptyTailAfter = nextTail
       pty.tailBuffer = nextTail.lines
@@ -3430,6 +3902,7 @@ export class OrcaRuntimeService {
         tailStateMatches(
           leaf.tailBuffer,
           leaf.tailPartialLine,
+          leaf.tailPendingAnsi,
           leaf.tailTruncated,
           leaf.tailLinesTotal,
           ptyTailBefore
@@ -3439,14 +3912,17 @@ export class OrcaRuntimeService {
         // the PTY tail update instead of splitting large output twice.
         leaf.tailBuffer = pty.tailBuffer
         leaf.tailPartialLine = pty.tailPartialLine
+        leaf.tailPendingAnsi = pty.tailPendingAnsi
         leaf.tailTruncated = pty.tailTruncated
         leaf.tailLinesTotal = pty.tailLinesTotal
         leaf.preview = pty.preview
       } else {
+        const normalized = normalizeTerminalChunk(data, leaf.tailPendingAnsi)
+        leaf.tailPendingAnsi = normalized.pendingAnsi
         const nextTail = appendNormalizedToTailBuffer(
           leaf.tailBuffer,
           leaf.tailPartialLine,
-          getNormalizedData()
+          normalized.text
         )
         leaf.tailBuffer = nextTail.lines
         leaf.tailPartialLine = nextTail.partialLine
@@ -3463,10 +3939,22 @@ export class OrcaRuntimeService {
     // title (issue #1083). Uses the OSC 9999-stripped cleanData like the
     // renderer, so pure status chunks don't perturb the stale-title probe.
     const titleTrackerEntry = this.getOrCreatePtyTitleTrackerEntry(ptyId)
+    const previousTitleScanTail = this.oscTitleScanTailByPtyId.get(ptyId)
+    const titleInput = previousTitleScanTail
+      ? `${previousTitleScanTail}${agentStatusChunk.cleanData}`
+      : agentStatusChunk.cleanData
+    const nextTitleScanTail = extractOscTitleScanTail(titleInput)
+    if (nextTitleScanTail.length > 0) {
+      this.oscTitleScanTailByPtyId.set(ptyId, nextTitleScanTail)
+    } else {
+      this.oscTitleScanTailByPtyId.delete(ptyId)
+    }
     titleTrackerEntry.applyingChunk = true
     titleTrackerEntry.chunkTouchedSessionTabs = false
     try {
-      titleTrackerEntry.tracker.handleChunk(agentStatusChunk.cleanData)
+      titleTrackerEntry.tracker.handleChunk(agentStatusChunk.cleanData, {
+        titleScanData: titleInput
+      })
       // Why: the Command Code scrape rides the same per-chunk batch (its facts
       // trail the tracker's). cleanData keeps OSC 9999 payloads out of the
       // detector's bounded recent-text window; the detector strips remaining
@@ -3804,11 +4292,14 @@ export class OrcaRuntimeService {
     if (pty) {
       const prevStatus = pty.lastAgentStatus
       const prevTitle = pty.lastOscTitle
+      const observedAt = this.nextTitleObservationSequence()
       // Why: records keep the RAW title — worktree `ps` and mobile tab titles
       // expect it; normalized titles ride along on the tracker for later
       // emitted facts (terminal-side-effect-authority.md).
       pty.lastOscTitle = rawTitle
+      pty.lastOscTitleAt = observedAt
       pty.lastAgentStatus = agentStatus
+      this.setPtyManagementTitleFromObservedTitle(pty, rawTitle, observedAt)
       ptyRecordChanged = prevTitle !== rawTitle || prevStatus !== agentStatus
       if (agentStatus === 'idle' && prevStatus !== 'idle') {
         this.resolvePtyTuiIdleWaiters(pty, ptyId)
@@ -3821,6 +4312,7 @@ export class OrcaRuntimeService {
       // way to clear a stale 'working' status after the agent exited and
       // the shell took over the title — the stuck-spinner bug in #1437.
       leaf.lastOscTitle = rawTitle
+      leaf.lastOscTitleAt = this.nextTitleObservationSequence()
       const prevStatus = leaf.lastAgentStatus
       // Why: when a new OSC title doesn't classify as an agent state (e.g.
       // bare shell title after the agent exits), clear lastAgentStatus so
@@ -3852,7 +4344,10 @@ export class OrcaRuntimeService {
   }
 
   private emitTerminalAgentStatusEvents(ptyId: string, chunk: ProcessedAgentStatusChunk): void {
-    if (!this.onTerminalAgentStatus || chunk.payloads.length === 0) {
+    // Why: snapshot retention (for mobile worktree.ps) must run even when no
+    // renderer listener is attached, so we don't early-return on a missing
+    // onTerminalAgentStatus — only the per-target emit below is gated on it.
+    if (chunk.payloads.length === 0) {
       return
     }
     const targets = new Map<
@@ -3888,6 +4383,10 @@ export class OrcaRuntimeService {
     }
     for (const payload of chunk.payloads) {
       for (const target of targets.values()) {
+        this.retainAgentRowSnapshot(ptyId, target.paneKey, target.worktreeId, target.tabId, payload)
+        if (!this.onTerminalAgentStatus) {
+          continue
+        }
         try {
           this.onTerminalAgentStatus({
             ptyId,
@@ -3907,6 +4406,39 @@ export class OrcaRuntimeService {
     }
   }
 
+  private retainAgentRowSnapshot(
+    ptyId: string,
+    paneKey: string,
+    worktreeId: string | undefined,
+    tabId: string | undefined,
+    payload: ParsedAgentStatusPayload
+  ): void {
+    const now = Date.now()
+    const previous = this.latestAgentStatusByPaneKey.get(paneKey)
+    // Why: stateStartedAt must mark the transition into the current state, not
+    // every within-state ping (tool/prompt updates keep the state but refresh
+    // updatedAt) — mirrors AgentStatusEntry.stateStartedAt on the desktop side.
+    const stateStartedAt =
+      previous && previous.payload.state === payload.state ? previous.stateStartedAt : now
+    this.latestAgentStatusByPaneKey.set(paneKey, {
+      paneKey,
+      ptyId,
+      worktreeId,
+      tabId,
+      payload,
+      stateStartedAt,
+      updatedAt: now
+    })
+  }
+
+  private clearAgentRowSnapshotsForPty(ptyId: string): void {
+    for (const [paneKey, snapshot] of this.latestAgentStatusByPaneKey) {
+      if (snapshot.ptyId === ptyId) {
+        this.latestAgentStatusByPaneKey.delete(paneKey)
+      }
+    }
+  }
+
   getPtyOutputSequence(ptyId: string): number {
     return this.ptyOutputSequenceById.get(ptyId) ?? 0
   }
@@ -3915,18 +4447,7 @@ export class OrcaRuntimeService {
     ptyId: string,
     listener: (data: string, meta?: { seq?: number; rawLength?: number }) => void
   ): () => void {
-    let listeners = this.dataListeners.get(ptyId)
-    if (!listeners) {
-      listeners = new Set()
-      this.dataListeners.set(ptyId, listeners)
-    }
-    listeners.add(listener)
-    return () => {
-      listeners.delete(listener)
-      if (listeners.size === 0) {
-        this.dataListeners.delete(ptyId)
-      }
-    }
+    return addListenerToMap(this.dataListeners, ptyId, listener)
   }
 
   /** Registered by terminal-RPC subscribe/multiplex streams: while a remote
@@ -3964,33 +4485,11 @@ export class OrcaRuntimeService {
     ptyId: string,
     listener: (event: { mode: 'mobile-fit' | 'desktop-fit'; cols: number; rows: number }) => void
   ): () => void {
-    let listeners = this.fitOverrideListeners.get(ptyId)
-    if (!listeners) {
-      listeners = new Set()
-      this.fitOverrideListeners.set(ptyId, listeners)
-    }
-    listeners.add(listener)
-    return () => {
-      listeners.delete(listener)
-      if (listeners.size === 0) {
-        this.fitOverrideListeners.delete(ptyId)
-      }
-    }
+    return addListenerToMap(this.fitOverrideListeners, ptyId, listener)
   }
 
   subscribeToDriverChanges(ptyId: string, listener: (driver: DriverState) => void): () => void {
-    let listeners = this.driverListeners.get(ptyId)
-    if (!listeners) {
-      listeners = new Set()
-      this.driverListeners.set(ptyId, listeners)
-    }
-    listeners.add(listener)
-    return () => {
-      listeners.delete(listener)
-      if (listeners.size === 0) {
-        this.driverListeners.delete(ptyId)
-      }
-    }
+    return addListenerToMap(this.driverListeners, ptyId, listener)
   }
 
   private notifyFitOverrideListeners(
@@ -4195,11 +4694,19 @@ export class OrcaRuntimeService {
     // once a live title was observed, so live state always wins.
     this.getOrCreatePtyTitleTrackerEntry(ptyId).tracker.seedInitialTitle(title)
     const status = detectAgentStatusFromTitle(title)
+    const pty = this.ptysById.get(ptyId)
+    if (pty) {
+      const observedAt = this.nextTitleObservationSequence()
+      pty.lastOscTitle = title
+      pty.lastOscTitleAt = observedAt
+      this.setPtyManagementTitleFromObservedTitle(pty, title, observedAt)
+    }
     for (const leaf of this.getLeavesForPty(ptyId)) {
       // Why: seed lastOscTitle even when the seeded title doesn't classify
       // as an agent state, so worktree.ps recomputes status from the live
       // title rather than treating the leaf as agentless.
       leaf.lastOscTitle = title
+      leaf.lastOscTitleAt = this.nextTitleObservationSequence()
       if (status !== null) {
         leaf.lastAgentStatus = status
       }
@@ -4525,6 +5032,13 @@ export class OrcaRuntimeService {
     }
   }
 
+  cleanupSubscriptionsByPrefix(prefix: string): void {
+    const ids = Array.from(this.subscriptionCleanups.keys()).filter((id) => id.startsWith(prefix))
+    for (const id of ids) {
+      this.cleanupSubscription(id)
+    }
+  }
+
   // Why: invoked from the WebSocket transport's on-close hook so streaming
   // listeners registered for this exact socket get torn down even when other
   // sockets sharing the same deviceToken are still alive (multi-screen
@@ -4580,6 +5094,84 @@ export class OrcaRuntimeService {
 
   getCommitMessageAgentEnvironmentResolvers(): CommitMessageAgentEnvironmentResolvers | undefined {
     return this.commitMessageAgentEnv ?? undefined
+  }
+
+  // Lists the speech-model catalog joined with live download/ready state, plus
+  // the current enabled flag + selected model, so mobile can present a dictation
+  // setup sheet and drive remote enable/download. Always targets this (paired)
+  // desktop — speech never routes to a worktree's SSH host.
+  async listMobileSpeechModels(): Promise<RuntimeSpeechSetupState> {
+    if (!this.store) {
+      throw new Error('voice_dictation_unavailable')
+    }
+    const voice = this.store.getSettings().voice ?? getDefaultVoiceSettings()
+    const states = await getSpeechModelManager(this.store).getModelStates()
+    const stateById = new Map(states.map((state) => [state.id, state]))
+    const models: RuntimeSpeechModelSummary[] = SPEECH_MODEL_CATALOG.map((manifest) => {
+      const state = stateById.get(manifest.id)
+      return {
+        id: manifest.id,
+        label: manifest.label,
+        provider: manifest.provider === 'openai' ? 'openai' : 'local',
+        sizeBytes: manifest.sizeBytes ?? null,
+        recommended: manifest.recommended === true,
+        status: state?.status ?? 'not-downloaded',
+        progress: state?.progress ?? null
+      }
+    })
+    return {
+      enabled: voice.enabled === true,
+      selectedModelId: voice.sttModel ?? '',
+      dictationMode: voice.dictationMode === 'hold' ? 'hold' : 'toggle',
+      models
+    }
+  }
+
+  // Fire-and-forget model download; the ModelManager writes progress into its
+  // per-model state, which mobile reads back via listMobileSpeechModels polling.
+  async downloadMobileSpeechModel(modelId: string): Promise<{ started: true }> {
+    if (!this.store) {
+      throw new Error('voice_dictation_unavailable')
+    }
+    const manifest = getCatalogModel(modelId)
+    if (!manifest || !isLocalSpeechModel(manifest)) {
+      throw new Error('voice_model_not_downloadable')
+    }
+    // Why: do not await — downloads run for tens of seconds; the call returns
+    // immediately and mobile polls for progress/ready.
+    void getSpeechModelManager(this.store)
+      .downloadModel(modelId)
+      .catch((err) => {
+        console.error('[runtime] mobile speech model download failed', { modelId, err })
+      })
+    return { started: true }
+  }
+
+  // Enables/disables dictation and/or selects the model, merging into the
+  // existing voice settings so other voice fields are preserved.
+  async configureMobileDictation(params: {
+    enabled?: boolean
+    modelId?: string
+    dictationMode?: 'toggle' | 'hold'
+  }): Promise<RuntimeSpeechSetupState> {
+    if (!this.store?.getSettings || !this.store.updateSettings) {
+      throw new Error('voice_dictation_unavailable')
+    }
+    const current = this.store.getSettings().voice ?? getDefaultVoiceSettings()
+    // An explicit '' clears the selected model (the OptionalString RPC schema
+    // maps '' → undefined, so this only matters for direct callers); any other
+    // non-empty modelId must be a known catalog entry.
+    if (params.modelId !== undefined && params.modelId !== '' && !getCatalogModel(params.modelId)) {
+      throw new Error('voice_model_unknown')
+    }
+    const nextVoice: VoiceSettings = {
+      ...current,
+      ...(params.enabled !== undefined ? { enabled: params.enabled } : {}),
+      ...(params.modelId !== undefined ? { sttModel: params.modelId } : {}),
+      ...(params.dictationMode !== undefined ? { dictationMode: params.dictationMode } : {})
+    }
+    this.store.updateSettings({ voice: nextVoice }, { notifyListeners: true })
+    return this.listMobileSpeechModels()
   }
 
   async startMobileDictation(params: {
@@ -4873,8 +5465,7 @@ export class OrcaRuntimeService {
       if (cols == null || rows == null || !Number.isFinite(cols) || !Number.isFinite(rows)) {
         throw new Error('invalid_dimensions')
       }
-      const clampedCols = Math.max(20, Math.min(240, Math.round(cols)))
-      const clampedRows = Math.max(8, Math.min(120, Math.round(rows)))
+      const { cols: clampedCols, rows: clampedRows } = clampTerminalViewport(cols, rows)
 
       const currentSize = this.getTerminalSize(ptyId)
       const existing = this.terminalFitOverrides.get(ptyId)
@@ -5111,7 +5702,7 @@ export class OrcaRuntimeService {
       }
       this.setDriver(ptyId, { kind: 'mobile', clientId: next.clientId })
 
-      const mode = this.mobileDisplayModes.get(ptyId) ?? 'auto'
+      const mode = this.getMobileDisplayMode(ptyId)
       if (mode === 'desktop') {
         continue
       }
@@ -5170,6 +5761,8 @@ export class OrcaRuntimeService {
     this.agentStatusOscProcessorsByPtyId.delete(ptyId)
     this.terminalSpawnCommandsByPtyId.delete(ptyId)
     this.disposePtyTitleTracker(ptyId)
+    this.oscTitleScanTailByPtyId.delete(ptyId)
+    this.clearAgentRowSnapshotsForPty(ptyId)
     // Layout state machine: clear `layouts` and `layoutQueues`. Any
     // already-queued applyLayout work for this ptyId will run, but every
     // applyLayout re-checks `layouts.has(ptyId)` (or fresh-subscribe) and
@@ -5314,7 +5907,7 @@ export class OrcaRuntimeService {
     sub.viewport = viewport
     sub.lastActedAt = Date.now()
 
-    const mode = this.mobileDisplayModes.get(ptyId) ?? 'auto'
+    const mode = this.getMobileDisplayMode(ptyId)
     if (mode === 'desktop') {
       // Watching at desktop dims — viewport is informational only.
       return true
@@ -5326,8 +5919,10 @@ export class OrcaRuntimeService {
     }
     const winnerSub = inner!.get(winner.clientId)
     const driveViewport = winnerSub?.viewport ?? viewport
-    const clampedCols = Math.max(20, Math.min(240, Math.round(driveViewport.cols)))
-    const clampedRows = Math.max(8, Math.min(120, Math.round(driveViewport.rows)))
+    const { cols: clampedCols, rows: clampedRows } = clampTerminalViewport(
+      driveViewport.cols,
+      driveViewport.rows
+    )
 
     sub.wasResizedToPhone = true
     // The driver is already mobile{this client} when we got here; refresh
@@ -5360,8 +5955,7 @@ export class OrcaRuntimeService {
     ptyId: string,
     viewport: { cols: number; rows: number }
   ): Promise<boolean> {
-    const cols = Math.max(20, Math.min(240, Math.round(viewport.cols)))
-    const rows = Math.max(8, Math.min(120, Math.round(viewport.rows)))
+    const { cols, rows } = clampTerminalViewport(viewport.cols, viewport.rows)
     if (this.terminalFitOverrides.has(ptyId)) {
       // Why: remote desktop panes do not have the local pty:reportGeometry
       // IPC. While phone-fit holds the PTY, treat their viewport RPC as a
@@ -5838,7 +6432,7 @@ export class OrcaRuntimeService {
     clientId: string,
     viewport?: { cols: number; rows: number }
   ): Promise<boolean> {
-    const mode = this.mobileDisplayModes.get(ptyId) ?? 'auto'
+    const mode = this.getMobileDisplayMode(ptyId)
 
     // Cancel pending restore timer for this ptyId — any new subscriber
     // supersedes any old client's pending restore.
@@ -5870,8 +6464,10 @@ export class OrcaRuntimeService {
       }
       this.setDriver(ptyId, { kind: 'mobile', clientId })
       if (mode !== 'desktop') {
-        const clampedCols = Math.max(20, Math.min(240, Math.round(viewport.cols)))
-        const clampedRows = Math.max(8, Math.min(120, Math.round(viewport.rows)))
+        const { cols: clampedCols, rows: clampedRows } = clampTerminalViewport(
+          viewport.cols,
+          viewport.rows
+        )
         this.freshSubscribeGuard.add(ptyId)
         try {
           await this.enqueueLayout(ptyId, {
@@ -5935,8 +6531,10 @@ export class OrcaRuntimeService {
       return false
     }
 
-    const clampedCols = Math.max(20, Math.min(240, Math.round(viewport.cols)))
-    const clampedRows = Math.max(8, Math.min(120, Math.round(viewport.rows)))
+    const { cols: clampedCols, rows: clampedRows } = clampTerminalViewport(
+      viewport.cols,
+      viewport.rows
+    )
 
     if (mode === 'desktop') {
       // Passive watch — null baseline (we'll capture later if user toggles
@@ -6049,7 +6647,7 @@ export class OrcaRuntimeService {
 
     // Last subscriber leaving — clean up.
     this.mobileSubscribers.delete(ptyId)
-    const mode = this.mobileDisplayModes.get(ptyId) ?? 'auto'
+    const mode = this.getMobileDisplayMode(ptyId)
 
     // Resubscribe-grace: hold driver=mobile{clientId} for ~250ms so a quick
     // re-subscribe (older clients without updateViewport) doesn't flash the
@@ -6142,7 +6740,7 @@ export class OrcaRuntimeService {
   // phone-fit dims. The earliest-by-subscribe-time subscriber's
   // previousCols/Rows drive the desktop-restore target.
   async applyMobileDisplayMode(ptyId: string): Promise<void> {
-    const mode = this.mobileDisplayModes.get(ptyId) ?? 'auto'
+    const mode = this.getMobileDisplayMode(ptyId)
     const inner = this.mobileSubscribers.get(ptyId)
     const subscriber = inner ? this.pickMostRecentActor(inner) : null
     const subscriberRecord = subscriber && inner ? inner.get(subscriber.clientId) : null
@@ -6297,18 +6895,7 @@ export class OrcaRuntimeService {
       seq?: number
     }) => void
   ): () => void {
-    let listeners = this.resizeListeners.get(ptyId)
-    if (!listeners) {
-      listeners = new Set()
-      this.resizeListeners.set(ptyId, listeners)
-    }
-    listeners.add(listener)
-    return () => {
-      listeners.delete(listener)
-      if (listeners.size === 0) {
-        this.resizeListeners.delete(ptyId)
-      }
-    }
+    return addListenerToMap(this.resizeListeners, ptyId, listener)
   }
 
   private notifyTerminalResize(
@@ -6368,23 +6955,72 @@ export class OrcaRuntimeService {
 
   async listTerminals(
     worktreeSelector?: string,
-    limit = DEFAULT_TERMINAL_LIST_LIMIT
+    limit = DEFAULT_TERMINAL_LIST_LIMIT,
+    opts: { requireFreshPtyLiveness?: boolean } = {}
   ): Promise<RuntimeTerminalListResult> {
     if (!Number.isInteger(limit) || limit <= 0) {
       throw new Error('invalid_limit')
     }
     const graphEpoch = this.graphStatus === 'ready' ? this.rendererGraphEpoch : null
-    const targetWorktreeId = worktreeSelector
-      ? (getExplicitWorktreeIdSelector(worktreeSelector) ??
-        (await this.resolveWorktreeSelector(worktreeSelector)).id)
+    const explicitTargetWorktreeId = worktreeSelector
+      ? getExplicitWorktreeIdSelector(worktreeSelector)
       : null
-    const worktreesById = await this.getResolvedWorktreeMap()
+    const initialResolvedWorktreeCache = this.resolvedWorktreeCache
+    const cachedResolvedWorktrees =
+      initialResolvedWorktreeCache && initialResolvedWorktreeCache.expiresAt > Date.now()
+        ? initialResolvedWorktreeCache.worktrees
+        : null
+    const cachedExplicitTargetWorktree =
+      explicitTargetWorktreeId && cachedResolvedWorktrees
+        ? (cachedResolvedWorktrees.find((worktree) => worktree.id === explicitTargetWorktreeId) ??
+          null)
+        : null
+    const parsedExplicitTargetWorktree =
+      explicitTargetWorktreeId && !cachedExplicitTargetWorktree
+        ? this.buildResolvedWorktreeFromId(explicitTargetWorktreeId)
+        : null
+    const targetWorktree =
+      worktreeSelector && !explicitTargetWorktreeId
+        ? await this.resolveWorktreeSelector(worktreeSelector)
+        : (cachedExplicitTargetWorktree ?? parsedExplicitTargetWorktree)
+    const targetWorktreeId = explicitTargetWorktreeId ?? targetWorktree?.id ?? null
+    const classificationResolvedWorktreeCache = this.resolvedWorktreeCache
+    const classificationResolvedWorktrees =
+      targetWorktreeId &&
+      classificationResolvedWorktreeCache &&
+      classificationResolvedWorktreeCache.expiresAt > Date.now()
+        ? includeTargetResolvedWorktree(
+            classificationResolvedWorktreeCache.worktrees,
+            targetWorktree
+          )
+        : targetWorktreeId && explicitTargetWorktreeId
+          ? this.listKnownResolvedWorktreesForExplicitTarget(targetWorktreeId, targetWorktree)
+          : null
+    const worktreesById =
+      targetWorktreeId && targetWorktree
+        ? new Map([[targetWorktree.id, targetWorktree]])
+        : targetWorktreeId
+          ? new Map()
+          : await this.getResolvedWorktreeMap()
     if (graphEpoch !== null) {
       this.assertStableReadyGraph(graphEpoch)
     }
 
-    const resolvedWorktrees = [...worktreesById.values()]
-    await this.refreshPtyWorktreeRecordsFromController(resolvedWorktrees)
+    const resolvedWorktrees =
+      targetWorktreeId && classificationResolvedWorktrees
+        ? classificationResolvedWorktrees
+        : targetWorktreeId && targetWorktree
+          ? [targetWorktree]
+          : targetWorktreeId
+            ? []
+            : [...worktreesById.values()]
+    const refreshedPtyLiveness = await this.refreshPtyWorktreeRecordsFromController(
+      resolvedWorktrees,
+      targetWorktreeId
+    )
+    if (opts.requireFreshPtyLiveness && !refreshedPtyLiveness) {
+      throw new Error('terminal_liveness_unavailable')
+    }
 
     const livePtyWorktreeIds = new Set<string>()
     for (const pty of this.ptysById.values()) {
@@ -6398,6 +7034,9 @@ export class OrcaRuntimeService {
     if (graphEpoch !== null) {
       for (const leaf of this.leaves.values()) {
         if (targetWorktreeId && leaf.worktreeId !== targetWorktreeId) {
+          continue
+        }
+        if (opts.requireFreshPtyLiveness && leaf.ptyId && !refreshedPtyLiveness?.has(leaf.ptyId)) {
           continue
         }
         if (!leaf.ptyId && livePtyWorktreeIds.has(leaf.worktreeId)) {
@@ -6415,6 +7054,9 @@ export class OrcaRuntimeService {
     // so mobile does not show a false "No terminals" create flow.
     for (const pty of this.ptysById.values()) {
       if (!pty.connected || ptyIdsFromLeaves.has(pty.ptyId)) {
+        continue
+      }
+      if (opts.requireFreshPtyLiveness && !refreshedPtyLiveness?.has(pty.ptyId)) {
         continue
       }
       if (targetWorktreeId && pty.worktreeId !== targetWorktreeId) {
@@ -6872,13 +7514,19 @@ export class OrcaRuntimeService {
         displayName: worktree.displayName,
         linkedIssue: worktree.linkedIssue,
         linkedPR,
+        linkedLinearIssue: meta?.linkedLinearIssue ?? null,
+        linkedGitLabMR: meta?.linkedGitLabMR ?? null,
+        linkedGitLabIssue: meta?.linkedGitLabIssue ?? null,
+        comment: meta?.comment ?? '',
         isPinned: meta?.isPinned ?? false,
+        isActive: false,
         unread: meta?.isUnread ?? false,
         liveTerminalCount: 0,
         hasAttachedPty: false,
         lastOutputAt: null,
         preview: '',
-        status: 'inactive'
+        status: 'inactive',
+        agents: []
       })
     }
 
@@ -6958,6 +7606,22 @@ export class OrcaRuntimeService {
       }
     }
 
+    // Why: surface the desktop's focused worktree so mobile can scroll it into
+    // view and highlight it. Resolve through getSummaryForRuntimeWorktreeId so
+    // SSH/remote path-projected ids match the same way tabsByWorktree does.
+    if (session?.activeWorktreeId) {
+      const activeSummary = this.getSummaryForRuntimeWorktreeId(
+        summaries,
+        resolvedWorktrees,
+        session.activeWorktreeId
+      )
+      if (activeSummary) {
+        activeSummary.isActive = true
+      }
+    }
+
+    this.attachAgentRowsToSummaries(summaries)
+
     const sorted = [...summaries.values()].sort(compareWorktreePs)
     return {
       worktrees: sorted.slice(0, limit),
@@ -6966,17 +7630,221 @@ export class OrcaRuntimeService {
     }
   }
 
+  // Why: maps the retained per-pane agent snapshots into each worktree's inline
+  // agent list, mirroring the desktop sidebar. Lineage parent is resolved from
+  // the orchestration db (paneKey-keyed), not the OSC payload, since spawn
+  // hierarchy is pane-level state tracked separately from terminal output.
+  private attachAgentRowsToSummaries(summaries: Map<string, RuntimeWorktreePsSummary>): void {
+    // Why: most agents report via hooks (agent-hooks/server), not OSC, so the
+    // hook snapshot is the primary source — same one the desktop sidebar reads.
+    // OSC-only entries (no hook) are merged in as a fallback, keyed by paneKey.
+    const rowSources = new Map<
+      string,
+      {
+        paneKey: string
+        worktreeId?: string
+        state: ParsedAgentStatusPayload['state']
+        agentType: string | null
+        prompt: string
+        lastAssistantMessage: string | null
+        toolName: string | null
+        toolInput: string | null
+        interrupted: boolean
+        stateStartedAt: number
+        updatedAt: number
+      }
+    >()
+    for (const snapshot of this.latestAgentStatusByPaneKey.values()) {
+      const { payload } = snapshot
+      rowSources.set(snapshot.paneKey, {
+        paneKey: snapshot.paneKey,
+        worktreeId: snapshot.worktreeId,
+        state: payload.state,
+        agentType: payload.agentType ?? null,
+        prompt: payload.prompt,
+        lastAssistantMessage: payload.lastAssistantMessage ?? null,
+        toolName: payload.toolName ?? null,
+        toolInput: payload.toolInput ?? null,
+        interrupted: payload.interrupted ?? false,
+        stateStartedAt: snapshot.stateStartedAt,
+        updatedAt: snapshot.updatedAt
+      })
+    }
+    for (const entry of this.getAgentStatusSnapshotFn?.() ?? []) {
+      rowSources.set(entry.paneKey, {
+        paneKey: entry.paneKey,
+        worktreeId: entry.worktreeId,
+        state: entry.state,
+        agentType: entry.agentType ?? null,
+        prompt: entry.prompt,
+        lastAssistantMessage: entry.lastAssistantMessage ?? null,
+        toolName: entry.toolName ?? null,
+        toolInput: entry.toolInput ?? null,
+        interrupted: entry.interrupted ?? false,
+        stateStartedAt: entry.stateStartedAt,
+        updatedAt: entry.receivedAt
+      })
+    }
+    if (rowSources.size === 0) {
+      return
+    }
+    const orchestrationByPaneKey = this.buildAgentOrchestrationByPaneKey()
+    const rowsByWorktree = new Map<string, RuntimeWorktreeAgentRow[]>()
+    for (const src of rowSources.values()) {
+      const worktreeId = src.worktreeId
+      if (!worktreeId || !summaries.has(worktreeId)) {
+        continue
+      }
+      const row: RuntimeWorktreeAgentRow = {
+        paneKey: src.paneKey,
+        parentPaneKey: orchestrationByPaneKey?.[src.paneKey]?.parentPaneKey ?? null,
+        state: src.state,
+        agentType: src.agentType,
+        prompt: src.prompt,
+        lastAssistantMessage: src.lastAssistantMessage,
+        toolName: src.toolName,
+        toolInput: src.toolInput,
+        interrupted: src.interrupted,
+        stateStartedAt: src.stateStartedAt,
+        updatedAt: src.updatedAt
+      }
+      const rows = rowsByWorktree.get(worktreeId)
+      if (rows) {
+        rows.push(row)
+      } else {
+        rowsByWorktree.set(worktreeId, [row])
+      }
+    }
+    for (const [worktreeId, rows] of rowsByWorktree) {
+      // Oldest-started first, matching the desktop dashboard's start-order sort.
+      rows.sort((a, b) => a.stateStartedAt - b.stateStartedAt)
+      const summary = summaries.get(worktreeId)
+      if (summary) {
+        summary.agents = rows
+      }
+    }
+  }
+
   listRepos(): Repo[] {
     return this.store?.getRepos() ?? []
+  }
+
+  listProjects(): Project[] {
+    return this.store?.getProjects?.() ?? []
+  }
+
+  listProjectHostSetups(): ProjectHostSetup[] {
+    return this.store?.getProjectHostSetups?.() ?? []
+  }
+
+  createProjectHostSetup(args: ProjectHostSetupCreateArgs): ProjectHostSetupCreateResult {
+    if (!this.store?.createProjectHostSetup) {
+      throw new Error('runtime_unavailable')
+    }
+    const result = this.store.createProjectHostSetup(args)
+    if (!result) {
+      throw new Error(`Project not found: ${args.projectId}`)
+    }
+    return result
+  }
+
+  async setupProjectExistingFolder(
+    args: ProjectHostSetupExistingFolderArgs
+  ): Promise<ProjectHostSetupResult> {
+    if (!this.store) {
+      throw new Error('runtime_unavailable')
+    }
+    const existingProject = this.listProjects().find((project) => project.id === args.projectId)
+    if (!existingProject) {
+      throw new Error(`Project not found: ${args.projectId}`)
+    }
+    let repo = await this.addRepo(args.path, args.kind === 'folder' ? 'folder' : 'git')
+    let setup = getProjectHostSetupForRepo(this.listProjectHostSetups(), repo)
+    if (setup.projectId !== args.projectId) {
+      if (
+        !existingProject.providerIdentity ||
+        existingProject.providerIdentity.provider !== 'github'
+      ) {
+        throw new Error('Imported folder does not match the selected project identity.')
+      }
+      const updated = this.store.updateRepo(repo.id, {
+        upstream: {
+          owner: existingProject.providerIdentity.owner,
+          repo: existingProject.providerIdentity.repo
+        }
+      })
+      if (!updated) {
+        throw new Error(`Project setup repo disappeared before it could be linked: ${repo.id}`)
+      }
+      repo = updated
+      setup = getProjectHostSetupForRepo(this.listProjectHostSetups(), repo)
+    }
+    const setupMethod = args.setupMethod ?? 'imported-existing-folder'
+    const updated = this.store.updateRepo(repo.id, { projectHostSetupMethod: setupMethod })
+    if (!updated) {
+      throw new Error(
+        `Project setup repo disappeared before setup metadata could be linked: ${repo.id}`
+      )
+    }
+    repo = updated
+    setup = getProjectHostSetupForRepo(this.listProjectHostSetups(), repo)
+    const project = this.listProjects().find((entry) => entry.id === setup.projectId)
+    if (!project) {
+      throw new Error(`Project setup was created without a project record: ${setup.projectId}`)
+    }
+    return { project, setup, repo }
+  }
+
+  async setupProjectClone(args: ProjectHostSetupCloneArgs): Promise<ProjectHostSetupResult> {
+    const repo = await this.cloneRepo(args.url, args.destination)
+    return await this.setupProjectExistingFolder({
+      projectId: args.projectId,
+      hostId: args.hostId,
+      path: repo.path,
+      kind: 'git',
+      displayName: args.displayName,
+      setupMethod: 'cloned'
+    })
+  }
+
+  updateProjectHostSetup(args: ProjectHostSetupUpdateArgs): ProjectHostSetupUpdateResult {
+    if (!this.store?.updateProjectHostSetup) {
+      throw new Error('runtime_unavailable')
+    }
+    const result = this.store.updateProjectHostSetup(args)
+    if (!result) {
+      throw new Error(`Project host setup not found: ${args.setupId}`)
+    }
+    if ('worktreeBasePath' in args.updates && result.repo) {
+      void prepareLocalWorktreeRootForRepo(this.store, result.repo)
+      invalidateAuthorizedRootsCache()
+    }
+    return result
+  }
+
+  deleteProjectHostSetup(args: ProjectHostSetupDeleteArgs): ProjectHostSetupDeleteResult {
+    if (!this.store?.deleteProjectHostSetup) {
+      throw new Error('runtime_unavailable')
+    }
+    const result = this.store.deleteProjectHostSetup(args)
+    if (!result) {
+      throw new Error(`Project host setup not found: ${args.setupId}`)
+    }
+    return result
   }
 
   listProjectGroups(): ProjectGroup[] {
     return this.store?.getProjectGroups?.() ?? []
   }
 
+  listFolderWorkspaces(): FolderWorkspace[] {
+    return this.store?.getFolderWorkspaces?.() ?? []
+  }
+
   async createProjectGroup(input: {
     name: string
     parentPath?: string | null
+    connectionId?: string | null
     parentGroupId?: string | null
     createdFrom?: ProjectGroup['createdFrom']
   }): Promise<ProjectGroup> {
@@ -6986,6 +7854,7 @@ export class OrcaRuntimeService {
     const group = this.store.createProjectGroup({
       name: input.name,
       parentPath: input.parentPath ?? null,
+      connectionId: input.connectionId ?? null,
       parentGroupId: input.parentGroupId ?? null,
       createdFrom: input.createdFrom ?? 'manual'
     })
@@ -7035,6 +7904,118 @@ export class OrcaRuntimeService {
     return moved
   }
 
+  async createFolderWorkspace(input: {
+    projectGroupId: string
+    name?: string
+    folderPath?: string | null
+    connectionId?: string | null
+    linkedTask?: FolderWorkspace['linkedTask']
+    createdWithAgent?: FolderWorkspace['createdWithAgent']
+    pendingFirstAgentMessageRename?: boolean
+  }): Promise<FolderWorkspace> {
+    if (!this.store?.createFolderWorkspace) {
+      throw new Error('runtime_unavailable')
+    }
+    const projectGroups = this.store.getProjectGroups?.() ?? []
+    const group = projectGroups.find((entry) => entry.id === input.projectGroupId)
+    const folderPath =
+      typeof input.folderPath === 'string' && input.folderPath.trim().length > 0
+        ? input.folderPath
+        : group?.parentPath
+    if (!group || !folderPath) {
+      throw new Error('folder_workspace_project_group_not_found')
+    }
+    const status = await getFolderWorkspacePathStatusForPath(
+      {
+        folderPath,
+        projectGroupId: group.id,
+        connectionId: input.connectionId ?? group.connectionId ?? null,
+        projectGroups,
+        repos: this.store.getRepos()
+      },
+      { getSshFilesystemProvider }
+    )
+    assertFolderWorkspacePathUsable(status)
+    const workspace = this.store.createFolderWorkspace(input)
+    this.notifyReposChanged()
+    return workspace
+  }
+
+  async getFolderWorkspacePathStatus(
+    request: FolderWorkspacePathStatusRequest
+  ): Promise<FolderWorkspacePathStatus> {
+    if (!this.store) {
+      throw new Error('runtime_unavailable')
+    }
+    return getFolderWorkspacePathStatus(this.store, request, { getSshFilesystemProvider })
+  }
+
+  async updateFolderWorkspace(
+    folderWorkspaceId: string,
+    updates: Partial<
+      Pick<
+        FolderWorkspace,
+        | 'name'
+        | 'folderPath'
+        | 'linkedTask'
+        | 'comment'
+        | 'isArchived'
+        | 'isUnread'
+        | 'isPinned'
+        | 'sortOrder'
+        | 'manualOrder'
+        | 'workspaceStatus'
+        | 'createdWithAgent'
+        | 'pendingFirstAgentMessageRename'
+        | 'firstAgentMessageRenameError'
+        | 'lastActivityAt'
+      >
+    >
+  ): Promise<FolderWorkspace | null> {
+    if (!this.store?.updateFolderWorkspace) {
+      throw new Error('runtime_unavailable')
+    }
+    if (typeof updates.folderPath === 'string' && updates.folderPath.trim().length > 0) {
+      const workspace = this.store
+        .getFolderWorkspaces?.()
+        .find((entry) => entry.id === folderWorkspaceId)
+      if (!workspace) {
+        return null
+      }
+      const projectGroups = this.store.getProjectGroups?.() ?? []
+      const status = await getFolderWorkspacePathStatusForPath(
+        {
+          folderPath: updates.folderPath,
+          projectGroupId: workspace.projectGroupId,
+          connectionId:
+            workspace.connectionId ??
+            projectGroups.find((entry) => entry.id === workspace.projectGroupId)?.connectionId ??
+            null,
+          projectGroups,
+          repos: this.store.getRepos()
+        },
+        { getSshFilesystemProvider }
+      )
+      assertFolderWorkspacePathUsable(status)
+    }
+    const updated = this.store.updateFolderWorkspace(folderWorkspaceId, updates)
+    if (updated) {
+      this.notifyReposChanged()
+    }
+    return updated
+  }
+
+  async deleteFolderWorkspace(folderWorkspaceId: string): Promise<{ deleted: boolean }> {
+    if (!this.store?.removeFolderWorkspace) {
+      throw new Error('runtime_unavailable')
+    }
+    const deleted = this.store.removeFolderWorkspace(folderWorkspaceId)
+    if (deleted) {
+      this.notifyReposChanged()
+    }
+    return { deleted }
+  }
+
   async scanNestedRepos(path: string): Promise<NestedRepoScanResult> {
     if (!isAbsolute(path)) {
       throw new Error('Project path must be an absolute path')
@@ -7065,6 +8046,15 @@ export class OrcaRuntimeService {
     return { resolvedPath: dirPath, entries: mapped }
   }
 
+  async isGitAvailable(): Promise<boolean> {
+    try {
+      await gitExecFileAsync(['--version'], { cwd: process.cwd(), timeout: 3000 })
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async importNestedRepos(args: {
     parentPath: string
     groupName: string
@@ -7083,6 +8073,8 @@ export class OrcaRuntimeService {
       parentPath: args.parentPath,
       groupName: args.groupName,
       mode: args.mode,
+      connectionId: null,
+      repoPaths: selection.selectedPaths,
       createGroup: (input) => this.store!.createProjectGroup!(input)
     })
     const results: ProjectGroupImportResult['projects'] = selection.rejectedPaths.map(
@@ -7225,6 +8217,7 @@ export class OrcaRuntimeService {
         : {})
     }
     this.store.addRepo(repo)
+    await prepareLocalWorktreeRootForRepo(this.store, repo)
     this.invalidateResolvedWorktreeCache()
     this.notifyReposChanged()
     return this.store.getRepo(repo.id) ?? repo
@@ -7262,6 +8255,9 @@ export class OrcaRuntimeService {
 
     let createdDir = false
     try {
+      // Why: default create-project parents are host-home based and may not exist
+      // before the first project is created on a fresh runtime.
+      await mkdir(trimmedParentPath, { recursive: true })
       const existingStat = await stat(targetPath).catch((error: unknown) => {
         if (isENOENT(error)) {
           return null
@@ -7341,6 +8337,7 @@ export class OrcaRuntimeService {
         : {})
     }
     this.store.addRepo(repo)
+    await prepareLocalWorktreeRootForRepo(this.store, repo)
     invalidateAuthorizedRootsCache()
     this.invalidateResolvedWorktreeCache()
     this.notifyReposChanged()
@@ -7443,8 +8440,7 @@ export class OrcaRuntimeService {
         } else if (code === 0) {
           resolve()
         } else {
-          const lastLine = stderrTail.trim().split('\n').pop() ?? 'unknown error'
-          reject(new Error(`Clone failed: ${lastLine}`))
+          reject(new Error(`Clone failed: ${getGitCloneFailureMessage(stderrTail, { clonePath })}`))
         }
       }
       proc.on('error', (error) => {
@@ -7462,6 +8458,9 @@ export class OrcaRuntimeService {
       if (isFolderRepo(existing)) {
         const updated = this.store.updateRepo(existing.id, { kind: 'git' })
         if (updated) {
+          await prepareLocalWorktreeRootForRepo(this.store, updated)
+          invalidateAuthorizedRootsCache()
+          this.invalidateResolvedWorktreeCache()
           this.notifyReposChanged()
           return updated
         }
@@ -7482,6 +8481,7 @@ export class OrcaRuntimeService {
       externalWorktreeVisibilityLegacy: false
     }
     this.store.addRepo(repo)
+    await prepareLocalWorktreeRootForRepo(this.store, repo)
     invalidateAuthorizedRootsCache()
     this.invalidateResolvedWorktreeCache()
     this.notifyReposChanged()
@@ -7547,6 +8547,7 @@ export class OrcaRuntimeService {
       throw new Error('repo_not_found')
     }
     if ('worktreeBasePath' in updates) {
+      await prepareLocalWorktreeRootForRepo(this.store, updated)
       invalidateAuthorizedRootsCache()
     }
     this.invalidateResolvedWorktreeCache()
@@ -8457,10 +9458,18 @@ export class OrcaRuntimeService {
     repoSelector: string,
     prNumber: number,
     enabled: boolean,
+    method?: 'merge' | 'squash' | 'rebase',
     prRepo?: GitHubOwnerRepo | null
   ): Promise<Awaited<ReturnType<typeof setPRAutoMerge>>> {
     const repo = await this.resolveRepoSelector(repoSelector)
-    return setPRAutoMerge(repo.path, prNumber, enabled, repo.connectionId ?? null, prRepo ?? null)
+    return setPRAutoMerge(
+      repo.path,
+      prNumber,
+      enabled,
+      method,
+      repo.connectionId ?? null,
+      prRepo ?? null
+    )
   }
 
   async updateRepoPRState(
@@ -9122,6 +10131,8 @@ export class OrcaRuntimeService {
       agent,
       draft: content,
       cmdOverrides: settings.agentCmdOverrides ?? {},
+      agentArgs: resolveTuiAgentLaunchArgs(agent, settings.agentDefaultArgs),
+      agentEnv: resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv),
       platform: agentLaunchPlatform
     })
     if (draftLaunchPlan) {
@@ -9138,6 +10149,8 @@ export class OrcaRuntimeService {
       agent,
       prompt: '',
       cmdOverrides: settings.agentCmdOverrides ?? {},
+      agentArgs: resolveTuiAgentLaunchArgs(agent, settings.agentDefaultArgs),
+      agentEnv: resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv),
       platform: agentLaunchPlatform,
       allowEmptyPromptLaunch: true
     })
@@ -9173,6 +10186,8 @@ export class OrcaRuntimeService {
       agent,
       prompt: prompt ?? '',
       cmdOverrides: settings.agentCmdOverrides ?? {},
+      agentArgs: resolveTuiAgentLaunchArgs(agent, settings.agentDefaultArgs),
+      agentEnv: resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv),
       platform: agentLaunchPlatform,
       allowEmptyPromptLaunch: true
     })
@@ -9233,20 +10248,31 @@ export class OrcaRuntimeService {
   private recordCreatedWorktreeLineage(
     worktree: Pick<Worktree, 'id' | 'instanceId'>,
     lineageResolution: WorktreeLineageResolution
-  ): { lineage: WorktreeLineage | null; warnings: WorktreeLineageWarning[] } {
+  ): {
+    lineage: WorktreeLineage | null
+    workspaceLineage: WorkspaceLineage | null
+    warnings: WorktreeLineageWarning[]
+  } {
     const warnings = lineageResolution.kind === 'none' ? [...lineageResolution.warnings] : []
     let lineage: WorktreeLineage | null = null
+    let workspaceLineage: WorkspaceLineage | null = null
     if (lineageResolution.kind !== 'lineage') {
-      return { lineage, warnings }
+      return { lineage, workspaceLineage, warnings }
     }
 
     const childInstanceId = worktree.instanceId
     const parentInstanceId = lineageResolution.parent.instanceId
-    if (childInstanceId && parentInstanceId && this.store?.setWorktreeLineage) {
+    const createdAt = Date.now()
+    if (
+      lineageResolution.parent.type === 'worktree' &&
+      childInstanceId &&
+      parentInstanceId &&
+      this.store?.setWorktreeLineage
+    ) {
       lineage = this.store.setWorktreeLineage(worktree.id, {
         worktreeId: worktree.id,
         worktreeInstanceId: childInstanceId,
-        parentWorktreeId: lineageResolution.parent.id,
+        parentWorktreeId: lineageResolution.parent.worktree.id,
         parentWorktreeInstanceId: parentInstanceId,
         origin: lineageResolution.origin,
         capture: lineageResolution.capture,
@@ -9260,9 +10286,9 @@ export class OrcaRuntimeService {
         ...(lineageResolution.createdByTerminalHandle
           ? { createdByTerminalHandle: lineageResolution.createdByTerminalHandle }
           : {}),
-        createdAt: Date.now()
+        createdAt
       })
-    } else {
+    } else if (lineageResolution.parent.type === 'worktree') {
       warnings.push({
         code: 'LINEAGE_PARENT_CONTEXT_MISSING',
         message:
@@ -9274,7 +10300,28 @@ export class OrcaRuntimeService {
         }
       })
     }
-    return { lineage, warnings }
+    if (childInstanceId && this.store?.setWorkspaceLineage) {
+      workspaceLineage = this.store.setWorkspaceLineage({
+        childWorkspaceKey: worktreeWorkspaceKey(worktree.id),
+        childInstanceId,
+        parentWorkspaceKey: lineageResolution.parent.workspaceKey,
+        parentInstanceId,
+        origin: lineageResolution.origin,
+        capture: lineageResolution.capture,
+        ...(lineageResolution.taskId ? { taskId: lineageResolution.taskId } : {}),
+        ...(lineageResolution.orchestrationRunId
+          ? { orchestrationRunId: lineageResolution.orchestrationRunId }
+          : {}),
+        ...(lineageResolution.coordinatorHandle
+          ? { coordinatorHandle: lineageResolution.coordinatorHandle }
+          : {}),
+        ...(lineageResolution.createdByTerminalHandle
+          ? { createdByTerminalHandle: lineageResolution.createdByTerminalHandle }
+          : {}),
+        createdAt
+      })
+    }
+    return { lineage, workspaceLineage, warnings }
   }
 
   private pasteStartupDraftWhenReady(handle: string, draft: WorktreeStartupDraftPaste): void {
@@ -9447,8 +10494,13 @@ export class OrcaRuntimeService {
     linkedIssue?: number | null
     linkedPR?: number | null
     linkedLinearIssue?: string
+    linkedLinearIssueWorkspaceId?: string | null
+    linkedLinearIssueOrganizationUrlKey?: string | null
     linkedGitLabMR?: number | null
     linkedGitLabIssue?: number | null
+    linkedBitbucketPR?: number | null
+    linkedAzureDevOpsPR?: number | null
+    linkedGiteaPR?: number | null
     comment?: string
     displayName?: string
     telemetrySource?: WorkspaceCreateTelemetrySource
@@ -9512,6 +10564,7 @@ export class OrcaRuntimeService {
       const worktreeId = getRuntimeFolderWorkspaceInstanceId(repo, instanceId)
       const meta = this.store.setWorktreeMeta(worktreeId, {
         instanceId,
+        ...getProjectHostSetupWorktreeMeta(this.store.getProjectHostSetups?.() ?? [], repo),
         displayName: args.displayName?.trim() || args.name,
         lastActivityAt: now,
         createdAt: now,
@@ -9526,10 +10579,23 @@ export class OrcaRuntimeService {
         ...(args.linkedLinearIssue !== undefined
           ? { linkedLinearIssue: args.linkedLinearIssue }
           : {}),
+        ...(args.linkedLinearIssueWorkspaceId !== undefined
+          ? { linkedLinearIssueWorkspaceId: args.linkedLinearIssueWorkspaceId }
+          : {}),
+        ...(args.linkedLinearIssueOrganizationUrlKey !== undefined
+          ? { linkedLinearIssueOrganizationUrlKey: args.linkedLinearIssueOrganizationUrlKey }
+          : {}),
         ...(args.linkedGitLabIssue !== undefined
           ? { linkedGitLabIssue: args.linkedGitLabIssue }
           : {}),
         ...(args.linkedGitLabMR !== undefined ? { linkedGitLabMR: args.linkedGitLabMR } : {}),
+        ...(args.linkedBitbucketPR !== undefined
+          ? { linkedBitbucketPR: args.linkedBitbucketPR }
+          : {}),
+        ...(args.linkedAzureDevOpsPR !== undefined
+          ? { linkedAzureDevOpsPR: args.linkedAzureDevOpsPR }
+          : {}),
+        ...(args.linkedGiteaPR !== undefined ? { linkedGiteaPR: args.linkedGiteaPR } : {}),
         ...(effectiveCreatedWithAgent ? { createdWithAgent: effectiveCreatedWithAgent } : {}),
         ...(args.comment !== undefined ? { comment: args.comment } : {}),
         ...(args.manualOrder !== undefined ? { manualOrder: args.manualOrder } : {}),
@@ -9618,10 +10684,15 @@ export class OrcaRuntimeService {
           ...result.worktree,
           parentWorktreeId: recordedLineage.lineage?.parentWorktreeId ?? null,
           childWorktreeIds: result.worktree.childWorktreeIds ?? [],
-          lineage: recordedLineage.lineage
+          lineage: recordedLineage.lineage,
+          workspaceLineage: recordedLineage.workspaceLineage
         },
         ...(lineageInput
-          ? { lineage: recordedLineage.lineage, warnings: recordedLineage.warnings }
+          ? {
+              lineage: recordedLineage.lineage,
+              workspaceLineage: recordedLineage.workspaceLineage,
+              warnings: recordedLineage.warnings
+            }
           : {})
       }
     }
@@ -9669,24 +10740,38 @@ export class OrcaRuntimeService {
 
     if (!checkoutExistingBranch) {
       let existingPR: Awaited<ReturnType<typeof getPRForBranch>> | null = null
-      try {
-        existingPR = await getPRForBranch(repo.path, branchName)
-      } catch {
-        if (allowedPushTargetRemoteConflict) {
-          throw new Error(`Could not verify selected PR branch "${branchName}". Try again.`)
+      const selectedReview = getSelectedReviewBranch(args)
+      if (selectedReview?.provider === 'github' || !allowedPushTargetRemoteConflict) {
+        try {
+          existingPR = await getPRForBranch(repo.path, branchName)
+        } catch {
+          if (allowedPushTargetRemoteConflict) {
+            throw new Error(`Could not verify selected PR branch "${branchName}". Try again.`)
+          }
+          // Why: worktree creation should not hard-fail on transient GitHub reachability
+          // issues because git state is still the source of truth for whether the
+          // worktree can be created locally.
         }
-        // Why: worktree creation should not hard-fail on transient GitHub reachability
-        // issues because git state is still the source of truth for whether the
-        // worktree can be created locally.
       }
-      if (
-        allowedPushTargetRemoteConflict &&
-        !isMatchingSelectedGitHubPr(existingPR, args, branchName)
-      ) {
-        if (existingPR) {
-          throw new Error(`Branch "${branchName}" already has PR #${existingPR.number}.`)
+      if (allowedPushTargetRemoteConflict) {
+        if (selectedReview?.provider === 'github') {
+          if (!isMatchingSelectedGitHubPr(existingPR, args, branchName)) {
+            if (existingPR) {
+              throw new Error(`Branch "${branchName}" already has PR #${existingPR.number}.`)
+            }
+            throw new Error(`Branch "${branchName}" already exists on a remote.`)
+          }
+        } else if (selectedReview) {
+          const hostedReview = await getSelectedHostedReviewForBranch(repo, branchName, args).catch(
+            () => null
+          )
+          if (!hostedReview?.matchesSelected) {
+            if (hostedReview) {
+              throw new Error(`Branch "${branchName}" already has PR #${hostedReview.number}.`)
+            }
+            throw new Error(`Branch "${branchName}" already exists on a remote.`)
+          }
         }
-        throw new Error(`Branch "${branchName}" already exists on a remote.`)
       }
       if (existingPR && !isMatchingSelectedGitHubPr(existingPR, args, branchName)) {
         throw new Error(`Branch "${branchName}" already has PR #${existingPR.number}.`)
@@ -9736,11 +10821,10 @@ export class OrcaRuntimeService {
       if (!hadLocalBaseRef && !(await this.hasRemoteTrackingRef(repo.path, remoteTrackingBase))) {
         throw new Error(`Base ref "${baseBranch}" was not found after fetching.`)
       }
-    } else {
+    } else if (!(await hasLocalCommitObject(repo.path, baseBranch))) {
       const remote = baseBranch.includes('/') ? baseBranch.split('/')[0] : 'origin'
-      // Why: local bases keep legacy best-effort fetch behavior. Remote-tracking
-      // bases fail closed above because stale create-from-base is worse than a
-      // clear retryable error.
+      // Why: local bases keep legacy best-effort fetch behavior. Verified PR
+      // SHA bases already have the commit object needed by `git worktree add`.
       try {
         await this.fetchRemoteWithCache(repo.path, remote)
       } catch {
@@ -9875,6 +10959,9 @@ export class OrcaRuntimeService {
 
     const worktreeId = `${repo.id}::${created.path}`
     const now = Date.now()
+    // Why: persisted compare refs must survive local branches whose names look
+    // like remote labels, e.g. a local branch literally named "origin/main".
+    const metadataBaseRef = remoteTrackingBase?.ref ?? baseBranch
     const displayNameMeta = requestedDisplayName
       ? { displayName: requestedDisplayName }
       : shouldSetDisplayName(effectiveRequestedName, branchName, effectiveSanitizedName)
@@ -9885,6 +10972,7 @@ export class OrcaRuntimeService {
       // and later recreated, creation must mint a fresh instance identity so
       // stale lineage records tied to the old occupant fail validation.
       instanceId: randomUUID(),
+      ...getProjectHostSetupWorktreeMeta(this.store.getProjectHostSetups?.() ?? [], repo),
       lastActivityAt: now,
       // See createRemoteWorktree: createdAt grants the new worktree a grace
       // window in Recent sort so ambient PTY bumps in OTHER worktrees can't
@@ -9895,13 +10983,13 @@ export class OrcaRuntimeService {
       orcaCreationSource: 'runtime',
       orcaCreationWorkspaceLayout: getWorktreeCreationLayout(repo, settings),
       ...displayNameMeta,
-      baseRef: baseBranch,
+      baseRef: metadataBaseRef,
       ...(checkoutExistingBranch ? { preserveBranchOnDelete: true } : {}),
       ...(configuredPushTarget ? { pushTarget: configuredPushTarget } : {}),
       ...(sparseDirectories.length > 0
         ? {
             sparseDirectories,
-            sparseBaseRef: baseBranch,
+            sparseBaseRef: metadataBaseRef,
             sparsePresetId: args.sparseCheckout?.presetId
           }
         : {}),
@@ -9910,10 +10998,23 @@ export class OrcaRuntimeService {
       ...(args.linkedLinearIssue !== undefined
         ? { linkedLinearIssue: args.linkedLinearIssue }
         : {}),
+      ...(args.linkedLinearIssueWorkspaceId !== undefined
+        ? { linkedLinearIssueWorkspaceId: args.linkedLinearIssueWorkspaceId }
+        : {}),
+      ...(args.linkedLinearIssueOrganizationUrlKey !== undefined
+        ? { linkedLinearIssueOrganizationUrlKey: args.linkedLinearIssueOrganizationUrlKey }
+        : {}),
       ...(args.linkedGitLabIssue !== undefined
         ? { linkedGitLabIssue: args.linkedGitLabIssue }
         : {}),
       ...(args.linkedGitLabMR !== undefined ? { linkedGitLabMR: args.linkedGitLabMR } : {}),
+      ...(args.linkedBitbucketPR !== undefined
+        ? { linkedBitbucketPR: args.linkedBitbucketPR }
+        : {}),
+      ...(args.linkedAzureDevOpsPR !== undefined
+        ? { linkedAzureDevOpsPR: args.linkedAzureDevOpsPR }
+        : {}),
+      ...(args.linkedGiteaPR !== undefined ? { linkedGiteaPR: args.linkedGiteaPR } : {}),
       ...(effectiveCreatedWithAgent ? { createdWithAgent: effectiveCreatedWithAgent } : {}),
       ...(args.pendingFirstAgentMessageRename === true && effectiveCreatedWithAgent
         ? { pendingFirstAgentMessageRename: true }
@@ -9923,10 +11024,11 @@ export class OrcaRuntimeService {
       ...(args.workspaceStatus !== undefined ? { workspaceStatus: args.workspaceStatus } : {})
     })
     const worktree = mergeWorktree(repo.id, created, meta)
-    const { lineage, warnings: lineageWarnings } = this.recordCreatedWorktreeLineage(
-      worktree,
-      lineageResolution
-    )
+    const {
+      lineage,
+      workspaceLineage,
+      warnings: lineageWarnings
+    } = this.recordCreatedWorktreeLineage(worktree, lineageResolution)
 
     if (
       settings.experimentalWorktreeSymlinks &&
@@ -9998,6 +11100,7 @@ export class OrcaRuntimeService {
     let didSpawnStartup = false
     let didSpawnSetup = false
     let startupTerminalHandle: string | null = null
+    let startupTerminalTabId: string | null = null
     if (effectiveStartup && this.ptyController?.spawn) {
       try {
         // Why: automation startup must not depend on a renderer TerminalPane
@@ -10020,6 +11123,7 @@ export class OrcaRuntimeService {
         }
         didSpawnStartup = true
         startupTerminalHandle = terminal.handle
+        startupTerminalTabId = terminal.tabId ?? null
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         warning = warning
@@ -10128,9 +11232,10 @@ export class OrcaRuntimeService {
         parentWorktreeId: lineage?.parentWorktreeId ?? null,
         childWorktreeIds: [],
         lineage,
+        workspaceLineage,
         git: created
       },
-      ...(lineageInput ? { lineage, warnings: lineageWarnings } : {}),
+      ...(lineageInput ? { lineage, workspaceLineage, warnings: lineageWarnings } : {}),
       ...(setup ? { setup } : {}),
       ...(defaultTabs ? { defaultTabs } : {}),
       ...(warning ? { warning } : {}),
@@ -10139,6 +11244,16 @@ export class OrcaRuntimeService {
         : {}),
       ...(addResult.localBaseRefUpdateSuggestion
         ? { localBaseRefUpdateSuggestion: addResult.localBaseRefUpdateSuggestion }
+        : {}),
+      ...(didSpawnStartup && startupTerminalHandle
+        ? {
+            startupTerminal: {
+              spawned: true,
+              handle: startupTerminalHandle,
+              ...(startupTerminalTabId ? { tabId: startupTerminalTabId } : {}),
+              surface: 'background' as const
+            }
+          }
         : {})
     }
   }
@@ -10152,8 +11267,13 @@ export class OrcaRuntimeService {
       linkedIssue?: number | null
       linkedPR?: number | null
       linkedLinearIssue?: string
+      linkedLinearIssueWorkspaceId?: string | null
+      linkedLinearIssueOrganizationUrlKey?: string | null
       linkedGitLabMR?: number | null
       linkedGitLabIssue?: number | null
+      linkedBitbucketPR?: number | null
+      linkedAzureDevOpsPR?: number | null
+      linkedGiteaPR?: number | null
       comment?: string
       displayName?: string
       workspaceStatus?: string
@@ -10195,8 +11315,19 @@ export class OrcaRuntimeService {
         ...(args.linkedIssue != null ? { linkedIssue: args.linkedIssue } : {}),
         ...(args.linkedPR != null ? { linkedPR: args.linkedPR } : {}),
         ...(args.linkedLinearIssue ? { linkedLinearIssue: args.linkedLinearIssue } : {}),
+        ...(args.linkedLinearIssueWorkspaceId !== undefined
+          ? { linkedLinearIssueWorkspaceId: args.linkedLinearIssueWorkspaceId }
+          : {}),
+        ...(args.linkedLinearIssueOrganizationUrlKey !== undefined
+          ? { linkedLinearIssueOrganizationUrlKey: args.linkedLinearIssueOrganizationUrlKey }
+          : {}),
         ...(args.linkedGitLabMR != null ? { linkedGitLabMR: args.linkedGitLabMR } : {}),
         ...(args.linkedGitLabIssue != null ? { linkedGitLabIssue: args.linkedGitLabIssue } : {}),
+        ...(args.linkedBitbucketPR != null ? { linkedBitbucketPR: args.linkedBitbucketPR } : {}),
+        ...(args.linkedAzureDevOpsPR != null
+          ? { linkedAzureDevOpsPR: args.linkedAzureDevOpsPR }
+          : {}),
+        ...(args.linkedGiteaPR != null ? { linkedGiteaPR: args.linkedGiteaPR } : {}),
         ...(args.pushTarget ? { pushTarget: args.pushTarget } : {}),
         ...(args.workspaceStatus ? { workspaceStatus: args.workspaceStatus as never } : {}),
         ...(args.manualOrder !== undefined ? { manualOrder: args.manualOrder } : {}),
@@ -10222,6 +11353,7 @@ export class OrcaRuntimeService {
     let didSpawnStartup = false
     let didSpawnSetup = false
     let startupTerminalHandle: string | null = null
+    let startupTerminalTabId: string | null = null
     if (args.startup && this.ptyController?.spawn) {
       try {
         const startupTrustAgent = args.startupDraftPaste?.agent ?? args.createdWithAgent
@@ -10245,6 +11377,7 @@ export class OrcaRuntimeService {
         }
         didSpawnStartup = true
         startupTerminalHandle = terminal.handle
+        startupTerminalTabId = terminal.tabId ?? null
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         warning = warning
@@ -10346,7 +11479,20 @@ export class OrcaRuntimeService {
       }
     }
 
-    return warning ? { ...result, warning } : result
+    const resultWithStartupTerminal =
+      didSpawnStartup && startupTerminalHandle
+        ? {
+            ...result,
+            startupTerminal: {
+              spawned: true,
+              handle: startupTerminalHandle,
+              ...(startupTerminalTabId ? { tabId: startupTerminalTabId } : {}),
+              surface: 'background' as const
+            }
+          }
+        : result
+
+    return warning ? { ...resultWithStartupTerminal, warning } : resultWithStartupTerminal
   }
 
   /**
@@ -10778,6 +11924,7 @@ export class OrcaRuntimeService {
     const { lineage, ...metaUpdates } = updates
     if (lineage?.noParent === true) {
       this.store.removeWorktreeLineage?.(worktree.id)
+      this.store.removeWorkspaceLineage?.(worktreeWorkspaceKey(worktree.id))
     } else if (lineage?.parentWorktree) {
       const parent = await this.resolveWorktreeSelector(lineage.parentWorktree)
       this.validateLineageParent(worktree, parent)
@@ -10793,6 +11940,7 @@ export class OrcaRuntimeService {
           'Workspace lineage storage was unavailable.'
         )
       }
+      const createdAt = Date.now()
       this.store.setWorktreeLineage(worktree.id, {
         worktreeId: worktree.id,
         worktreeInstanceId: worktree.instanceId,
@@ -10800,7 +11948,16 @@ export class OrcaRuntimeService {
         parentWorktreeInstanceId: parent.instanceId,
         origin: 'manual',
         capture: { source: 'manual-action', confidence: 'explicit' },
-        createdAt: Date.now()
+        createdAt
+      })
+      this.store.setWorkspaceLineage?.({
+        childWorkspaceKey: worktreeWorkspaceKey(worktree.id),
+        childInstanceId: worktree.instanceId,
+        parentWorkspaceKey: worktreeWorkspaceKey(parent.id),
+        parentInstanceId: parent.instanceId,
+        origin: 'manual',
+        capture: { source: 'manual-action', confidence: 'explicit' },
+        createdAt
       })
     }
     this.store.setWorktreeMeta(
@@ -10883,6 +12040,11 @@ export class OrcaRuntimeService {
         }
       : () => getDefaultRemote(repo.path)
 
+    // Why: SSH repos can't fetch over the relay's read-only git.exec channel, so
+    // route the PR head fetch through the write-capable helper instead of gitExec.
+    const fetchRemoteTrackingRef = (remote: string, branch: string): Promise<void> =>
+      fetchPrHeadTrackingRef(repo, sshGitProvider, remote, branch)
+
     return resolveGitHubPrStartPoint({
       repoPath: repo.path,
       prNumber: args.prNumber,
@@ -10890,6 +12052,7 @@ export class OrcaRuntimeService {
       isCrossRepository: args.isCrossRepository,
       connectionId: repo.connectionId ?? null,
       gitExec,
+      fetchRemoteTrackingRef,
       resolveRemote
     })
   }
@@ -11438,9 +12601,12 @@ export class OrcaRuntimeService {
       }
 
       const localProvider = this.getLocalProvider()
+      await closeLocalWatcherForWorktreePath(canonicalWorktreePath).catch((err) => {
+        console.warn(`[filesystem-watcher] failed to close ${canonicalWorktreePath}:`, err)
+      })
       if (localProvider && shouldTearDownPtys) {
         // Why: once preflight proves normal deletion is clean, kill PTYs before
-        // git-level removal so shells cannot keep the directory busy. This also
+        // git-level removal so Windows handles cannot keep the directory busy. This also
         // closes the headless-CLI leak for confirmed-removable worktrees.
         await killAllProcessesForWorktree(removalTarget.id, {
           runtime: this,
@@ -11476,6 +12642,9 @@ export class OrcaRuntimeService {
       } catch (error) {
         if (isOrphanedWorktreeError(error)) {
           if (await canSafelyRemoveOrphanedWorktreeDirectory(canonicalWorktreePath, repo.path)) {
+            await closeLocalWatcherForWorktreePath(canonicalWorktreePath).catch((err) => {
+              console.warn(`[filesystem-watcher] failed to close ${canonicalWorktreePath}:`, err)
+            })
             await rm(canonicalWorktreePath, { recursive: true, force: true }).catch(() => {})
           } else {
             console.warn(
@@ -11591,8 +12760,7 @@ export class OrcaRuntimeService {
       if (!this.ptyController?.spawn) {
         throw new Error('runtime_unavailable')
       }
-      const worktree = await this.resolveWorktreeSelector(worktreeSelector)
-      const repo = this.store?.getRepo(worktree.repoId)
+      const workspace = await this.resolveTerminalWorkspaceLaunchScope(worktreeSelector)
       const preAllocatedHandle = this.createPreAllocatedTerminalHandle()
       // Why: mint tabId in main before spawn so paneKey is known at PTY env
       // build time. Hook-based agent status (Claude/Codex/Cursor/Gemini) keys
@@ -11628,23 +12796,23 @@ export class OrcaRuntimeService {
             shimBin
           }).env
       })
-      const env = {
-        ...baseEnv,
-        ...agentTeamsPlan?.env,
-        ORCA_PANE_KEY: paneKey,
-        ORCA_TAB_ID: tabId,
-        ORCA_WORKTREE_ID: worktree.id
-      }
+      const env = this.buildTerminalWorkspaceEnv(
+        workspace,
+        baseEnv,
+        paneKey,
+        tabId,
+        agentTeamsPlan?.env
+      )
       const result = await this.ptyController.spawn({
         cols: 120,
         rows: 40,
-        cwd: worktree.path,
+        cwd: workspace.path,
         command: agentTeamsPlan?.command ?? opts.command,
         env,
         envToDelete: agentTeamsPlan?.envToDelete,
         telemetry: opts.telemetry,
-        connectionId: repo?.connectionId ?? null,
-        worktreeId: worktree.id,
+        connectionId: workspace.connectionId,
+        worktreeId: workspace.id,
         preAllocatedHandle,
         tabId,
         leafId,
@@ -11652,16 +12820,24 @@ export class OrcaRuntimeService {
         ...(opts.persistHostSessionBinding ? { persistHostSessionBinding: true } : {})
       })
       this.registerPreAllocatedHandleForPty(result.id, preAllocatedHandle)
-      this.registerPty(result.id, worktree.id, repo?.connectionId ?? null)
+      this.registerPty(result.id, workspace.id, workspace.connectionId)
       const pty = this.getOrCreatePtyWorktreeRecord(result.id)
       if (pty) {
-        pty.title = opts.title ?? null
+        if (opts.title) {
+          const observedAt = this.nextTitleObservationSequence()
+          pty.title = opts.title
+          pty.titleUpdatedAt = observedAt
+          this.setPtyManagementTitleFromObservedTitle(pty, opts.title, observedAt)
+        } else {
+          pty.title = null
+          pty.titleUpdatedAt = null
+        }
         pty.tabId = tabId
         pty.paneKey = paneKey
       }
       const handle = pty ? this.issuePtyHandle(pty) : preAllocatedHandle
       if (pty) {
-        this.publishPtyBackedMobileSessionTerminal(worktree.id, pty, {
+        this.publishPtyBackedMobileSessionTerminal(workspace.id, pty, {
           tabId,
           leafId,
           title: opts.title ?? null,
@@ -11675,7 +12851,7 @@ export class OrcaRuntimeService {
           // failing here must not strand a live process without returning a handle.
           // Pass the pre-minted tabId so the renderer adopts under the same id
           // already baked into the PTY env — keeps paneKey hook attribution intact.
-          await this.notifier.revealTerminalSession(worktree.id, {
+          await this.notifier.revealTerminalSession(workspace.id, {
             ptyId: result.id,
             title: opts.title ?? null,
             activate: opts.activate === true,
@@ -11687,7 +12863,7 @@ export class OrcaRuntimeService {
           console.warn(`[terminal-create] failed to create inactive tab for ${result.id}:`, err)
         }
       }
-      return { handle, worktreeId: worktree.id, title: opts.title ?? null, surface }
+      return { handle, tabId, worktreeId: workspace.id, title: opts.title ?? null, surface }
     }
 
     this.assertGraphReady()
@@ -11695,7 +12871,7 @@ export class OrcaRuntimeService {
     // Why: mirrors browserTabCreate — when no worktree is specified, pass
     // undefined so the renderer uses its current active worktree.
     const worktreeId = worktreeSelector
-      ? (await this.resolveWorktreeSelector(worktreeSelector)).id
+      ? (await this.resolveTerminalWorkspaceLaunchScope(worktreeSelector)).id
       : undefined
     const requestId = randomUUID()
 
@@ -11737,7 +12913,36 @@ export class OrcaRuntimeService {
     // populates this.leaves may not have arrived yet. Wait for the leaf to
     // appear so we can return a valid handle the caller can use right away.
     const handle = await this.waitForTerminalHandle(reply.tabId)
-    return { handle, worktreeId: worktreeId ?? '', title: reply.title, surface: 'visible' }
+    return {
+      handle,
+      tabId: reply.tabId,
+      worktreeId: worktreeId ?? '',
+      title: reply.title,
+      surface: 'visible'
+    }
+  }
+
+  async launchAgentTerminal(
+    worktreeSelector: string,
+    opts: { agent: TuiAgent; prompt: string; title?: string }
+  ): Promise<RuntimeTerminalCreate> {
+    const worktree = await this.resolveWorktreeSelector(worktreeSelector)
+    const repo = this.store?.getRepo(worktree.repoId)
+    if (!repo) {
+      throw new Error('Repository for the selected workspace is no longer available.')
+    }
+    const startup = this.buildStartupForAgent(repo, opts.agent, opts.prompt)
+    if (repo.connectionId) {
+      await this.markRemoteWorkspaceTrustedForAgent(opts.agent, repo.connectionId, worktree.path)
+    } else {
+      this.markLocalWorkspaceTrustedForAgent(opts.agent, worktree.path)
+    }
+    return await this.createTerminal(`id:${worktree.id}`, {
+      command: startup.startup.command,
+      env: startup.startup.env,
+      telemetry: startup.startup.telemetry,
+      title: opts.title
+    })
   }
 
   async createMobileSessionTerminal(
@@ -11771,7 +12976,9 @@ export class OrcaRuntimeService {
         worktreeId,
         opts.activate !== false,
         opts.afterTabId,
-        command
+        command,
+        undefined,
+        opts.agent
       )
     }
     const requestId = randomUUID()
@@ -11835,6 +13042,8 @@ export class OrcaRuntimeService {
       agent: opts.agent,
       prompt: '',
       cmdOverrides: settings.agentCmdOverrides ?? {},
+      agentArgs: resolveTuiAgentLaunchArgs(opts.agent, settings.agentDefaultArgs),
+      agentEnv: resolveTuiAgentLaunchEnv(opts.agent, settings.agentDefaultEnv),
       platform,
       allowEmptyPromptLaunch: true
     })
@@ -11854,7 +13063,8 @@ export class OrcaRuntimeService {
     activate: boolean,
     afterTabId?: string,
     command?: string,
-    identity?: { tabId: string; leafId: string; sessionId?: string }
+    identity?: { tabId: string; leafId: string; sessionId?: string },
+    launchAgent?: TuiAgent
   ): Promise<RuntimeMobileSessionCreateTerminalResult> {
     const worktree = await this.resolveWorktreeSelector(`id:${worktreeId}`)
     const repo = this.store?.getRepo(worktree.repoId)
@@ -11902,6 +13112,7 @@ export class OrcaRuntimeService {
       leafId,
       ptyId: livePty.pty.ptyId,
       title: terminal.title ?? livePty.pty.title ?? 'Terminal',
+      ...(launchAgent ? { launchAgent } : {}),
       parentLayout,
       isActive: activate
     }
@@ -12144,7 +13355,7 @@ export class OrcaRuntimeService {
       const parsedPaneKey = parsePaneKey(pty.pty.paneKey ?? '')
       const revealed = await this.notifier?.revealTerminalSession?.(pty.pty.worktreeId, {
         ptyId: pty.pty.ptyId,
-        title: pty.pty.title ?? pty.pty.lastOscTitle,
+        title: getLatestPtyTitle(pty.pty),
         ...(pty.pty.tabId !== null ? { tabId: pty.pty.tabId } : {}),
         ...(parsedPaneKey ? { leafId: parsedPaneKey.leafId } : {})
       })
@@ -12248,29 +13459,23 @@ export class OrcaRuntimeService {
       throw new Error('terminal_handle_stale')
     }
     const direction = opts.direction ?? 'horizontal'
-    const worktree = await this.resolveWorktreeSelector(`id:${pty.worktreeId}`)
-    const repo = this.store?.getRepo(worktree.repoId)
+    const workspace = await this.resolveTerminalWorkspaceLaunchScope(`id:${pty.worktreeId}`)
     const leafId = randomUUID()
     const preAllocatedHandle = this.createPreAllocatedTerminalHandle()
     const paneKey = makePaneKey(parentTabId, leafId)
     const result = await this.ptyController.spawn({
       cols: 120,
       rows: 40,
-      cwd: worktree.path,
+      cwd: workspace.path,
       command: opts.command,
-      env: {
-        ...opts.env,
-        ORCA_PANE_KEY: paneKey,
-        ORCA_TAB_ID: parentTabId,
-        ORCA_WORKTREE_ID: worktree.id
-      },
+      env: this.buildTerminalWorkspaceEnv(workspace, opts.env ?? {}, paneKey, parentTabId),
       envToDelete: opts.envToDelete,
-      connectionId: repo?.connectionId ?? null,
-      worktreeId: worktree.id,
+      connectionId: workspace.connectionId,
+      worktreeId: workspace.id,
       preAllocatedHandle
     })
     this.registerPreAllocatedHandleForPty(result.id, preAllocatedHandle)
-    this.registerPty(result.id, worktree.id, repo?.connectionId ?? null)
+    this.registerPty(result.id, workspace.id, workspace.connectionId)
     const createdPty = this.getOrCreatePtyWorktreeRecord(result.id)
     if (createdPty) {
       createdPty.tabId = parentTabId
@@ -12278,7 +13483,7 @@ export class OrcaRuntimeService {
     }
 
     try {
-      await this.notifier?.revealTerminalSession?.(worktree.id, {
+      await this.notifier?.revealTerminalSession?.(workspace.id, {
         ptyId: result.id,
         title: null,
         activate: opts.activate !== false,
@@ -12293,7 +13498,7 @@ export class OrcaRuntimeService {
       throw error
     }
     if (createdPty) {
-      this.publishPtyBackedMobileSessionTerminal(worktree.id, createdPty, {
+      this.publishPtyBackedMobileSessionTerminal(workspace.id, createdPty, {
         tabId: parentTabId,
         leafId,
         title: null,
@@ -12410,6 +13615,109 @@ export class OrcaRuntimeService {
     return { stopped }
   }
 
+  async stopExactTerminalsForWorktree(
+    worktreeSelector: string,
+    expectedPtyIds: readonly string[],
+    opts: { keepHistory?: boolean } = {}
+  ): Promise<{
+    stopped: number
+    stoppedPtyIds: string[]
+    livePtyIds: string[]
+    postStopVerified: boolean
+    postStopFailure?: string
+    remainingLivePtyIds?: string[]
+  }> {
+    // Why: hibernation may commit sleeping state only after the runtime proves
+    // the selected PTYs are still the complete live set for this worktree.
+    const graphEpoch = this.captureReadyGraphEpoch()
+    const worktree = await this.resolveWorktreeSelector(worktreeSelector)
+    this.assertStableReadyGraph(graphEpoch)
+    const expected = new Set(expectedPtyIds.filter((ptyId) => ptyId.length > 0))
+    if (expected.size !== 1) {
+      throw new Error('terminal_exact_stop_requires_single_pty')
+    }
+    const resolvedWorktrees = [...(await this.getResolvedWorktreeMap()).values()]
+    const refreshedPtyLiveness =
+      await this.refreshPtyWorktreeRecordsFromController(resolvedWorktrees)
+    if (!refreshedPtyLiveness) {
+      throw new Error('terminal_liveness_unavailable')
+    }
+    const livePtyIds = this.getLivePtyIdsForWorktree(worktree.id, refreshedPtyLiveness)
+    if (!setsEqual(livePtyIds, expected)) {
+      const error = Object.assign(new Error('terminal_stop_pty_set_mismatch'), {
+        livePtyIds: [...livePtyIds].sort(),
+        expectedPtyIds: [...expected].sort()
+      })
+      throw error
+    }
+
+    if (!this.ptyController?.stopAndWait) {
+      throw new Error('terminal_exact_stop_unavailable')
+    }
+
+    const stoppedPtyIds: string[] = []
+    for (const ptyId of [...expected].sort()) {
+      if (!(await this.ptyController.stopAndWait(ptyId, { keepHistory: opts.keepHistory }))) {
+        throw Object.assign(new Error('terminal_exact_stop_failed'), { ptyId })
+      }
+      stoppedPtyIds.push(ptyId)
+    }
+    const postStopLiveness = await this.refreshPtyWorktreeRecordsFromController(resolvedWorktrees)
+    if (!postStopLiveness) {
+      return {
+        stopped: stoppedPtyIds.length,
+        stoppedPtyIds,
+        livePtyIds: [...livePtyIds].sort(),
+        postStopVerified: false,
+        postStopFailure: 'terminal_liveness_unavailable'
+      }
+    }
+    const remainingLivePtyIds = this.getLivePtyIdsForWorktree(worktree.id, postStopLiveness)
+    if (remainingLivePtyIds.size > 0) {
+      return {
+        stopped: stoppedPtyIds.length,
+        stoppedPtyIds,
+        livePtyIds: [...livePtyIds].sort(),
+        postStopVerified: false,
+        postStopFailure: 'terminal_exact_stop_still_live',
+        remainingLivePtyIds: [...remainingLivePtyIds].sort()
+      }
+    }
+    return {
+      stopped: stoppedPtyIds.length,
+      stoppedPtyIds,
+      livePtyIds: [...livePtyIds].sort(),
+      postStopVerified: true
+    }
+  }
+
+  private getLivePtyIdsForWorktree(
+    worktreeId: string,
+    freshPtyIds?: ReadonlySet<string>
+  ): Set<string> {
+    const ptyIds = new Set<string>()
+    for (const leaf of this.leaves.values()) {
+      if (
+        leaf.worktreeId === worktreeId &&
+        leaf.connected &&
+        leaf.ptyId &&
+        (!freshPtyIds || freshPtyIds.has(leaf.ptyId))
+      ) {
+        ptyIds.add(leaf.ptyId)
+      }
+    }
+    for (const pty of this.ptysById.values()) {
+      if (
+        pty.worktreeId === worktreeId &&
+        pty.connected &&
+        (!freshPtyIds || freshPtyIds.has(pty.ptyId))
+      ) {
+        ptyIds.add(pty.ptyId)
+      }
+    }
+    return ptyIds
+  }
+
   async hasTerminalsForWorktree(worktreeSelector: string): Promise<boolean> {
     const graphEpoch = this.captureReadyGraphEpoch()
     const worktree = await this.resolveWorktreeSelector(worktreeSelector)
@@ -12497,6 +13805,101 @@ export class OrcaRuntimeService {
     }
   }
 
+  private resolveFolderWorkspaceConnectionId(workspace: FolderWorkspace): string | null {
+    const repos = this.store?.getRepos() ?? []
+    const projectGroups = this.store?.getProjectGroups?.() ?? []
+    const connection = inferFolderWorkspacePathConnection({
+      folderPath: workspace.folderPath,
+      projectGroupId: workspace.projectGroupId,
+      connectionId: workspace.connectionId ?? null,
+      projectGroups,
+      repos
+    })
+    if (connection.kind === 'ambiguous') {
+      // Why: a single PTY can only be spawned on one runtime target; mixed
+      // child repo connections need an explicit V2 routing decision.
+      throw new Error('folder_workspace_connection_ambiguous')
+    }
+    return connection.kind === 'ssh' ? connection.connectionId : null
+  }
+
+  private async resolveFolderWorkspaceLaunchScope(
+    selector: string
+  ): Promise<TerminalWorkspaceLaunchScope | null> {
+    const workspaceSelector = selector.startsWith('id:') ? selector.slice(3) : selector
+    const parsed = parseWorkspaceKey(workspaceSelector)
+    if (parsed?.type !== 'folder') {
+      return null
+    }
+    const workspace = this.store
+      ?.getFolderWorkspaces?.()
+      .find((entry) => entry.id === parsed.folderWorkspaceId)
+    if (!workspace) {
+      throw new Error('selector_not_found')
+    }
+    if (!this.store) {
+      throw new Error('runtime_unavailable')
+    }
+    const status = await getFolderWorkspacePathStatus(
+      this.store,
+      { scope: 'folder-workspace', folderWorkspaceId: workspace.id },
+      { getSshFilesystemProvider }
+    )
+    assertFolderWorkspacePathUsable(status)
+    return {
+      id: folderWorkspaceKey(workspace.id),
+      path: workspace.folderPath,
+      connectionId: this.resolveFolderWorkspaceConnectionId(workspace),
+      folderWorkspace: workspace
+    }
+  }
+
+  private async resolveTerminalWorkspaceLaunchScope(
+    selector: string
+  ): Promise<TerminalWorkspaceLaunchScope> {
+    const folderScope = await this.resolveFolderWorkspaceLaunchScope(selector)
+    if (folderScope) {
+      return folderScope
+    }
+
+    const workspaceSelector = selector.startsWith('id:') ? selector.slice(3) : selector
+    const parsed = parseWorkspaceKey(workspaceSelector)
+    const worktreeSelector = parsed?.type === 'worktree' ? `id:${parsed.worktreeId}` : selector
+    const worktree = await this.resolveWorktreeSelector(worktreeSelector)
+    const repo = this.store?.getRepo(worktree.repoId) ?? null
+    return {
+      id: worktree.id,
+      path: worktree.path,
+      connectionId: repo?.connectionId ?? null,
+      folderWorkspace: null
+    }
+  }
+
+  private buildTerminalWorkspaceEnv(
+    scope: TerminalWorkspaceLaunchScope,
+    baseEnv: Record<string, string>,
+    paneKey: string,
+    tabId: string,
+    agentTeamsEnv?: Record<string, string>
+  ): Record<string, string> {
+    const env = {
+      ...baseEnv,
+      ...agentTeamsEnv,
+      ORCA_PANE_KEY: paneKey,
+      ORCA_TAB_ID: tabId,
+      ORCA_WORKTREE_ID: scope.id
+    }
+    if (!scope.folderWorkspace) {
+      return env
+    }
+    return {
+      ...env,
+      ORCA_WORKSPACE_ID: scope.id,
+      ORCA_PROJECT_GROUP_ID: scope.folderWorkspace.projectGroupId,
+      ORCA_WORKSPACE_ROOT: scope.folderWorkspace.folderPath
+    }
+  }
+
   private async resolveWorktreeSelector(selector: string): Promise<ResolvedWorktree> {
     const worktrees = await this.listResolvedWorktrees()
     let candidates: ResolvedWorktree[]
@@ -12544,6 +13947,33 @@ export class OrcaRuntimeService {
       throw new Error('selector_ambiguous')
     }
     throw new Error('selector_not_found')
+  }
+
+  private async resolveWorkspaceParentSelector(selector: string): Promise<ResolvedWorkspaceParent> {
+    const rawSelector = selector.startsWith('id:') ? selector.slice('id:'.length) : selector
+    const parsed = parseWorkspaceKey(rawSelector)
+    if (parsed?.type === 'folder') {
+      const folderWorkspace = this.store
+        ?.getFolderWorkspaces?.()
+        .find((workspace) => workspace.id === parsed.folderWorkspaceId)
+      if (!folderWorkspace) {
+        throw new Error('selector_not_found')
+      }
+      return {
+        type: 'folder',
+        workspaceKey: folderWorkspaceKey(folderWorkspace.id),
+        folderWorkspace,
+        instanceId: null
+      }
+    }
+    const worktreeSelector = parsed?.type === 'worktree' ? `id:${parsed.worktreeId}` : selector
+    const worktree = await this.resolveWorktreeSelector(worktreeSelector)
+    return {
+      type: 'worktree',
+      workspaceKey: worktreeWorkspaceKey(worktree.id),
+      worktree,
+      instanceId: worktree.instanceId ?? null
+    }
   }
 
   private validateLineageParent(child: ResolvedWorktree, parent: ResolvedWorktree): void {
@@ -12594,10 +14024,16 @@ export class OrcaRuntimeService {
       return { kind: 'none', warnings: [] }
     }
 
-    if (input.noParent === true && input.parentWorktree) {
+    if (input.noParent === true && (input.parentWorkspace || input.parentWorktree)) {
       throw new RuntimeLineageError(
         'LINEAGE_PARENT_CONTEXT_CONFLICT',
-        'Choose either --parent-worktree or --no-parent, not both.'
+        'Choose either a parent workspace flag or --no-parent, not both.'
+      )
+    }
+    if (input.parentWorkspace && input.parentWorktree) {
+      throw new RuntimeLineageError(
+        'LINEAGE_PARENT_CONTEXT_CONFLICT',
+        'Choose either --parent-workspace or --parent-worktree, not both.'
       )
     }
 
@@ -12605,12 +14041,39 @@ export class OrcaRuntimeService {
       return { kind: 'none', warnings: [] }
     }
 
+    if (input.parentWorkspace) {
+      try {
+        return {
+          kind: 'lineage',
+          parent: await this.resolveWorkspaceParentSelector(input.parentWorkspace),
+          origin: 'cli',
+          capture: { source: 'explicit-cli-flag', confidence: 'explicit' }
+        }
+      } catch {
+        throw new RuntimeLineageError(
+          'LINEAGE_PARENT_NOT_FOUND',
+          'Parent workspace was not found.',
+          {
+            nextSteps: [
+              'Pass a valid --parent-workspace selector such as folder:<id> or worktree:<id>.',
+              'Retry with --no-parent to create without lineage.'
+            ]
+          }
+        )
+      }
+    }
+
     if (input.parentWorktree) {
       try {
         const parent = await this.resolveWorktreeSelector(input.parentWorktree)
         return {
           kind: 'lineage',
-          parent,
+          parent: {
+            type: 'worktree',
+            workspaceKey: worktreeWorkspaceKey(parent.id),
+            worktree: parent,
+            instanceId: parent.instanceId ?? null
+          },
           origin: 'cli',
           capture: { source: 'explicit-cli-flag', confidence: 'explicit' }
         }
@@ -12633,13 +14096,35 @@ export class OrcaRuntimeService {
     let cwdCandidate: WorktreeLineageCandidate | null = null
     let terminalContextResolved = false
 
-    if (input.orchestrationContext?.parentWorktreeId) {
+    if (input.envParentWorkspace) {
       try {
         candidates.push({
+          source: 'env-workspace',
+          parent: await this.resolveWorkspaceParentSelector(input.envParentWorkspace)
+        })
+      } catch {
+        warnings.push({
+          code: 'LINEAGE_PARENT_CONTEXT_MISSING',
+          message:
+            'Worktree created, but Orca could not validate the environment parent workspace.',
+          details: { envParentWorkspace: input.envParentWorkspace }
+        })
+      }
+    }
+
+    if (input.orchestrationContext?.parentWorktreeId) {
+      try {
+        const parent = await this.resolveWorktreeSelector(
+          `id:${input.orchestrationContext.parentWorktreeId}`
+        )
+        candidates.push({
           source: 'orchestration-context',
-          parent: await this.resolveWorktreeSelector(
-            `id:${input.orchestrationContext.parentWorktreeId}`
-          )
+          parent: {
+            type: 'worktree',
+            workspaceKey: worktreeWorkspaceKey(parent.id),
+            worktree: parent,
+            instanceId: parent.instanceId ?? null
+          }
         })
       } catch {
         // Keep creation recoverable; the warning below covers missing inferred context.
@@ -12657,7 +14142,9 @@ export class OrcaRuntimeService {
     if (input.callerTerminalHandle) {
       try {
         const terminal = await this.showTerminal(input.callerTerminalHandle)
-        const terminalParent = await this.resolveWorktreeSelector(`id:${terminal.worktreeId}`)
+        const terminalParent = await this.resolveWorkspaceParentSelector(
+          `id:${terminal.worktreeId}`
+        )
         const activeDispatch = this._orchestrationDb?.getActiveDispatchForTerminal(
           input.callerTerminalHandle
         )
@@ -12698,7 +14185,7 @@ export class OrcaRuntimeService {
       try {
         cwdCandidate = {
           source: 'cwd-context',
-          parent: await this.resolveWorktreeSelector(input.cwdParentWorktree)
+          parent: await this.resolveWorkspaceParentSelector(input.cwdParentWorktree)
         }
       } catch {
         warnings.push({
@@ -12719,7 +14206,9 @@ export class OrcaRuntimeService {
     }
 
     const [first] = candidates
-    const conflict = candidates.find((candidate) => candidate.parent.id !== first.parent.id)
+    const conflict = candidates.find(
+      (candidate) => candidate.parent.workspaceKey !== first.parent.workspaceKey
+    )
     if (conflict) {
       return {
         kind: 'none',
@@ -12728,11 +14217,13 @@ export class OrcaRuntimeService {
             code: 'LINEAGE_PARENT_CONTEXT_CONFLICT',
             message: 'Worktree created, but Orca could not prove which parent workspace caused it.',
             details: {
-              terminalParentWorktreeId: candidates.find((c) => c.source === 'terminal-context')
-                ?.parent.id,
-              orchestrationParentWorktreeId: candidates.find(
+              terminalParentWorkspaceKey: candidates.find((c) => c.source === 'terminal-context')
+                ?.parent.workspaceKey,
+              envParentWorkspaceKey: candidates.find((c) => c.source === 'env-workspace')?.parent
+                .workspaceKey,
+              orchestrationParentWorkspaceKey: candidates.find(
                 (c) => c.source === 'orchestration-context'
-              )?.parent.id
+              )?.parent.workspaceKey
             }
           }
         ]
@@ -12740,7 +14231,9 @@ export class OrcaRuntimeService {
     }
 
     const preferred =
-      candidates.find((candidate) => candidate.source === 'orchestration-context') ?? first
+      candidates.find((candidate) => candidate.source === 'env-workspace') ??
+      candidates.find((candidate) => candidate.source === 'orchestration-context') ??
+      first
     return {
       kind: 'lineage',
       parent: preferred.parent,
@@ -12781,9 +14274,15 @@ export class OrcaRuntimeService {
     }
     try {
       const terminal = await this.showTerminal(parentHandle)
+      const parent = await this.resolveWorktreeSelector(`id:${terminal.worktreeId}`)
       return {
         source: 'orchestration-context',
-        parent: await this.resolveWorktreeSelector(`id:${terminal.worktreeId}`),
+        parent: {
+          type: 'worktree',
+          workspaceKey: worktreeWorkspaceKey(parent.id),
+          worktree: parent,
+          instanceId: parent.instanceId ?? null
+        },
         taskId
       }
     } catch {
@@ -12819,18 +14318,22 @@ export class OrcaRuntimeService {
         continue
       }
       const candidate = await this.resolveLineageCandidateForTaskId(taskId)
-      if (!candidate?.parent.instanceId || candidate.parent.id === worktree.id) {
+      if (
+        !candidate?.parent.instanceId ||
+        candidate.parent.type !== 'worktree' ||
+        candidate.parent.worktree.id === worktree.id
+      ) {
         continue
       }
       try {
-        this.validateLineageParent(worktree, candidate.parent)
+        this.validateLineageParent(worktree, candidate.parent.worktree)
       } catch {
         continue
       }
       store.setWorktreeLineage(worktree.id, {
         worktreeId: worktree.id,
         worktreeInstanceId: worktree.instanceId,
-        parentWorktreeId: candidate.parent.id,
+        parentWorktreeId: candidate.parent.worktree.id,
         parentWorktreeInstanceId: candidate.parent.instanceId,
         origin: 'orchestration',
         capture: { source: 'orchestration-context', confidence: 'inferred' },
@@ -12843,6 +14346,11 @@ export class OrcaRuntimeService {
   async listWorktreeLineage(): Promise<Record<string, WorktreeLineage>> {
     await this.hydrateInferredWorktreeLineage()
     return this.store?.getAllWorktreeLineage?.() ?? {}
+  }
+
+  async listWorkspaceLineage(): Promise<Record<WorkspaceKey, WorkspaceLineage>> {
+    await this.hydrateInferredWorktreeLineage()
+    return this.store?.getAllWorkspaceLineage?.() ?? {}
   }
 
   private async resolveRepoSelector(selector: string): Promise<Repo> {
@@ -12889,6 +14397,70 @@ export class OrcaRuntimeService {
     return this.store as unknown as Store
   }
 
+  private buildResolvedWorktreeFromId(worktreeId: string): ResolvedWorktree | null {
+    const parsed = splitWorktreeIdForFilesystem(worktreeId)
+    if (!parsed?.repoId || !parsed.worktreePath) {
+      return null
+    }
+    const repo = this.store?.getRepos().find((entry) => entry.id === parsed.repoId)
+    const git = {
+      path: parsed.worktreePath,
+      head: '',
+      branch: '',
+      isBare: false,
+      isMainWorktree: repo ? areWorktreePathsEqual(parsed.worktreePath, repo.path) : false
+    }
+    const meta = this.store?.getWorktreeMeta(worktreeId)
+    const merged = mergeWorktree(parsed.repoId, git, meta, repo?.displayName)
+    return {
+      ...merged,
+      id: worktreeId,
+      parentWorktreeId: null,
+      childWorktreeIds: [],
+      lineage: null,
+      git,
+      displayName: merged.displayName,
+      comment: merged.comment
+    }
+  }
+
+  private listKnownResolvedWorktreesForExplicitTarget(
+    targetWorktreeId: string,
+    targetWorktree: ResolvedWorktree | null
+  ): ResolvedWorktree[] {
+    if (!this.store || !targetWorktree) {
+      return []
+    }
+    const target = splitWorktreeIdForFilesystem(targetWorktreeId)
+    if (!target?.repoId || !target.worktreePath) {
+      return []
+    }
+    const worktreeIds = new Set(
+      Object.keys(this.store.getAllWorktreeMeta()).filter((worktreeId) => {
+        const parsed = splitWorktreeIdForFilesystem(worktreeId)
+        return (
+          parsed?.repoId === target.repoId &&
+          Boolean(parsed.worktreePath) &&
+          (isPathInsideOrEqual(target.worktreePath, parsed.worktreePath) ||
+            isPathInsideOrEqual(parsed.worktreePath, target.worktreePath))
+        )
+      })
+    )
+    worktreeIds.add(targetWorktreeId)
+
+    const resolved: ResolvedWorktree[] = []
+    for (const worktreeId of worktreeIds) {
+      const worktree =
+        worktreeId === targetWorktreeId
+          ? targetWorktree
+          : this.buildResolvedWorktreeFromId(worktreeId)
+      if (worktree) {
+        resolved.push(worktree)
+      }
+    }
+    return resolved
+  }
+
   private async listResolvedWorktrees(): Promise<ResolvedWorktree[]> {
     if (!this.store) {
       return []
@@ -12918,6 +14490,7 @@ export class OrcaRuntimeService {
       return []
     }
     const now = Date.now()
+    const metaById = this.store.getAllWorktreeMeta() ?? {}
     const perRepoWorktrees = await Promise.all(
       this.store.getRepos().map(async (repo) => {
         if (isFolderRepo(repo)) {
@@ -12948,7 +14521,6 @@ export class OrcaRuntimeService {
         if (scan.ok) {
           this.pruneLineageForMissingRepoWorktrees(repo, gitWorktrees)
         }
-        const metaById = this.store?.getAllWorktreeMeta() ?? {}
         return gitWorktrees.map((gitWorktree) => {
           const worktreeId = `${repo.id}::${gitWorktree.path}`
           // Why: lineage validation needs a durable instance ID even when the
@@ -13037,12 +14609,25 @@ export class OrcaRuntimeService {
     }
     const liveIds = new Set(gitWorktrees.map((worktree) => `${repo.id}::${worktree.path}`))
     const repoPrefix = `${repo.id}::`
+    for (const childWorkspaceKey of Object.keys(store.getAllWorkspaceLineage?.() ?? {})) {
+      const childScope = parseWorkspaceKey(childWorkspaceKey)
+      if (
+        childScope?.type === 'worktree' &&
+        childScope.worktreeId.startsWith(repoPrefix) &&
+        !liveIds.has(childScope.worktreeId)
+      ) {
+        if (isWorkspaceKey(childWorkspaceKey)) {
+          store.removeWorkspaceLineage?.(childWorkspaceKey)
+        }
+      }
+    }
     for (const [childId, lineage] of Object.entries(store.getAllWorktreeLineage())) {
       if (childId.startsWith(repoPrefix) && !liveIds.has(childId)) {
         // Why: runtime selector scans can be the only scan before a path is
         // reused. Once a successful scan proves the child is gone, stale
         // lineage must not survive into the replacement checkout.
         store.removeWorktreeLineage(childId)
+        store.removeWorkspaceLineage?.(worktreeWorkspaceKey(childId))
       }
       if (
         lineage.parentWorktreeId.startsWith(repoPrefix) &&
@@ -13121,6 +14706,21 @@ export class OrcaRuntimeService {
     this.notifyWorktreesChanged(repoId)
   }
 
+  /** Like {@link notifyBranchRenamed}, but carries the old->new worktree id so the
+   *  renderer re-keys its worktree-scoped state instead of treating the id change
+   *  (from a folder rename) as a deletion. Same channel = guaranteed ordering. */
+  notifyWorktreeFolderRenamed(repoId: string, oldWorktreeId: string, newWorktreeId: string): void {
+    this.invalidateResolvedWorktreeCache()
+    this.notifier?.worktreesChanged(repoId, { oldWorktreeId, newWorktreeId })
+    // Mirror notifyBranchRenamed so in-process onClientEvent listeners also see the rename.
+    this.emitClientEvent({ type: 'worktreesChanged', repoId })
+  }
+
+  notifyFolderWorkspaceChanged(): void {
+    this.invalidateResolvedWorktreeCache()
+    this.notifyReposChanged()
+  }
+
   private recordPtyWorktree(
     ptyId: string,
     worktreeId: string,
@@ -13133,6 +14733,7 @@ export class OrcaRuntimeService {
   ): RuntimePtyWorktreeRecord {
     let pty = this.ptysById.get(ptyId)
     if (!pty) {
+      const titleObservedAt = state.title ? this.nextTitleObservationSequence() : null
       pty = {
         ptyId,
         worktreeId,
@@ -13144,13 +14745,21 @@ export class OrcaRuntimeService {
         lastExitCode: null,
         lastAgentStatus: null,
         lastOscTitle: null,
+        lastOscTitleAt: null,
+        managementTitle: null,
+        managementTitleAt: null,
         title: state.title ?? null,
+        titleUpdatedAt: titleObservedAt,
         lastOutputAt: state.lastOutputAt ?? null,
         tailBuffer: [],
         tailPartialLine: '',
+        tailPendingAnsi: '',
         tailTruncated: false,
         tailLinesTotal: 0,
         preview: state.preview ?? ''
+      }
+      if (state.title) {
+        this.setPtyManagementTitleFromObservedTitle(pty, state.title, titleObservedAt ?? 0)
       }
       this.ptysById.set(ptyId, pty)
       // Why: restored/controller-discovered PTYs learn their worktree here
@@ -13181,7 +14790,10 @@ export class OrcaRuntimeService {
       pty.preview = state.preview
     }
     if (state.title !== undefined && state.title !== null && state.title.length > 0) {
+      const observedAt = this.nextTitleObservationSequence()
       pty.title = state.title
+      pty.titleUpdatedAt = observedAt
+      this.setPtyManagementTitleFromObservedTitle(pty, state.title, observedAt)
     }
     // Why: recordPtyWorktree is the common lifecycle point for every path that
     // resolves a PTY's worktree, including renderer restore and controller list.
@@ -13213,10 +14825,11 @@ export class OrcaRuntimeService {
   }
 
   private async refreshPtyWorktreeRecordsFromController(
-    resolvedWorktrees: ResolvedWorktree[]
-  ): Promise<void> {
+    resolvedWorktrees: ResolvedWorktree[],
+    targetWorktreeId: string | null = null
+  ): Promise<Set<string> | null> {
     if (!this.ptyController?.listProcesses) {
-      return
+      return null
     }
     const sessionsResult = await withTimeoutResult(
       this.ptyController.listProcesses(),
@@ -13224,7 +14837,7 @@ export class OrcaRuntimeService {
     )
     if (!sessionsResult.ok) {
       // Why: a transient controller failure is not evidence that retained PTYs exited.
-      return
+      return null
     }
     const sessions = sessionsResult.value
     const livePtyIds = new Set(sessions.map((session) => session.id))
@@ -13232,10 +14845,12 @@ export class OrcaRuntimeService {
       const worktreeId =
         inferWorktreeIdFromPtyId(session.id) ??
         findResolvedWorktreeIdForPath(resolvedWorktrees, session.cwd)
+      if (targetWorktreeId && worktreeId !== targetWorktreeId) {
+        continue
+      }
       if (worktreeId) {
         this.recordPtyWorktree(session.id, worktreeId, {
-          connected: true,
-          title: session.title
+          connected: true
         })
       }
     }
@@ -13246,6 +14861,7 @@ export class OrcaRuntimeService {
       }
     }
     this.pruneDisconnectedPtyRecords()
+    return livePtyIds
   }
 
   private pruneDisconnectedPtyTranscript(pty: RuntimePtyWorktreeRecord): void {
@@ -13256,6 +14872,7 @@ export class OrcaRuntimeService {
     // but their retained transcripts must not accumulate after the process dies.
     pty.tailBuffer = []
     pty.tailPartialLine = ''
+    pty.tailPendingAnsi = ''
     pty.tailTruncated = false
     pty.tailLinesTotal = 0
   }
@@ -13281,6 +14898,8 @@ export class OrcaRuntimeService {
     this.agentStatusOscProcessorsByPtyId.delete(ptyId)
     this.terminalSpawnCommandsByPtyId.delete(ptyId)
     this.disposePtyTitleTracker(ptyId)
+    this.oscTitleScanTailByPtyId.delete(ptyId)
+    this.clearAgentRowSnapshotsForPty(ptyId)
     const handle = this.handleByPtyId.get(ptyId)
     if (handle) {
       this.handleByPtyId.delete(ptyId)
@@ -13345,12 +14964,13 @@ export class OrcaRuntimeService {
 
     return {
       handle: this.issueHandle(leaf),
+      ptyId: leaf.ptyId,
       worktreeId: leaf.worktreeId,
       worktreePath: worktree?.path ?? '',
       branch: worktree?.branch ?? '',
       tabId: leaf.tabId,
       leafId: leaf.leafId,
-      title: tab?.title ?? null,
+      title: getLatestLeafTitle(leaf, tab?.title ?? null),
       connected: leaf.connected,
       writable: leaf.writable,
       lastOutputAt: leaf.lastOutputAt,
@@ -13730,6 +15350,26 @@ export class OrcaRuntimeService {
       const paneKey = isTerminalLeafId(tab.leafId)
         ? makePaneKey(tab.parentTabId, tab.leafId)
         : `${tab.parentTabId}:${legacyPaneId ?? tab.leafId}`
+      const leafTitle = leaf
+        ? getLatestAgentCandidateTitle(
+            { title: leaf.paneTitle, updatedAt: leaf.paneTitleUpdatedAt },
+            { title: leaf.lastOscTitle, updatedAt: leaf.lastOscTitleAt }
+          )
+        : null
+      const ptyTitle = pty
+        ? getLatestAgentCandidateTitle(
+            { title: pty.title, updatedAt: pty.titleUpdatedAt },
+            { title: pty.lastOscTitle, updatedAt: pty.lastOscTitleAt }
+          )
+        : null
+      const title = leafTitle ?? ptyTitle ?? syncedTab?.title ?? tab.title
+      const liveTitleEvidence = leafTitle ?? ptyTitle
+      const liveTitleEvidenceClassification = classifyAgentTitle(liveTitleEvidence)
+      const agentStatus =
+        tab.agentStatus &&
+        (liveTitleEvidence === null || liveTitleEvidenceClassification === 'agent')
+          ? { agentStatus: tab.agentStatus }
+          : null
       // Why: web/mobile clients hold these handles across renderer graph syncs;
       // leaf handles are graph-epoch-bound, but PTY handles remain streamable.
       const terminalHandle = liveLeafPtyId
@@ -13748,12 +15388,11 @@ export class OrcaRuntimeService {
         id: tab.id,
         parentTabId: tab.parentTabId,
         leafId: tab.leafId,
-        title: leaf?.paneTitle ?? syncedTab?.title ?? pty?.lastOscTitle ?? pty?.title ?? tab.title,
+        title,
         ...(tab.ptyId ? { ptyId: tab.ptyId } : {}),
         ...(tab.terminalTheme ? { terminalTheme: tab.terminalTheme } : {}),
-        ...(tab.agentStatus
-          ? { agentStatus: tab.agentStatus }
-          : this.buildPtyMobileAgentStatus(livePty ?? pty, tab, terminalHandle)),
+        ...(tab.launchAgent ? { launchAgent: tab.launchAgent } : {}),
+        ...(agentStatus ?? this.buildPtyMobileAgentStatus(livePty ?? pty, tab, terminalHandle)),
         ...(tab.parentLayout ? { parentLayout: tab.parentLayout } : {}),
         isActive: tab.isActive,
         ...(terminalHandle
@@ -13808,6 +15447,14 @@ export class OrcaRuntimeService {
     if (!pty?.lastAgentStatus) {
       return {}
     }
+    const ptyTitle = getLatestAgentCandidateTitle(
+      { title: pty.title, updatedAt: pty.titleUpdatedAt },
+      { title: pty.lastOscTitle, updatedAt: pty.lastOscTitleAt }
+    )
+    const ptyTitleClassification = classifyAgentTitle(ptyTitle)
+    if (ptyTitle !== null && ptyTitleClassification !== 'agent') {
+      return {}
+    }
     const now = pty.lastOutputAt ?? Date.now()
     return {
       agentStatus: {
@@ -13822,9 +15469,10 @@ export class OrcaRuntimeService {
         stateStartedAt: now,
         paneKey: this.getMobileTerminalPaneKey(tab),
         ...(terminalHandle ? { terminalHandle } : {}),
+        ...(tab.launchAgent ? { agentType: tab.launchAgent } : {}),
         worktreeId: pty.worktreeId,
         tabId: tab.parentTabId,
-        terminalTitle: pty.lastOscTitle ?? pty.title ?? tab.title,
+        terminalTitle: getLatestPtyTitle(pty) ?? tab.title,
         stateHistory: []
       }
     }
@@ -13898,6 +15546,14 @@ export class OrcaRuntimeService {
   getAgentStatusForHandle(handle: string): string | null {
     try {
       const { leaf } = this.getLiveLeafForHandle(handle)
+      const title = getLatestAgentCandidateTitle(
+        { title: leaf.paneTitle, updatedAt: leaf.paneTitleUpdatedAt },
+        { title: leaf.lastOscTitle, updatedAt: leaf.lastOscTitleAt },
+        { title: this.tabs.get(leaf.tabId)?.title, updatedAt: 0 }
+      )
+      if (title) {
+        return detectAgentStatusFromTitle(title)
+      }
       return leaf.lastAgentStatus
     } catch {
       return null
@@ -14033,33 +15689,66 @@ export class OrcaRuntimeService {
     return makePaneKey(record.tabId, record.leafId)
   }
 
-  // Why: OSC title detection via onPtyData is the tightest signal for agent
-  // presence, but the runtime may not see PTY data for daemon-hosted terminals
-  // (the daemon adapter stubs getForegroundProcess). This checks three signals
-  // in order: (1) lastAgentStatus from PTY data OSC titles, (2) the renderer-
-  // synced tab title (which reflects OSC titles from the xterm instance), (3)
-  // retained ready-tail text, and (4) the PTY foreground process. Returns true
-  // if any signal indicates a non-shell agent is running.
+  private setPtyManagementTitleFromObservedTitle(
+    pty: RuntimePtyWorktreeRecord,
+    title: string | null | undefined,
+    observedAt: number
+  ): void {
+    const trimmed = title?.trim()
+    if (!trimmed) {
+      return
+    }
+    if (isClaudeManagementTitle(trimmed)) {
+      pty.managementTitle = trimmed
+      pty.managementTitleAt = observedAt
+      return
+    }
+    if (
+      detectAgentStatusFromTitle(trimmed) !== null &&
+      observedAt >= (pty.managementTitleAt ?? -1)
+    ) {
+      pty.managementTitle = null
+      pty.managementTitleAt = null
+    }
+  }
+
+  private nextTitleObservationSequence(): number {
+    this.titleObservationSequence += 1
+    return this.titleObservationSequence
+  }
+
+  // Why: title detection is the tightest signal for agent presence, but a
+  // Claude management title is negative evidence for task-capable activity.
+  // Check pane-scoped titles before tab fallback, then retained ready-tail text,
+  // stale title status, and foreground process.
   async isTerminalRunningAgent(handle: string): Promise<boolean> {
     try {
       const pty = this.getLivePtyForHandle(handle)
       if (pty) {
-        return await this.isPtyRunningAgent(pty.pty)
+        const leaf = this.getPrimaryLeafForPty(pty.pty.ptyId)
+        return await this.isPtyRunningAgent(pty.pty, leaf)
       }
       const { leaf } = this.getLiveLeafForHandle(handle)
-      if (leaf.lastAgentStatus !== null) {
-        return true
-      }
       // Why: check both the leaf-level pane title (synced from the renderer's
       // runtimePaneTitlesByTabId) and the tab-level title. The tab title already
       // includes OSC-enriched agent indicators (e.g. ✳ prefix) synced from the
       // renderer's xterm instance.
-      const titleToCheck = leaf.paneTitle ?? this.tabs.get(leaf.tabId)?.title
-      if (titleToCheck && detectAgentStatusFromTitle(titleToCheck) !== null) {
+      const paneTitle = getLatestLeafTitle(leaf, null)
+      const paneTitleClassification = classifyAgentTitle(paneTitle)
+      if (paneTitleClassification === 'agent') {
+        return true
+      }
+      const tabTitle = this.tabs.get(leaf.tabId)?.title?.trim() || null
+      const tabTitleClassification = paneTitle === null ? classifyAgentTitle(tabTitle) : 'neutral'
+      if (tabTitleClassification === 'agent') {
         return true
       }
       const waitText = buildTerminalWaitText(leaf.tailBuffer, leaf.tailPartialLine, leaf.preview)
       if (isKnownReadyPromptPreview(waitText)) {
+        return true
+      }
+      const hasCurrentTitleEvidence = paneTitle !== null || tabTitle !== null
+      if (leaf.lastAgentStatus !== null && !hasCurrentTitleEvidence) {
         return true
       }
       if (!leaf.ptyId || !this.ptyController) {
@@ -14069,22 +15758,62 @@ export class OrcaRuntimeService {
       if (!fg) {
         return false
       }
-      return !isShellProcess(fg)
+      // Why: Claude's management UI runs under the Claude process but is not a
+      // task-capable agent session. Suppress that process only; another foreground
+      // agent can take over before titles update.
+      const shouldSuppressClaudeForeground =
+        paneTitleClassification === 'management' || tabTitleClassification === 'management'
+      if (shouldSuppressClaudeForeground && isExpectedAgentProcess(fg, 'claude')) {
+        return false
+      }
+      // Why: review-note delivery auto-submits with Enter. A generic non-shell
+      // TUI can be focused in a terminal, but only known agent processes are safe.
+      return await this.isRecognizedForegroundAgentProcess(leaf.ptyId, fg, {
+        suppressClaude: shouldSuppressClaudeForeground
+      })
     } catch {
       return false
     }
   }
 
-  private async isPtyRunningAgent(pty: RuntimePtyWorktreeRecord): Promise<boolean> {
-    if (pty.lastAgentStatus !== null) {
+  private async isPtyRunningAgent(
+    pty: RuntimePtyWorktreeRecord,
+    leaf: RuntimeLeafRecord | null = null
+  ): Promise<boolean> {
+    const leafTitle = leaf
+      ? getLatestAgentCandidateTitle(
+          { title: leaf.paneTitle, updatedAt: leaf.paneTitleUpdatedAt },
+          { title: leaf.lastOscTitle, updatedAt: leaf.lastOscTitleAt }
+        )
+      : null
+    const leafTitleClassification = classifyAgentTitle(leafTitle)
+    if (leafTitleClassification === 'agent') {
       return true
     }
-    const titleToCheck = pty.lastOscTitle ?? pty.title
-    if (titleToCheck && detectAgentStatusFromTitle(titleToCheck) !== null) {
+    const ptyTitle = getLatestAgentCandidateTitle(
+      { title: pty.title, updatedAt: pty.titleUpdatedAt },
+      { title: pty.lastOscTitle, updatedAt: pty.lastOscTitleAt }
+    )
+    const ptyTitleClassification = classifyAgentTitle(ptyTitle)
+    if (leafTitle === null && ptyTitleClassification === 'agent') {
       return true
     }
+    const managementTitleClassification = classifyLatestAgentTitle({
+      title: pty.managementTitle,
+      updatedAt: pty.managementTitleAt
+    })
     const waitText = buildTerminalWaitText(pty.tailBuffer, pty.tailPartialLine, pty.preview)
     if (isKnownReadyPromptPreview(waitText)) {
+      return true
+    }
+    // Why: stale status is only a fallback when no current title evidence
+    // exists; neutral titles such as shells should clear it.
+    if (
+      pty.lastAgentStatus !== null &&
+      leafTitle === null &&
+      ptyTitle === null &&
+      managementTitleClassification !== 'management'
+    ) {
       return true
     }
     if (!this.ptyController) {
@@ -14094,7 +15823,64 @@ export class OrcaRuntimeService {
     if (!fg) {
       return false
     }
-    return !isShellProcess(fg)
+    const shouldSuppressClaudeForeground =
+      leafTitle !== null
+        ? leafTitleClassification === 'management'
+        : managementTitleClassification === 'management'
+    if (shouldSuppressClaudeForeground && isExpectedAgentProcess(fg, 'claude')) {
+      return false
+    }
+    // Why: review-note delivery auto-submits with Enter. A generic non-shell
+    // TUI can be focused in a terminal, but only known agent processes are safe.
+    return await this.isRecognizedForegroundAgentProcess(pty.ptyId, fg, {
+      suppressClaude: shouldSuppressClaudeForeground
+    })
+  }
+
+  private async isRecognizedForegroundAgentProcess(
+    ptyId: string,
+    foregroundProcess: string,
+    options: { suppressClaude?: boolean } = {}
+  ): Promise<boolean> {
+    const initialRecognition = recognizeAgentProcess(foregroundProcess)
+    if (initialRecognition !== null) {
+      return !(
+        options.suppressClaude === true &&
+        isExpectedAgentProcess(initialRecognition.processName, 'claude')
+      )
+    }
+    if (!this.isAgentWrapperForegroundProcess(foregroundProcess) || !this.ptyController) {
+      return false
+    }
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < FOREGROUND_AGENT_WRAPPER_RETRY_TIMEOUT_MS) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, FOREGROUND_AGENT_WRAPPER_RETRY_INTERVAL_MS)
+      )
+      const refreshedProcess = await this.ptyController.getForegroundProcess(ptyId)
+      const refreshedRecognition = recognizeAgentProcess(refreshedProcess)
+      if (refreshedRecognition !== null) {
+        return !(
+          options.suppressClaude === true &&
+          isExpectedAgentProcess(refreshedRecognition.processName, 'claude')
+        )
+      }
+      if (!refreshedProcess || !this.isAgentWrapperForegroundProcess(refreshedProcess)) {
+        return false
+      }
+    }
+    return false
+  }
+
+  private isAgentWrapperForegroundProcess(processName: string): boolean {
+    // Why: daemon/SSH PTYs can report the interpreter before their async
+    // command-line cache resolves to the actual agent binary. Retry only
+    // known wrappers, never arbitrary non-shell TUIs.
+    return isAgentForegroundWrapperProcess(processName)
+  }
+
+  private getPrimaryLeafForPty(ptyId: string): RuntimeLeafRecord | null {
+    return this.getLeavesForPty(ptyId)[0] ?? null
   }
 
   deliverPendingMessagesForHandle(handle: string): void {
@@ -14205,12 +15991,13 @@ export class OrcaRuntimeService {
 
     return {
       handle: this.issuePtyHandle(pty),
+      ptyId: pty.ptyId,
       worktreeId: pty.worktreeId,
       worktreePath: worktree?.path ?? '',
       branch: worktree?.branch ?? '',
       tabId: `pty:${pty.ptyId}`,
       leafId: `pty:${pty.ptyId}`,
-      title: pty.lastOscTitle ?? pty.title,
+      title: getLatestPtyTitle(pty),
       connected: pty.connected,
       writable: pty.connected,
       lastOutputAt: pty.lastOutputAt,
@@ -14495,7 +16282,12 @@ export class OrcaRuntimeService {
   // handler, works even for daemon terminals), and (2) the PTY foreground process
   // + output quiescence. The poll self-cancels when the primary OSC path fires.
   private startTuiIdleFallbackPoll(waiter: TerminalWaiter, leaf: RuntimeLeafRecord): void {
+    let foregroundPollInFlight = false
     waiter.pollInterval = setInterval(async () => {
+      if (!waiter.pollInterval) {
+        return
+      }
+      let startedForegroundPoll = false
       try {
         if (leaf.lastAgentStatus === 'idle') {
           if (waiter.pollInterval) {
@@ -14546,7 +16338,14 @@ export class OrcaRuntimeService {
         }
         // Foreground process fallback: if the daemon/local provider can report
         // the process and it's a non-shell with quiet output, treat as idle.
-        if (leaf.lastAgentStatus === null && leaf.ptyId && this.ptyController) {
+        if (
+          leaf.lastAgentStatus === null &&
+          leaf.ptyId &&
+          this.ptyController &&
+          !foregroundPollInFlight
+        ) {
+          foregroundPollInFlight = true
+          startedForegroundPoll = true
           const fg = await this.ptyController.getForegroundProcess(leaf.ptyId)
           if (fg && !isShellProcess(fg)) {
             const quietMs = leaf.lastOutputAt ? Date.now() - leaf.lastOutputAt : 0
@@ -14561,12 +16360,21 @@ export class OrcaRuntimeService {
         }
       } catch {
         // Swallow transient PTY inspection errors and keep polling.
+      } finally {
+        if (startedForegroundPoll) {
+          foregroundPollInFlight = false
+        }
       }
     }, TUI_IDLE_POLL_INTERVAL_MS)
   }
 
   private startPtyTuiIdleFallbackPoll(waiter: TerminalWaiter, pty: RuntimePtyWorktreeRecord): void {
+    let foregroundPollInFlight = false
     waiter.pollInterval = setInterval(async () => {
+      if (!waiter.pollInterval) {
+        return
+      }
+      let startedForegroundPoll = false
       try {
         if (pty.lastAgentStatus === 'idle') {
           if (waiter.pollInterval) {
@@ -14602,7 +16410,9 @@ export class OrcaRuntimeService {
           this.resolveWaiter(waiter, buildPtyTerminalWaitResult(waiter.handle, 'tui-idle', pty))
           return
         }
-        if (pty.lastAgentStatus === null && this.ptyController) {
+        if (pty.lastAgentStatus === null && this.ptyController && !foregroundPollInFlight) {
+          foregroundPollInFlight = true
+          startedForegroundPoll = true
           const fg = await this.ptyController.getForegroundProcess(pty.ptyId)
           if (fg && !isShellProcess(fg)) {
             const quietMs = pty.lastOutputAt ? Date.now() - pty.lastOutputAt : 0
@@ -14617,6 +16427,10 @@ export class OrcaRuntimeService {
         }
       } catch {
         // Swallow transient PTY inspection errors and keep polling.
+      } finally {
+        if (startedForegroundPoll) {
+          foregroundPollInFlight = false
+        }
       }
     }, TUI_IDLE_POLL_INTERVAL_MS)
   }
@@ -14802,12 +16616,277 @@ export class OrcaRuntimeService {
     return searchLinearIssues(query, Math.min(Math.max(1, limit), 50), workspaceId)
   }
 
+  linearSearchForAgents(args: {
+    query: string
+    limit?: number
+    workspaceId?: string | 'all'
+  }): ReturnType<typeof searchLinearIssuesForAgents> {
+    return searchLinearIssuesForAgents(args)
+  }
+
+  linearIssueContext(request: LinearIssueRequest): ReturnType<typeof readLinearIssueContext> {
+    return readLinearIssueContext(request, (context) => this.linearResolveCurrentIssue(context))
+  }
+
+  async linearTeamListForAgents(params: {
+    workspaceId?: string | 'all'
+  }): Promise<LinearTeamListResult> {
+    try {
+      const result = await listLinearTeamsForAgent(params.workspaceId)
+      const workspaceErrors = result.errors.map((error) => ({
+        workspace: { id: error.workspaceId, name: error.workspaceName ?? error.workspaceId },
+        code: this.linearWorkspaceErrorCode(error.type),
+        message: sanitizeLinearErrorMessage(error.message)
+      }))
+      return {
+        teams: result.teams.map((team) => this.linearTeamSummary(team)),
+        meta: {
+          workspaceId: params.workspaceId,
+          returned: result.teams.length,
+          partial: workspaceErrors.length > 0,
+          workspaceErrors
+        }
+      }
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  async linearTeamMembersForAgents(params: {
+    teamInput: string
+    workspaceId?: string
+  }): Promise<LinearTeamMembersResult> {
+    const team = await this.resolveLinearTeamInput(params.teamInput, params.workspaceId)
+    try {
+      const members = await getLinearTeamMembersOrThrow(team.id, team.workspaceId)
+      return {
+        team: this.linearTeamSummary(team),
+        members: members.map((member) => ({
+          id: member.id,
+          displayName: member.displayName,
+          avatarUrl: member.avatarUrl
+        })),
+        meta: { workspaceId: team.workspaceId, returned: members.length }
+      }
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  async linearTeamStatesForAgents(params: {
+    teamInput: string
+    workspaceId?: string
+  }): Promise<LinearTeamStatesResult> {
+    const team = await this.resolveLinearTeamInput(params.teamInput, params.workspaceId)
+    const states = await this.getLinearTeamStatesForWrite(team.id, team.workspaceId)
+    return {
+      team: this.linearTeamSummary(team),
+      states: states.map((state) => ({
+        id: state.id,
+        name: state.name,
+        type: state.type,
+        color: state.color,
+        position: state.position
+      })),
+      meta: { workspaceId: team.workspaceId, returned: states.length }
+    }
+  }
+
+  async linearTeamLabelsForAgents(params: {
+    teamInput: string
+    workspaceId?: string
+  }): Promise<LinearTeamLabelsResult> {
+    const team = await this.resolveLinearTeamInput(params.teamInput, params.workspaceId)
+    const labels = await this.getLinearTeamLabelsForWrite(team.id, team.workspaceId)
+    return {
+      team: this.linearTeamSummary(team),
+      labels: labels.map((label) => ({ id: label.id, name: label.name, color: label.color })),
+      meta: { workspaceId: team.workspaceId, returned: labels.length }
+    }
+  }
+
+  async linearProjectListForAgents(params: {
+    query?: string
+    limit?: number
+    workspaceId?: string | 'all'
+  }): Promise<LinearProjectListResult> {
+    const limit = clampLinearSearchLimit(params.limit)
+    try {
+      const result = await this.linearListProjects(params.query, limit, params.workspaceId, true)
+      const projects = result.items.slice(0, limit).map((project) => ({
+        id: project.id,
+        name: project.name,
+        ...(project.url ? { url: project.url } : {}),
+        ...(project.workspaceId ? { workspaceId: project.workspaceId } : {}),
+        ...(project.workspaceName ? { workspaceName: project.workspaceName } : {}),
+        ...(project.teams ? { teams: project.teams } : {})
+      }))
+      const workspaceErrors = (result.errors ?? []).map((error) => ({
+        workspace: { id: error.workspaceId, name: error.workspaceName ?? error.workspaceId },
+        code: this.linearWorkspaceErrorCode(error.type),
+        message: sanitizeLinearErrorMessage(error.message)
+      }))
+      return {
+        projects,
+        meta: {
+          query: params.query,
+          workspaceId: params.workspaceId,
+          limit,
+          returned: projects.length,
+          hasMore: result.hasMore === true || result.items.length > limit,
+          partial: workspaceErrors.length > 0,
+          workspaceErrors
+        }
+      }
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  async linearIssueListForAgents(params: {
+    filter?: LinearIssueListFilter
+    teamInput?: string
+    limit?: number
+    workspaceId?: string | 'all'
+  }): Promise<LinearIssueListResult> {
+    const filter = params.filter ?? 'assigned'
+    const limit = clampLinearIssueListLimit(params.limit)
+    const team = params.teamInput
+      ? await this.resolveLinearTeamInput(params.teamInput, params.workspaceId)
+      : null
+    const workspaceId = team?.workspaceId ?? params.workspaceId
+    try {
+      const result = await listLinearIssues(filter, limit, workspaceId, team?.id)
+      return {
+        issues: result.items.map((issue) => ({
+          id: issue.id,
+          identifier: issue.identifier,
+          title: issue.title,
+          url: issue.url,
+          state: issue.state,
+          team: issue.team,
+          project: issue.project ?? null,
+          assignee: issue.assignee ?? null,
+          priority: issue.priority,
+          estimate: issue.estimate,
+          dueDate: issue.dueDate,
+          updatedAt: issue.updatedAt,
+          workspace: {
+            id: issue.workspaceId ?? workspaceId ?? '',
+            name: issue.workspaceName ?? issue.workspaceId ?? workspaceId ?? ''
+          }
+        })),
+        meta: {
+          filter,
+          workspaceId,
+          ...(team ? { team: this.linearTeamSummary(team) } : {}),
+          limit,
+          returned: result.items.length,
+          hasMore: result.hasMore === true,
+          partial: (result.errors?.length ?? 0) > 0,
+          workspaceErrors: (result.errors ?? []).map((error) => ({
+            workspace: { id: error.workspaceId, name: error.workspaceName ?? error.workspaceId },
+            code: this.linearWorkspaceErrorCode(error.type),
+            message: sanitizeLinearErrorMessage(error.message)
+          }))
+        }
+      }
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  async linearResolveCurrentIssue(
+    context?: LinearCurrentIssueContextHints
+  ): Promise<ReturnType<typeof getLinearCurrentIssueFromWorktree>> {
+    if (!this.store) {
+      throw new Error('runtime_unavailable')
+    }
+
+    let worktree: ResolvedWorktree | null = null
+    if (context?.terminalHandle) {
+      try {
+        const terminal = await this.showTerminal(context.terminalHandle)
+        if (context.worktreeId && context.worktreeId !== terminal.worktreeId) {
+          throw new LinearAgentAccessError(
+            'linear_permission_denied',
+            'The provided Linear worktree context does not match the caller terminal.'
+          )
+        }
+        worktree = await this.resolveWorktreeSelector(`id:${terminal.worktreeId}`)
+      } catch (error) {
+        if (error instanceof LinearAgentAccessError) {
+          throw error
+        }
+        if (context.remote === true || context.worktreeId) {
+          throw new LinearAgentAccessError(
+            'linear_issue_required',
+            'Could not verify the current Linear-linked worktree.'
+          )
+        }
+      }
+    }
+
+    if (!worktree && context?.remote !== true && context?.cwd) {
+      worktree = await this.resolveWorktreeForContainedPath(context.cwd)
+      if (!worktree) {
+        throw new LinearAgentAccessError(
+          'linear_issue_required',
+          'Run --current from inside an Orca-managed worktree or pass an issue id.'
+        )
+      }
+    }
+
+    if (!worktree) {
+      throw new LinearAgentAccessError(
+        'linear_issue_required',
+        'Run --current from inside an Orca-managed worktree or pass an issue id.'
+      )
+    }
+
+    const link = getLinearCurrentIssueFromWorktree(worktree)
+    if (!link.workspaceId) {
+      const backfill = resolveLegacyLinearLinkWorkspace(
+        worktree.linkedLinearIssue ?? '',
+        worktree.linkedLinearIssueOrganizationUrlKey
+      )
+      if (backfill?.workspaceId) {
+        this.store.setWorktreeMeta(worktree.id, {
+          linkedLinearIssueWorkspaceId: backfill.workspaceId,
+          linkedLinearIssueOrganizationUrlKey: backfill.organizationUrlKey ?? null
+        })
+        return {
+          ...link,
+          workspaceId: backfill.workspaceId,
+          organizationUrlKey: backfill.organizationUrlKey ?? link.organizationUrlKey,
+          backfill
+        }
+      }
+    }
+    return link
+  }
+
+  private async resolveWorktreeForContainedPath(cwd: string): Promise<ResolvedWorktree | null> {
+    const currentPath = resolve(cwd)
+    let best: ResolvedWorktree | null = null
+    for (const candidate of await this.listResolvedWorktrees()) {
+      if (!isPathInsideOrEqual(candidate.path, currentPath)) {
+        continue
+      }
+      if (!best || candidate.path.length > best.path.length) {
+        best = candidate
+      }
+    }
+    return best
+  }
+
   linearListIssues(
     filter?: LinearListFilter,
     limit = 20,
-    workspaceId?: LinearWorkspaceSelection
+    workspaceId?: LinearWorkspaceSelection,
+    teamId?: string
   ): ReturnType<typeof listLinearIssues> {
-    return listLinearIssues(filter, clampLinearIssueListLimit(limit), workspaceId)
+    return listLinearIssues(filter, clampLinearIssueListLimit(limit), workspaceId, teamId)
   }
 
   linearCreateIssue(
@@ -14820,6 +16899,8 @@ export class OrcaRuntimeService {
     options?: {
       stateId?: string
       priority?: number
+      estimate?: number | null
+      dueDate?: string | null
       assigneeId?: string | null
       labelIds?: string[]
     }
@@ -14849,6 +16930,1536 @@ export class OrcaRuntimeService {
     workspaceId?: string
   ): ReturnType<typeof addLinearIssueComment> {
     return addLinearIssueComment(issueId, body, workspaceId)
+  }
+
+  async linearIssueSetState(params: {
+    input?: string
+    current?: boolean
+    workspaceId?: string
+    to: string
+    context?: LinearCurrentIssueContextHints
+  }): Promise<LinearStatusSetResult> {
+    const target = await this.resolveLinearAgentWriteTarget(params)
+    const teamId = target.issue.team?.id
+    if (!teamId) {
+      throw linearError('linear_invalid_state', 'The Linear issue does not have a team.')
+    }
+    const states = await this.getLinearTeamStatesForWrite(teamId, target.workspaceId)
+    const state = this.resolveLinearAgentState(params.to, states)
+    if (!state) {
+      throw linearError(
+        'linear_invalid_state',
+        `No workflow state exactly matched "${params.to}".`,
+        {
+          states: states.map(({ id, name, type }) => ({ id, name, type })),
+          nextSteps: [`Retry with one of the exact state names for ${target.issue.identifier}.`]
+        }
+      )
+    }
+
+    const previousState =
+      target.issue.state?.id && target.issue.state.name
+        ? { id: target.issue.state.id, name: target.issue.state.name }
+        : null
+    const alreadyInState = target.issue.state?.id === state.id
+    if (!alreadyInState) {
+      await this.runLinearAgentWrite(
+        async (signal) => {
+          const updated = await updateLinearIssueForAgent(
+            target.issue.id,
+            { stateId: state.id },
+            target.workspaceId,
+            {
+              signal
+            }
+          )
+          if (updated.state?.id !== state.id) {
+            throw new LinearWriteFailure(
+              'unconfirmed',
+              'Linear state update could not be confirmed.'
+            )
+          }
+          return updated
+        },
+        (cause) =>
+          linearError(
+            'linear_write_unconfirmed',
+            'Linear may have applied the state change, but Orca could not confirm it.',
+            {
+              nextSteps: [
+                `Run \`orca linear issue ${target.issue.identifier} --workspace ${target.workspaceId} --json\` and check the current state before retrying.`
+              ],
+              ...(cause ? { cause } : {})
+            }
+          )
+      )
+    }
+    await this.notifyLinearLinkedIssueUpdated(target.workspaceId, target.issue.identifier)
+    return {
+      issue: this.linearWriteIssueRef(target.issue),
+      state: { id: state.id, name: state.name, type: state.type },
+      previousState,
+      meta: { workspaceId: target.workspaceId, alreadyInState }
+    }
+  }
+
+  async linearIssueUpdateTask(
+    params: LinearIssueTaskUpdateRequest
+  ): Promise<LinearIssueTaskUpdateResult> {
+    const target = await this.resolveLinearAgentWriteTarget(params)
+    const current = await this.readLinearAgentIssueWriteRecord(target.issue.id, target.workspaceId)
+    const update = await this.buildLinearTaskUpdate(params, current, target.workspaceId)
+    if (!update) {
+      throw linearError('linear_write_failed', 'No Linear task field update was requested.')
+    }
+    const alreadySet = this.linearTaskFieldAlreadySet(params.operation, current, update)
+    if (!alreadySet) {
+      await this.runLinearAgentWrite(
+        async (signal) => {
+          const updated = await updateLinearIssueForAgent(
+            target.issue.id,
+            update.fields,
+            target.workspaceId,
+            { signal }
+          )
+          if (!this.linearTaskFieldAlreadySet(params.operation, updated, update)) {
+            throw new LinearWriteFailure(
+              'unconfirmed',
+              'Linear task field update could not be confirmed.'
+            )
+          }
+          return updated
+        },
+        (cause) =>
+          linearError(
+            'linear_write_unconfirmed',
+            'Linear may have applied the task update, but Orca could not confirm it.',
+            {
+              nextSteps: [
+                `Run \`orca linear issue ${target.issue.identifier} --workspace ${target.workspaceId} --json\` and check the updated field before retrying.`
+              ],
+              ...(cause ? { cause } : {})
+            }
+          )
+      )
+    }
+    await this.notifyLinearLinkedIssueUpdated(target.workspaceId, target.issue.identifier)
+    const finalRecord = alreadySet
+      ? current
+      : await this.readLinearAgentIssueWriteRecord(target.issue.id, target.workspaceId)
+    return this.linearTaskUpdateResult(
+      params.operation,
+      target.issue,
+      target.workspaceId,
+      current,
+      finalRecord,
+      alreadySet
+    )
+  }
+
+  async linearIssueAddComment(params: {
+    input?: string
+    current?: boolean
+    workspaceId?: string
+    body: string
+    replyTo?: string
+    writeId?: string
+    context?: LinearCurrentIssueContextHints
+  }): Promise<LinearCommentAddResult> {
+    if (params.body.length > LINEAR_WRITE_BODY_CAP) {
+      throw linearError('linear_body_too_large', 'Linear comment body is too large.')
+    }
+    const target = await this.resolveLinearAgentWriteTarget(params)
+    const parentId = params.replyTo
+      ? await this.resolveLinearCommentParentId(target.issue.id, params.replyTo, target.workspaceId)
+      : null
+    const writeId = params.writeId ?? randomUUID()
+    const existing =
+      params.writeId !== undefined
+        ? await this.getMatchingLinearCommentWrite(
+            writeId,
+            target.issue.id,
+            parentId,
+            target.workspaceId,
+            true
+          )
+        : null
+    if (existing) {
+      await this.notifyLinearLinkedIssueUpdated(target.workspaceId, target.issue.identifier)
+      return this.linearCommentResult(existing, target, params.body.length, writeId, true)
+    }
+
+    try {
+      const comment = await this.runLinearAgentWrite(
+        (signal) =>
+          addLinearIssueCommentForAgent(target.issue.id, params.body, target.workspaceId, {
+            id: writeId,
+            parentId,
+            signal
+          }),
+        (cause) =>
+          this.linearCreateStyleUnconfirmed('comment', writeId, target, {
+            parentId,
+            bodyRequired: true,
+            cause
+          })
+      )
+      await this.notifyLinearLinkedIssueUpdated(target.workspaceId, target.issue.identifier)
+      return this.linearCommentResult(comment, target, params.body.length, writeId, false)
+    } catch (error) {
+      if (error instanceof LinearWriteFailure && error.kind === 'duplicate_id') {
+        const comment = await this.refetchLinearCommentAfterDuplicate(
+          writeId,
+          target.issue.id,
+          parentId,
+          target.workspaceId,
+          () =>
+            this.linearCreateStyleUnconfirmed('comment', writeId, target, {
+              parentId,
+              bodyRequired: true
+            })
+        )
+        await this.notifyLinearLinkedIssueUpdated(target.workspaceId, target.issue.identifier)
+        return this.linearCommentResult(comment, target, params.body.length, writeId, true)
+      }
+      throw error
+    }
+  }
+
+  async linearIssueAttachLink(params: {
+    input?: string
+    current?: boolean
+    workspaceId?: string
+    url: string
+    title?: string
+    writeId?: string
+    context?: LinearCurrentIssueContextHints
+  }): Promise<LinearAttachResult> {
+    const url = this.parseLinearAttachmentUrl(params.url)
+    const target = await this.resolveLinearAgentWriteTarget(params)
+    const writeId = params.writeId ?? randomUUID()
+    const title = params.title?.trim() || this.defaultLinearAttachmentTitle(url)
+    const existing =
+      params.writeId !== undefined
+        ? await this.getMatchingLinearAttachmentWrite(
+            writeId,
+            target.issue.id,
+            target.workspaceId,
+            true
+          )
+        : null
+    if (existing) {
+      await this.notifyLinearLinkedIssueUpdated(target.workspaceId, target.issue.identifier)
+      return this.linearAttachResult(existing, target, writeId, true)
+    }
+    try {
+      const attachment = await this.runLinearAgentWrite(
+        (signal) =>
+          createLinearIssueAttachment(
+            target.issue.id,
+            { id: writeId, title, url: url.toString() },
+            target.workspaceId,
+            { signal }
+          ),
+        (cause) =>
+          this.linearCreateStyleUnconfirmed('attach', writeId, target, {
+            title,
+            url: url.toString(),
+            cause
+          })
+      )
+      await this.notifyLinearLinkedIssueUpdated(target.workspaceId, target.issue.identifier)
+      return this.linearAttachResult(attachment, target, writeId, false)
+    } catch (error) {
+      if (error instanceof LinearWriteFailure && error.kind === 'duplicate_id') {
+        const attachment = await this.refetchLinearAttachmentAfterDuplicate(
+          writeId,
+          target.issue.id,
+          target.workspaceId,
+          () =>
+            this.linearCreateStyleUnconfirmed('attach', writeId, target, {
+              title,
+              url: url.toString()
+            })
+        )
+        await this.notifyLinearLinkedIssueUpdated(target.workspaceId, target.issue.identifier)
+        return this.linearAttachResult(attachment, target, writeId, true)
+      }
+      throw error
+    }
+  }
+
+  async linearIssueCreate(params: {
+    title: string
+    body?: string
+    teamInput?: string
+    teamKey?: string
+    state?: string
+    assignee?: string
+    priority?: number
+    estimate?: number
+    dueDate?: string
+    labels?: string[]
+    projectInput?: string
+    parentInput?: string
+    parentCurrent?: boolean
+    workspaceId?: string
+    writeId?: string
+    context?: LinearCurrentIssueContextHints
+  }): Promise<LinearCreateResult> {
+    if ((params.body?.length ?? 0) > LINEAR_WRITE_BODY_CAP) {
+      throw linearError('linear_body_too_large', 'Linear issue body is too large.')
+    }
+    const parent =
+      params.parentInput || params.parentCurrent
+        ? await this.resolveLinearAgentWriteTarget({
+            input: params.parentInput,
+            current: params.parentCurrent,
+            workspaceId: params.workspaceId,
+            context: params.context
+          })
+        : null
+    if (parent && params.workspaceId && params.workspaceId !== parent.workspaceId) {
+      throw linearError(
+        'linear_invalid_workspace',
+        'The parent issue belongs to a different workspace.'
+      )
+    }
+    const team = await this.resolveLinearCreateTeam(
+      params.teamInput ?? params.teamKey,
+      params.workspaceId,
+      parent
+    )
+    const createFields = await this.resolveLinearCreateFields(params, team)
+    const parentId = parent?.issue.id ?? null
+    const writeId = params.writeId ?? randomUUID()
+    const existing =
+      params.writeId !== undefined
+        ? await this.getMatchingLinearCreatedIssue(
+            writeId,
+            team.id,
+            parentId,
+            team.workspaceId,
+            true,
+            createFields
+          )
+        : null
+    if (existing) {
+      if (parent) {
+        await this.notifyLinearLinkedIssueUpdated(parent.workspaceId, parent.issue.identifier)
+      }
+      return this.linearCreateResult(existing, team.workspaceId, writeId, true)
+    }
+
+    try {
+      const issue = await this.runLinearAgentWrite(
+        async (signal) => {
+          const created = await createLinearIssueForAgent(
+            team.id,
+            params.title,
+            params.body,
+            team.workspaceId,
+            {
+              id: writeId,
+              parentId,
+              ...createFields,
+              signal
+            }
+          )
+          if (!this.linearCreatedIssueMatchesIntent(created, createFields)) {
+            throw new LinearWriteFailure(
+              'unconfirmed',
+              'Linear issue create could not be confirmed with the requested task fields.'
+            )
+          }
+          return created
+        },
+        (cause) =>
+          this.linearCreateStyleUnconfirmed('create', writeId, null, {
+            team,
+            parent,
+            title: params.title,
+            bodyRequired: params.body !== undefined,
+            createFields,
+            cause
+          })
+      )
+      if (parent) {
+        await this.notifyLinearLinkedIssueUpdated(parent.workspaceId, parent.issue.identifier)
+      }
+      return this.linearCreateResult(issue, team.workspaceId, writeId, false)
+    } catch (error) {
+      if (error instanceof LinearWriteFailure && error.kind === 'duplicate_id') {
+        const issue = await this.refetchLinearIssueAfterDuplicate(
+          writeId,
+          team.id,
+          parentId,
+          team.workspaceId,
+          createFields,
+          () =>
+            this.linearCreateStyleUnconfirmed('create', writeId, null, {
+              team,
+              parent,
+              title: params.title,
+              bodyRequired: params.body !== undefined,
+              createFields
+            })
+        )
+        if (parent) {
+          await this.notifyLinearLinkedIssueUpdated(parent.workspaceId, parent.issue.identifier)
+        }
+        return this.linearCreateResult(issue, team.workspaceId, writeId, true)
+      }
+      throw error
+    }
+  }
+
+  private async resolveLinearAgentWriteTarget(params: {
+    input?: string
+    current?: boolean
+    workspaceId?: string
+    context?: LinearCurrentIssueContextHints
+  }): Promise<LinearAgentWriteTarget> {
+    const result = await readLinearIssueContext(
+      {
+        input: params.input,
+        current: params.current,
+        workspaceId: params.workspaceId,
+        include: { comments: false, children: false, attachments: false, relations: false },
+        depth: 0,
+        context: params.context
+      },
+      (context) => this.linearResolveCurrentIssue(context)
+    )
+    return { issue: result.issue, workspaceId: result.meta.resolved.workspaceId }
+  }
+
+  private async getLinearTeamStatesForWrite(
+    teamId: string,
+    workspaceId: string
+  ): Promise<Awaited<ReturnType<typeof getLinearTeamStatesOrThrow>>> {
+    try {
+      return await getLinearTeamStatesOrThrow(teamId, workspaceId)
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  private resolveLinearAgentState(
+    input: string,
+    states: Awaited<ReturnType<typeof getLinearTeamStatesOrThrow>>
+  ): Awaited<ReturnType<typeof getLinearTeamStatesOrThrow>>[number] | null {
+    const normalized = input.toLocaleLowerCase()
+    return (
+      states.find(
+        (state) =>
+          state.id.toLocaleLowerCase() === normalized ||
+          state.name.toLocaleLowerCase() === normalized
+      ) ?? null
+    )
+  }
+
+  private async getLinearTeamLabelsForWrite(
+    teamId: string,
+    workspaceId: string
+  ): Promise<Awaited<ReturnType<typeof getLinearTeamLabelsOrThrow>>> {
+    try {
+      return await getLinearTeamLabelsOrThrow(teamId, workspaceId)
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  private async readLinearAgentIssueWriteRecord(
+    issueId: string,
+    workspaceId: string
+  ): Promise<NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>> {
+    const issue = await this.readLinearWriteLookup(() =>
+      getLinearIssueByUuidForAgent(issueId, workspaceId)
+    )
+    if (!issue) {
+      throw linearError('linear_issue_not_found', 'Linear issue was not found.')
+    }
+    return issue
+  }
+
+  private async buildLinearTaskUpdate(
+    params: LinearIssueTaskUpdateRequest,
+    current: NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>,
+    workspaceId: string
+  ): Promise<{
+    fields: {
+      assigneeId?: string | null
+      priority?: number
+      estimate?: number | null
+      dueDate?: string | null
+      labelIds?: string[]
+    }
+    labels?: { id: string; name: string }[]
+  } | null> {
+    if (params.operation === 'assignee') {
+      const assigneeId = params.assigneeMe
+        ? (await this.getLinearViewerForWrite(workspaceId)).id
+        : params.assigneeId
+      if (assigneeId === undefined) {
+        throw linearError('linear_invalid_assignee', 'Pass --me, --to-id, or clear assignee.')
+      }
+      return { fields: { assigneeId } }
+    }
+    if (params.operation === 'priority') {
+      if (params.priority === undefined) {
+        throw linearError('linear_write_failed', 'Missing priority value.')
+      }
+      return { fields: { priority: params.priority } }
+    }
+    if (params.operation === 'estimate') {
+      if (params.estimate === undefined) {
+        throw linearError('linear_write_failed', 'Missing estimate value.')
+      }
+      return { fields: { estimate: params.estimate } }
+    }
+    if (params.operation === 'dueDate') {
+      if (params.dueDate === undefined) {
+        throw linearError('linear_write_failed', 'Missing due date value.')
+      }
+      return { fields: { dueDate: params.dueDate } }
+    }
+    if (params.operation === 'labels') {
+      const mode = params.labelMode
+      const inputs = params.labels ?? []
+      if (!mode || inputs.length === 0) {
+        throw linearError('linear_invalid_label', 'Pass at least one --label.')
+      }
+      const labels = await this.resolveLinearLabelsForIssue(current, inputs, workspaceId)
+      const requestedIds = labels.map((label) => label.id)
+      const existingIds = current.labelIds ?? current.labels?.map((label) => label.id) ?? []
+      const nextIds =
+        mode === 'set'
+          ? requestedIds
+          : mode === 'add'
+            ? Array.from(new Set([...existingIds, ...requestedIds]))
+            : existingIds.filter((id) => !requestedIds.includes(id))
+      return {
+        fields: { labelIds: nextIds },
+        labels: labelsForIds(nextIds, [...(current.labels ?? []), ...labels])
+      }
+    }
+    return null
+  }
+
+  private async resolveLinearCreateFields(
+    params: {
+      state?: string
+      assignee?: string
+      priority?: number
+      estimate?: number
+      dueDate?: string
+      labels?: string[]
+      projectInput?: string
+    },
+    team: { id: string; workspaceId: string }
+  ): Promise<LinearCreateFieldIntent> {
+    const fields: LinearCreateFieldIntent = {}
+    if (params.state) {
+      const states = await this.getLinearTeamStatesForWrite(team.id, team.workspaceId)
+      const state = this.resolveLinearAgentState(params.state, states)
+      if (!state) {
+        throw linearError(
+          'linear_invalid_state',
+          `No workflow state exactly matched "${params.state}".`,
+          { states: states.map(({ id, name, type }) => ({ id, name, type })) }
+        )
+      }
+      fields.stateId = state.id
+    }
+    if (params.assignee) {
+      fields.assigneeId =
+        params.assignee.toLocaleLowerCase() === 'me'
+          ? (await this.getLinearViewerForWrite(team.workspaceId)).id
+          : params.assignee
+    }
+    if (params.priority !== undefined) {
+      fields.priority = params.priority
+    }
+    if (params.estimate !== undefined) {
+      fields.estimate = params.estimate
+    }
+    if (params.dueDate !== undefined) {
+      fields.dueDate = params.dueDate
+    }
+    if (params.labels && params.labels.length > 0) {
+      const labels = await this.resolveLinearLabelsForTeam(team.id, params.labels, team.workspaceId)
+      fields.labelIds = labels.map((label) => label.id)
+    }
+    if (params.projectInput) {
+      const project = await this.resolveLinearCreateProject(params.projectInput, team)
+      fields.projectId = project.id
+    }
+    return fields
+  }
+
+  private async resolveLinearCreateProject(
+    input: string,
+    team: { id: string; workspaceId: string }
+  ): Promise<LinearProjectSummary> {
+    const trimmed = input.trim()
+    if (!trimmed) {
+      throw linearError('linear_invalid_project', 'Pass a non-empty Linear project id or name.')
+    }
+    const byId = isLinearUuid(trimmed)
+      ? await this.readLinearProjectByIdForCreate(trimmed, team.workspaceId)
+      : null
+    if (byId) {
+      await this.assertLinearProjectIncludesTeam(byId, team.id, team.workspaceId, trimmed)
+      return byId
+    }
+    const searchCandidates = await this.readLinearProjectsForCreate(trimmed, team.workspaceId)
+    const normalized = trimmed.toLowerCase()
+    const idMatch = searchCandidates.find((project) => project.id.toLowerCase() === normalized)
+    if (idMatch) {
+      await this.assertLinearProjectIncludesTeam(idMatch, team.id, team.workspaceId, trimmed)
+      return idMatch
+    }
+    const nameMatches = await this.readLinearProjectsByExactNameForCreate(trimmed, team.workspaceId)
+    const compatibleNameMatches = await this.filterLinearProjectsForTeam(
+      nameMatches,
+      team.id,
+      team.workspaceId
+    )
+    if (compatibleNameMatches.length === 1) {
+      return compatibleNameMatches[0]
+    }
+    if (compatibleNameMatches.length > 1) {
+      throw linearError(
+        'linear_invalid_project',
+        `Multiple Linear projects exactly matched "${trimmed}".`,
+        {
+          projects: compatibleNameMatches.map((project) => ({
+            id: project.id,
+            name: project.name,
+            teams: project.teams
+          })),
+          nextSteps: ['Run `orca linear project list --query <name> --json` and retry by id.']
+        }
+      )
+    }
+    if (nameMatches.length > 0) {
+      await this.assertLinearProjectIncludesTeam(nameMatches[0], team.id, team.workspaceId, trimmed)
+    }
+    throw linearError('linear_invalid_project', `No Linear project exactly matched "${trimmed}".`, {
+      projects: searchCandidates.map((project) => ({
+        id: project.id,
+        name: project.name,
+        teams: project.teams
+      })),
+      nextSteps: ['Run `orca linear project list --query <name> --json` and retry by id.']
+    })
+  }
+
+  private async readLinearProjectByIdForCreate(
+    id: string,
+    workspaceId: string
+  ): Promise<LinearProjectSummary | null> {
+    try {
+      return await getLinearProject(id, workspaceId, true)
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  private async readLinearProjectsForCreate(
+    query: string,
+    workspaceId: string
+  ): Promise<LinearProjectSummary[]> {
+    try {
+      return (await listLinearProjects(query, LINEAR_SEARCH_MAX_LIMIT, workspaceId, true)).items
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  private async readLinearProjectsByExactNameForCreate(
+    name: string,
+    workspaceId: string
+  ): Promise<LinearProjectSummary[]> {
+    try {
+      return await listLinearProjectsByExactName(name, workspaceId, true)
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  private async assertLinearProjectIncludesTeam(
+    project: LinearProjectSummary,
+    teamId: string,
+    workspaceId: string,
+    input: string
+  ): Promise<void> {
+    if (this.linearProjectIncludesTeam(project, teamId)) {
+      return
+    }
+    let teams: NonNullable<LinearProjectSummary['teams']> = []
+    try {
+      // Why: summary reads cap project teams, so large cross-team projects need
+      // a paged membership check before we reject an otherwise valid create.
+      teams = await listLinearProjectTeams(project.id, workspaceId, true)
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+    if (teams.some((team) => team.id === teamId)) {
+      return
+    }
+    throw linearError(
+      'linear_invalid_project',
+      `Linear project "${input}" is not available to the target team.`,
+      {
+        project: { id: project.id, name: project.name, teams },
+        nextSteps: ['Choose a project that includes the create target team, then retry by id.']
+      }
+    )
+  }
+
+  private async filterLinearProjectsForTeam(
+    projects: LinearProjectSummary[],
+    teamId: string,
+    workspaceId: string
+  ): Promise<LinearProjectSummary[]> {
+    const compatible: LinearProjectSummary[] = []
+    for (const project of projects) {
+      if (this.linearProjectIncludesTeam(project, teamId)) {
+        compatible.push(project)
+        continue
+      }
+      try {
+        const teams = await listLinearProjectTeams(project.id, workspaceId, true)
+        if (teams.some((team) => team.id === teamId)) {
+          compatible.push({ ...project, teams })
+        }
+      } catch (error) {
+        throw this.mapLinearReadFailure(error)
+      }
+    }
+    return compatible
+  }
+
+  private linearProjectIncludesTeam(project: LinearProjectSummary, teamId: string): boolean {
+    return project.teams?.some((team) => team.id === teamId) === true
+  }
+
+  private async getLinearViewerForWrite(
+    workspaceId: string
+  ): Promise<{ id: string; displayName?: string | null; avatarUrl?: string | null }> {
+    try {
+      return await getLinearViewerForWorkspaceOrThrow(workspaceId)
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  private async resolveLinearLabelsForIssue(
+    issue: NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>,
+    inputs: string[],
+    workspaceId: string
+  ): Promise<{ id: string; name: string }[]> {
+    const labels = await this.getLinearTeamLabelsForWrite(issue.team.id, workspaceId)
+    const resolved = inputs.map((input) => {
+      const normalized = input.toLocaleLowerCase()
+      const idMatch = labels.find((label) => label.id.toLocaleLowerCase() === normalized)
+      if (idMatch) {
+        return { id: idMatch.id, name: idMatch.name }
+      }
+      const nameMatches = labels.filter((label) => label.name.toLocaleLowerCase() === normalized)
+      if (nameMatches.length === 1) {
+        return { id: nameMatches[0].id, name: nameMatches[0].name }
+      }
+      throw linearError(
+        'linear_invalid_label',
+        nameMatches.length === 0
+          ? `No label exactly matched "${input}".`
+          : `Multiple labels exactly matched "${input}".`,
+        {
+          labels: labels.map((label) => ({ id: label.id, name: label.name })),
+          nextSteps: ['Run `orca linear team labels --team <key-or-id> --json` and retry by id.']
+        }
+      )
+    })
+    return Array.from(new Map(resolved.map((label) => [label.id, label])).values())
+  }
+
+  private async resolveLinearLabelsForTeam(
+    teamId: string,
+    inputs: string[],
+    workspaceId: string
+  ): Promise<{ id: string; name: string }[]> {
+    const labels = await this.getLinearTeamLabelsForWrite(teamId, workspaceId)
+    const resolved = inputs.map((input) => {
+      const normalized = input.toLocaleLowerCase()
+      const idMatch = labels.find((label) => label.id.toLocaleLowerCase() === normalized)
+      if (idMatch) {
+        return { id: idMatch.id, name: idMatch.name }
+      }
+      const nameMatches = labels.filter((label) => label.name.toLocaleLowerCase() === normalized)
+      if (nameMatches.length === 1) {
+        return { id: nameMatches[0].id, name: nameMatches[0].name }
+      }
+      throw linearError(
+        'linear_invalid_label',
+        nameMatches.length === 0
+          ? `No label exactly matched "${input}".`
+          : `Multiple labels exactly matched "${input}".`,
+        { labels: labels.map((label) => ({ id: label.id, name: label.name })) }
+      )
+    })
+    return Array.from(new Map(resolved.map((label) => [label.id, label])).values())
+  }
+
+  private linearCreatedIssueMatchesIntent(
+    issue: NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>,
+    intent: LinearCreateFieldIntent
+  ): boolean {
+    if (intent.stateId !== undefined && issue.state?.id !== intent.stateId) {
+      return false
+    }
+    if (intent.assigneeId !== undefined && (issue.assignee?.id ?? null) !== intent.assigneeId) {
+      return false
+    }
+    if (intent.priority !== undefined && issue.priority !== intent.priority) {
+      return false
+    }
+    if (intent.estimate !== undefined && (issue.estimate ?? null) !== intent.estimate) {
+      return false
+    }
+    if (intent.dueDate !== undefined && (issue.dueDate ?? null) !== intent.dueDate) {
+      return false
+    }
+    if (intent.projectId !== undefined && (issue.project?.id ?? null) !== intent.projectId) {
+      return false
+    }
+    const issueLabelIds = issue.labelIds ?? issue.labels?.map((label) => label.id) ?? []
+    if (intent.labelIds !== undefined && !sameStringSet(issueLabelIds, intent.labelIds)) {
+      return false
+    }
+    return true
+  }
+
+  private linearTaskFieldAlreadySet(
+    operation: LinearIssueTaskUpdateRequest['operation'],
+    record: NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>,
+    update: {
+      fields: {
+        assigneeId?: string | null
+        priority?: number
+        estimate?: number | null
+        dueDate?: string | null
+        labelIds?: string[]
+      }
+    }
+  ): boolean {
+    if (operation === 'assignee') {
+      return (record.assignee?.id ?? null) === update.fields.assigneeId
+    }
+    if (operation === 'priority') {
+      return record.priority === update.fields.priority
+    }
+    if (operation === 'estimate') {
+      return (record.estimate ?? null) === update.fields.estimate
+    }
+    if (operation === 'dueDate') {
+      return (record.dueDate ?? null) === update.fields.dueDate
+    }
+    if (operation === 'labels') {
+      const recordLabelIds = record.labelIds ?? record.labels?.map((label) => label.id) ?? []
+      return sameStringSet(recordLabelIds, update.fields.labelIds ?? [])
+    }
+    return false
+  }
+
+  private linearTaskUpdateResult(
+    operation: LinearIssueTaskUpdateRequest['operation'],
+    issue: LinearIssueSummary,
+    workspaceId: string,
+    previous: NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>,
+    current: NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>,
+    alreadySet: boolean
+  ): LinearIssueTaskUpdateResult {
+    return {
+      issue: this.linearWriteIssueRef(issue),
+      operation,
+      previous: this.linearTaskResultFields(previous),
+      current: this.linearTaskResultFields(current),
+      meta: { workspaceId, alreadySet }
+    }
+  }
+
+  private linearTaskResultFields(
+    record: NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>
+  ): LinearIssueTaskUpdateResult['current'] {
+    return {
+      assignee: record.assignee ?? null,
+      priority: record.priority ?? null,
+      estimate: record.estimate ?? null,
+      dueDate: record.dueDate ?? null,
+      labels: record.labels ?? []
+    }
+  }
+
+  private async resolveLinearCommentParentId(
+    issueId: string,
+    commentId: string,
+    workspaceId: string
+  ): Promise<string> {
+    try {
+      const root = await getLinearIssueCommentThreadRoot(issueId, commentId, workspaceId)
+      if (!root) {
+        throw linearError(
+          'linear_invalid_parent',
+          'The reply target is not a comment on this issue.',
+          {
+            nextSteps: ['Run `orca linear issue <id> --comments --json` to list valid comment ids.']
+          }
+        )
+      }
+      return root.id
+    } catch (error) {
+      if (error instanceof LinearAgentAccessError) {
+        throw error
+      }
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  private async runLinearAgentWrite<T>(
+    write: (signal: AbortSignal) => Promise<T>,
+    unconfirmed: (cause?: string) => LinearAgentAccessError
+  ): Promise<T> {
+    const controller = new AbortController()
+    const writePromise = write(controller.signal)
+    writePromise.catch(() => undefined)
+    let timer: ReturnType<typeof setTimeout> | null = null
+    try {
+      return await Promise.race([
+        writePromise,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            controller.abort()
+            reject(
+              new LinearWriteFailure(
+                'unconfirmed',
+                'Linear write deadline elapsed before confirmation.'
+              )
+            )
+          }, 25_000)
+        })
+      ])
+    } catch (error) {
+      if (error instanceof LinearWriteFailure && error.kind === 'duplicate_id') {
+        throw error
+      }
+      if (error instanceof LinearWriteFailure && error.kind === 'unconfirmed') {
+        throw unconfirmed(this.linearWriteFailureCauseMessage(error))
+      }
+      if (error instanceof LinearWriteFailure && error.kind === 'network') {
+        throw linearError('linear_network_error', sanitizeLinearErrorMessage(error.message))
+      }
+      if (error instanceof LinearWriteFailure) {
+        throw linearError('linear_write_failed', sanitizeLinearErrorMessage(error.message))
+      }
+      throw this.mapLinearReadFailure(error)
+    } finally {
+      if (timer) {
+        clearTimeout(timer)
+      }
+    }
+  }
+
+  private linearWriteFailureCauseMessage(error: LinearWriteFailure): string {
+    if (error.cause instanceof Error) {
+      return sanitizeLinearErrorMessage(error.cause.message)
+    }
+    if (error.cause !== undefined) {
+      return sanitizeLinearErrorMessage(String(error.cause))
+    }
+    return sanitizeLinearErrorMessage(error.message)
+  }
+
+  private mapLinearReadFailure(error: unknown): LinearAgentAccessError {
+    if (error instanceof LinearAgentAccessError) {
+      return error
+    }
+    if (isLinearAuthError(error)) {
+      return linearError('linear_auth_expired', 'Linear authentication expired.', {
+        nextSteps: ['Reconnect Linear from Orca settings.']
+      })
+    }
+    return linearError(classifyLinearError(error), linearMessage(error))
+  }
+
+  private async getMatchingLinearCommentWrite(
+    writeId: string,
+    issueId: string,
+    parentId: string | null,
+    workspaceId: string,
+    required: boolean
+  ): Promise<Awaited<ReturnType<typeof getLinearCommentByUuidForAgent>> | null> {
+    const comment = await this.readLinearWriteLookup(() =>
+      getLinearCommentByUuidForAgent(writeId, workspaceId)
+    )
+    if (!comment) {
+      return null
+    }
+    if (comment.issue.id === issueId && comment.parentId === parentId) {
+      return comment
+    }
+    if (required) {
+      throw linearError(
+        'linear_invalid_write_id',
+        'The write id belongs to a different comment target.'
+      )
+    }
+    return null
+  }
+
+  private async getMatchingLinearAttachmentWrite(
+    writeId: string,
+    issueId: string,
+    workspaceId: string,
+    required: boolean
+  ): Promise<Awaited<ReturnType<typeof getLinearAttachmentByUuidForAgent>> | null> {
+    const attachment = await this.readLinearWriteLookup(() =>
+      getLinearAttachmentByUuidForAgent(writeId, workspaceId)
+    )
+    if (!attachment) {
+      return null
+    }
+    if (attachment.issue.id === issueId) {
+      return attachment
+    }
+    if (required) {
+      throw linearError(
+        'linear_invalid_write_id',
+        'The write id belongs to a different attachment target.'
+      )
+    }
+    return null
+  }
+
+  private async getMatchingLinearCreatedIssue(
+    writeId: string,
+    teamId: string,
+    parentId: string | null,
+    workspaceId: string,
+    required: boolean,
+    intent: LinearCreateFieldIntent = {}
+  ): Promise<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>> | null> {
+    const issue = await this.readLinearWriteLookup(() =>
+      getLinearIssueByUuidForAgent(writeId, workspaceId)
+    )
+    if (!issue) {
+      return null
+    }
+    if (
+      issue.team.id === teamId &&
+      (issue.parent?.id ?? null) === parentId &&
+      this.linearCreatedIssueMatchesIntent(issue, intent)
+    ) {
+      return issue
+    }
+    if (required) {
+      throw linearError(
+        'linear_invalid_write_id',
+        'The write id belongs to a different issue target.'
+      )
+    }
+    return null
+  }
+
+  private async refetchLinearCommentAfterDuplicate(
+    writeId: string,
+    issueId: string,
+    parentId: string | null,
+    workspaceId: string,
+    unconfirmed: (cause?: string) => LinearAgentAccessError
+  ): Promise<NonNullable<Awaited<ReturnType<typeof getLinearCommentByUuidForAgent>>>> {
+    try {
+      // Why: a duplicate-id response can mean the original write landed; only
+      // the exact target relationship proves this pinned retry.
+      const comment = await this.getMatchingLinearCommentWrite(
+        writeId,
+        issueId,
+        parentId,
+        workspaceId,
+        true
+      )
+      if (comment) {
+        return comment
+      }
+    } catch (error) {
+      if (error instanceof LinearAgentAccessError && error.code === 'linear_invalid_write_id') {
+        throw error
+      }
+      throw unconfirmed(
+        error instanceof Error
+          ? sanitizeLinearErrorMessage(error.message)
+          : sanitizeLinearErrorMessage(String(error))
+      )
+    }
+    throw unconfirmed()
+  }
+
+  private async refetchLinearAttachmentAfterDuplicate(
+    writeId: string,
+    issueId: string,
+    workspaceId: string,
+    unconfirmed: (cause?: string) => LinearAgentAccessError
+  ): Promise<NonNullable<Awaited<ReturnType<typeof getLinearAttachmentByUuidForAgent>>>> {
+    try {
+      // Why: a duplicate-id response can mean the original write landed; only
+      // the exact target relationship proves this pinned retry.
+      const attachment = await this.getMatchingLinearAttachmentWrite(
+        writeId,
+        issueId,
+        workspaceId,
+        true
+      )
+      if (attachment) {
+        return attachment
+      }
+    } catch (error) {
+      if (error instanceof LinearAgentAccessError && error.code === 'linear_invalid_write_id') {
+        throw error
+      }
+      throw unconfirmed(
+        error instanceof Error
+          ? sanitizeLinearErrorMessage(error.message)
+          : sanitizeLinearErrorMessage(String(error))
+      )
+    }
+    throw unconfirmed()
+  }
+
+  private async refetchLinearIssueAfterDuplicate(
+    writeId: string,
+    teamId: string,
+    parentId: string | null,
+    workspaceId: string,
+    intent: LinearCreateFieldIntent,
+    unconfirmed: (cause?: string) => LinearAgentAccessError
+  ): Promise<NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>> {
+    try {
+      // Why: a duplicate-id response can mean the original write landed; only
+      // the exact target relationship proves this pinned retry.
+      const issue = await this.getMatchingLinearCreatedIssue(
+        writeId,
+        teamId,
+        parentId,
+        workspaceId,
+        true,
+        intent
+      )
+      if (issue) {
+        return issue
+      }
+    } catch (error) {
+      if (error instanceof LinearAgentAccessError && error.code === 'linear_invalid_write_id') {
+        throw error
+      }
+      throw unconfirmed(
+        error instanceof Error
+          ? sanitizeLinearErrorMessage(error.message)
+          : sanitizeLinearErrorMessage(String(error))
+      )
+    }
+    throw unconfirmed()
+  }
+
+  private async readLinearWriteLookup<T>(lookup: () => Promise<T>): Promise<T> {
+    try {
+      return await lookup()
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+  }
+
+  private parseLinearAttachmentUrl(value: string): URL {
+    try {
+      const url = new URL(value)
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        return url
+      }
+    } catch {
+      // Fall through to the stable agent-facing error below.
+    }
+    throw linearError('linear_invalid_url', 'Attachment URL must be an absolute http(s) URL.')
+  }
+
+  private defaultLinearAttachmentTitle(url: URL): string {
+    const tail = url.pathname.split('/').filter(Boolean).at(-1)
+    return tail ? `${url.host}/${tail}` : url.host
+  }
+
+  private linearWorkspaceErrorCode(type: string): LinearErrorCode {
+    if (type === 'auth') {
+      return 'linear_auth_expired'
+    }
+    if (type === 'network') {
+      return 'linear_network_error'
+    }
+    if (type === 'rate_limited') {
+      return 'linear_rate_limited'
+    }
+    return 'linear_write_failed'
+  }
+
+  private linearTeamSummary(team: {
+    id: string
+    name: string
+    key: string
+    url?: string
+    workspaceId?: string
+    workspaceName?: string
+  }): {
+    id: string
+    name: string
+    key: string
+    url?: string
+    workspace?: { id: string; name: string }
+  } {
+    return {
+      id: team.id,
+      name: team.name,
+      key: team.key,
+      ...(team.url ? { url: team.url } : {}),
+      ...(team.workspaceId
+        ? { workspace: { id: team.workspaceId, name: team.workspaceName ?? team.workspaceId } }
+        : {})
+    }
+  }
+
+  private async resolveLinearTeamInput(
+    teamInput: string,
+    workspaceId?: string | 'all'
+  ): Promise<{
+    id: string
+    key: string
+    name: string
+    workspaceId: string
+    workspaceName?: string
+  }> {
+    this.validateLinearCreateWorkspaceScope(workspaceId === 'all' ? undefined : workspaceId)
+    let teams: Awaited<ReturnType<typeof listLinearTeamsOrThrow>>
+    try {
+      teams = await listLinearTeamsOrThrow(workspaceId ?? 'all')
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+    const normalized = teamInput.toLocaleLowerCase()
+    const idMatches = teams.filter((team) => team.id.toLocaleLowerCase() === normalized)
+    const matches =
+      idMatches.length > 0
+        ? idMatches
+        : teams.filter((team) => team.key.toLocaleLowerCase() === normalized)
+    if (matches.length === 1 && matches[0].workspaceId) {
+      return {
+        id: matches[0].id,
+        key: matches[0].key,
+        name: matches[0].name,
+        workspaceId: matches[0].workspaceId,
+        workspaceName: matches[0].workspaceName
+      }
+    }
+    if (matches.length > 1) {
+      throw linearError(
+        'linear_workspace_ambiguous',
+        `Team ${teamInput} exists in multiple workspaces.`,
+        {
+          candidates: matches.map((team) => ({
+            workspaceId: team.workspaceId,
+            workspaceName: team.workspaceName,
+            teamId: team.id,
+            teamKey: team.key
+          }))
+        }
+      )
+    }
+    throw linearError('linear_team_required', `No connected Linear team matched ${teamInput}.`)
+  }
+
+  private async resolveLinearCreateTeam(
+    teamInput: string | undefined,
+    workspaceId: string | undefined,
+    parent: LinearAgentWriteTarget | null
+  ): Promise<{ id: string; key: string; name: string; workspaceId: string }> {
+    if (!teamInput && parent?.issue.team?.id && parent.issue.team.key && parent.issue.team.name) {
+      return {
+        id: parent.issue.team.id,
+        key: parent.issue.team.key,
+        name: parent.issue.team.name,
+        workspaceId: parent.workspaceId
+      }
+    }
+    if (!teamInput) {
+      throw linearError('linear_team_required', 'Pass --team or create under a parent issue.', {
+        nextSteps: ['Run `orca linear create --team <key> ...` or use --parent-current.']
+      })
+    }
+
+    const scope = parent?.workspaceId ?? workspaceId
+    this.validateLinearCreateWorkspaceScope(scope)
+    let teams: Awaited<ReturnType<typeof listLinearTeamsOrThrow>>
+    try {
+      teams = await listLinearTeamsOrThrow(scope ?? 'all')
+    } catch (error) {
+      throw this.mapLinearReadFailure(error)
+    }
+    if (teams.length === 0 && (getLinearStatus().workspaces?.length ?? 0) === 0) {
+      throw linearError('linear_not_connected', 'Linear is not connected.', {
+        nextSteps: ['Connect Linear from Orca settings, then retry the issue create.']
+      })
+    }
+    const matches = teams.filter(
+      (team) =>
+        team.id.toLocaleLowerCase() === teamInput.toLocaleLowerCase() ||
+        team.key.toLocaleLowerCase() === teamInput.toLocaleLowerCase()
+    )
+    if (matches.length === 1 && matches[0].workspaceId) {
+      return {
+        id: matches[0].id,
+        key: matches[0].key,
+        name: matches[0].name,
+        workspaceId: matches[0].workspaceId
+      }
+    }
+    if (matches.length > 1) {
+      throw linearError(
+        'linear_workspace_ambiguous',
+        `Team ${teamInput} exists in multiple workspaces.`,
+        {
+          candidates: matches.map((team) => ({
+            workspaceId: team.workspaceId,
+            workspaceName: team.workspaceName,
+            teamKey: team.key
+          }))
+        }
+      )
+    }
+    if (parent) {
+      let globalTeams: Awaited<ReturnType<typeof listLinearTeamsOrThrow>>
+      try {
+        globalTeams = await listLinearTeamsOrThrow('all')
+      } catch (error) {
+        throw this.mapLinearReadFailure(error)
+      }
+      const globalMatch = globalTeams.find(
+        (team) =>
+          team.id.toLocaleLowerCase() === teamInput.toLocaleLowerCase() ||
+          team.key.toLocaleLowerCase() === teamInput.toLocaleLowerCase()
+      )
+      if (globalMatch) {
+        throw linearError(
+          'linear_invalid_workspace',
+          `Team ${teamInput} is not in the parent issue workspace.`
+        )
+      }
+    }
+    throw linearError('linear_team_required', `No connected Linear team matched ${teamInput}.`)
+  }
+
+  private validateLinearCreateWorkspaceScope(workspaceId: string | undefined): void {
+    if (!workspaceId) {
+      return
+    }
+    const workspaces = getLinearStatus().workspaces ?? []
+    if (workspaces.length > 0 && !workspaces.some((workspace) => workspace.id === workspaceId)) {
+      throw linearError(
+        'linear_invalid_workspace',
+        `No connected Linear workspace matched ${workspaceId}.`
+      )
+    }
+  }
+
+  private linearWriteIssueRef(issue: { id: string; identifier: string; url: string }): {
+    id: string
+    identifier: string
+    url: string
+  } {
+    return { id: issue.id, identifier: issue.identifier, url: issue.url }
+  }
+
+  private linearCommentResult(
+    comment: NonNullable<Awaited<ReturnType<typeof getLinearCommentByUuidForAgent>>>,
+    target: LinearAgentWriteTarget,
+    bodyChars: number,
+    writeId: string,
+    deduplicated: boolean
+  ): LinearCommentAddResult {
+    return {
+      comment: { id: comment.id, url: comment.url, parentId: comment.parentId },
+      issue: this.linearWriteIssueRef(target.issue),
+      meta: { workspaceId: target.workspaceId, bodyChars, writeId, deduplicated }
+    }
+  }
+
+  private linearAttachResult(
+    attachment: NonNullable<Awaited<ReturnType<typeof getLinearAttachmentByUuidForAgent>>>,
+    target: LinearAgentWriteTarget,
+    writeId: string,
+    deduplicated: boolean
+  ): LinearAttachResult {
+    return {
+      attachment: { id: attachment.id, title: attachment.title, url: attachment.url },
+      issue: this.linearWriteIssueRef(target.issue),
+      meta: { workspaceId: target.workspaceId, writeId, deduplicated }
+    }
+  }
+
+  private linearCreateResult(
+    issue: NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>,
+    workspaceId: string,
+    writeId: string,
+    deduplicated: boolean
+  ): LinearCreateResult {
+    return {
+      issue,
+      meta: { workspaceId, writeId, deduplicated }
+    }
+  }
+
+  private linearCreateFieldRetryTokens(fields: LinearCreateFieldIntent | undefined): string[] {
+    if (!fields) {
+      return []
+    }
+    return [
+      ...(fields.stateId ? [`--state=${this.commandToken(fields.stateId, 'STATE_ID')}`] : []),
+      ...(fields.assigneeId
+        ? [`--assignee=${this.commandToken(fields.assigneeId, 'ASSIGNEE_ID')}`]
+        : []),
+      ...(fields.priority !== undefined
+        ? [`--priority=${this.linearPriorityRetryToken(fields.priority)}`]
+        : []),
+      ...(fields.estimate !== undefined && fields.estimate !== null
+        ? [`--estimate=${fields.estimate}`]
+        : []),
+      ...(fields.dueDate ? [`--due-date=${fields.dueDate}`] : []),
+      ...(fields.projectId
+        ? [`--project=${this.commandToken(fields.projectId, 'PROJECT_ID')}`]
+        : []),
+      ...(fields.labelIds ?? []).map(
+        (labelId) => `--label=${this.commandToken(labelId, 'LABEL_ID')}`
+      )
+    ]
+  }
+
+  private linearPriorityRetryToken(priority: number): string {
+    if (priority === 1) {
+      return 'urgent'
+    }
+    if (priority === 2) {
+      return 'high'
+    }
+    if (priority === 3) {
+      return 'medium'
+    }
+    if (priority === 4) {
+      return 'low'
+    }
+    return 'none'
+  }
+
+  private linearCreateStyleUnconfirmed(
+    verb: 'comment' | 'attach' | 'create',
+    writeId: string,
+    target: LinearAgentWriteTarget | null,
+    extra: {
+      parentId?: string | null
+      team?: { id: string; key: string; name: string; workspaceId: string }
+      parent?: LinearAgentWriteTarget | null
+      title?: string
+      url?: string
+      bodyRequired?: boolean
+      createFields?: LinearCreateFieldIntent
+      cause?: string
+    } = {}
+  ): LinearAgentAccessError {
+    const workspaceId = target?.workspaceId ?? extra.team?.workspaceId ?? ''
+    // Why: unconfirmed writes need a retry that preserves id and target so
+    // duplicate recovery can prove intent without matching mutable content.
+    const pinned =
+      verb === 'create'
+        ? [
+            'orca linear create',
+            `--workspace=${this.commandToken(workspaceId, 'WORKSPACE_ID')}`,
+            `--write-id=${this.commandToken(writeId, 'WRITE_ID')}`,
+            '--title TITLE_HERE',
+            ...(extra.bodyRequired ? ['--body-file -'] : []),
+            ...(extra.parent
+              ? [`--parent=${this.commandToken(extra.parent.issue.identifier, 'PARENT_ISSUE')}`]
+              : []),
+            ...(extra.team
+              ? [`--team=${this.commandToken(extra.team.key, 'TEAM_KEY')}`]
+              : []
+            ).concat(this.linearCreateFieldRetryTokens(extra.createFields))
+          ].join(' ')
+        : [
+            `orca linear ${verb === 'attach' ? 'attach' : 'comment add'}`,
+            this.commandToken(target?.issue.identifier ?? '', 'ISSUE_ID'),
+            `--workspace=${this.commandToken(workspaceId, 'WORKSPACE_ID')}`,
+            `--write-id=${this.commandToken(writeId, 'WRITE_ID')}`,
+            ...(verb === 'comment' ? ['--body-file -'] : []),
+            ...(verb === 'comment' && extra.parentId
+              ? [`--reply-to=${this.commandToken(extra.parentId, 'COMMENT_ID')}`]
+              : []),
+            ...(verb === 'attach' ? ['--url URL_HERE', '--title TITLE_HERE'] : [])
+          ].join(' ')
+    const retryPrefix = extra.bodyRequired || verb === 'comment' ? 'Pipe the same body and r' : 'R'
+    const payloadNote =
+      verb === 'attach'
+        ? ' Replace TITLE_HERE/URL_HERE with the exact original payload values before running.'
+        : verb === 'create'
+          ? ' Replace TITLE_HERE with the exact original title before running.'
+          : ''
+    return linearError(
+      'linear_write_unconfirmed',
+      'Linear may have applied the write, but Orca could not confirm it.',
+      {
+        writeId,
+        workspaceId,
+        issueIdentifier: target?.issue.identifier,
+        parentId: extra.parentId,
+        team: extra.team ? { id: extra.team.id, key: extra.team.key } : undefined,
+        parentIdentifier: extra.parent?.issue.identifier,
+        createFields: extra.createFields,
+        nextSteps: [
+          `${retryPrefix}etry once with the pinned command: \`${pinned}\`.${payloadNote}`
+        ],
+        ...(extra.cause ? { cause: sanitizeLinearErrorMessage(extra.cause) } : {})
+      }
+    )
+  }
+
+  private commandToken(value: string, placeholder: string): string {
+    return /^[A-Za-z0-9._:@%+=,/-]+$/.test(value) ? value : placeholder
+  }
+
+  private async notifyLinearLinkedIssueUpdated(
+    workspaceId: string,
+    identifier: string
+  ): Promise<void> {
+    const normalized = identifier.toLocaleUpperCase()
+    for (const worktree of await this.listResolvedWorktrees()) {
+      if ((worktree.linkedLinearIssue ?? '').toLocaleUpperCase() !== normalized) {
+        continue
+      }
+      const linkedWorkspaceId = worktree.linkedLinearIssueWorkspaceId ?? workspaceId
+      if (linkedWorkspaceId !== workspaceId) {
+        continue
+      }
+      this.emitClientEvent({
+        type: 'linearLinkedIssueUpdated',
+        worktreeId: worktree.id,
+        identifier,
+        workspaceId
+      })
+    }
   }
 
   linearIssueComments(
@@ -15538,6 +19149,7 @@ export class OrcaRuntimeService {
 const MAX_TAIL_LINES = 2000
 const MAX_TAIL_CHARS = 256 * 1024
 const MAX_TAIL_PARTIAL_CHARS = 4000
+const MAX_TAIL_PENDING_ANSI_CHARS = 4096
 const DEFAULT_TERMINAL_READ_LIMIT = 120
 const MAX_TERMINAL_READ_LIMIT = 2000
 const MAX_TERMINAL_PREVIEW_CHARS = 32 * 1024
@@ -15608,18 +19220,13 @@ function withTimeoutResult<T>(
   promise: Promise<T>,
   timeoutMs: number
 ): Promise<{ ok: true; value: T } | { ok: false }> {
-  let timeout: ReturnType<typeof setTimeout> | null = null
-  return new Promise<{ ok: true; value: T } | { ok: false }>((resolve) => {
-    timeout = setTimeout(() => resolve({ ok: false }), timeoutMs)
-    promise.then(
-      (value) => resolve({ ok: true, value }),
-      () => resolve({ ok: false })
-    )
-  }).finally(() => {
-    if (timeout) {
-      clearTimeout(timeout)
+  return withTimeout(
+    promise.then((value) => ({ ok: true, value }) as const),
+    timeoutMs,
+    {
+      ok: false
     }
-  })
+  )
 }
 
 export function appendRecentPtyOutput(previous: string | undefined, data: string): string {
@@ -15830,23 +19437,38 @@ function parseAnsiControlSequence(
     }
     return null
   }
+  if (isStTerminatedStringControlIntroducer(introducer)) {
+    for (let index = escapeIndex + 2; index < value.length; index += 1) {
+      if (value[index] === '\u001b' && value[index + 1] === '\\') {
+        return { kind: 'other', endIndex: index + 1 }
+      }
+    }
+    return null
+  }
   return { kind: 'other', endIndex: escapeIndex + 1 }
+}
+
+function isStTerminatedStringControlIntroducer(introducer: string | undefined): boolean {
+  return introducer === 'P' || introducer === 'X' || introducer === '^' || introducer === '_'
 }
 
 function tailStateMatches(
   lines: string[],
   partialLine: string,
+  pendingAnsi: string,
   truncated: boolean,
   linesTotal: number,
   snapshot: {
     lines: string[]
     partialLine: string
+    pendingAnsi: string
     truncated: boolean
     linesTotal: number
   }
 ): boolean {
   if (
     partialLine !== snapshot.partialLine ||
+    pendingAnsi !== snapshot.pendingAnsi ||
     truncated !== snapshot.truncated ||
     linesTotal !== snapshot.linesTotal ||
     lines.length !== snapshot.lines.length
@@ -16227,13 +19849,7 @@ function buildTerminalWaitResult(
   condition: RuntimeTerminalWaitCondition,
   leaf: RuntimeLeafRecord
 ): RuntimeTerminalWait {
-  return {
-    handle,
-    condition,
-    satisfied: true,
-    status: getTerminalState(leaf),
-    exitCode: leaf.lastExitCode
-  }
+  return buildTerminalWait(handle, condition, getTerminalState(leaf), leaf.lastExitCode)
 }
 
 function buildTerminalWaitBlockedResult(
@@ -16242,14 +19858,13 @@ function buildTerminalWaitBlockedResult(
   leaf: RuntimeLeafRecord,
   blockedReason: RuntimeTerminalWaitBlockedReason
 ): RuntimeTerminalWait {
-  return {
+  return buildTerminalWait(
     handle,
     condition,
-    satisfied: false,
-    status: getTerminalState(leaf),
-    exitCode: leaf.lastExitCode,
+    getTerminalState(leaf),
+    leaf.lastExitCode,
     blockedReason
-  }
+  )
 }
 
 function buildPtyTerminalWaitResult(
@@ -16257,13 +19872,7 @@ function buildPtyTerminalWaitResult(
   condition: RuntimeTerminalWaitCondition,
   pty: RuntimePtyWorktreeRecord
 ): RuntimeTerminalWait {
-  return {
-    handle,
-    condition,
-    satisfied: true,
-    status: pty.connected ? 'running' : pty.lastExitCode !== null ? 'exited' : 'unknown',
-    exitCode: pty.lastExitCode
-  }
+  return buildTerminalWait(handle, condition, getPtyTerminalState(pty), pty.lastExitCode)
 }
 
 function buildPtyTerminalWaitBlockedResult(
@@ -16272,14 +19881,34 @@ function buildPtyTerminalWaitBlockedResult(
   pty: RuntimePtyWorktreeRecord,
   blockedReason: RuntimeTerminalWaitBlockedReason
 ): RuntimeTerminalWait {
+  return buildTerminalWait(
+    handle,
+    condition,
+    getPtyTerminalState(pty),
+    pty.lastExitCode,
+    blockedReason
+  )
+}
+
+function buildTerminalWait(
+  handle: string,
+  condition: RuntimeTerminalWaitCondition,
+  status: RuntimeTerminalState,
+  exitCode: number | null,
+  blockedReason?: RuntimeTerminalWaitBlockedReason
+): RuntimeTerminalWait {
   return {
     handle,
     condition,
-    satisfied: false,
-    status: pty.connected ? 'running' : pty.lastExitCode !== null ? 'exited' : 'unknown',
-    exitCode: pty.lastExitCode,
-    blockedReason
+    satisfied: blockedReason === undefined,
+    status,
+    exitCode,
+    ...(blockedReason ? { blockedReason } : {})
   }
+}
+
+function getPtyTerminalState(pty: RuntimePtyWorktreeRecord): RuntimeTerminalState {
+  return pty.connected ? 'running' : pty.lastExitCode !== null ? 'exited' : 'unknown'
 }
 
 function branchSelectorMatches(branch: string, selector: string): boolean {
@@ -16287,24 +19916,27 @@ function branchSelectorMatches(branch: string, selector: string): boolean {
   // or `foo` depending on which plumbing path produced the record. Orca's
   // branch selectors should accept either form so newly created worktrees stay
   // discoverable without exposing internal ref-shape differences to users.
-  return normalizeBranchRef(branch) === normalizeBranchRef(selector)
+  return normalizeLocalBranchName(branch) === normalizeLocalBranchName(selector)
 }
 
 function runtimePathsEqual(left: string, right: string): boolean {
   return normalizeRuntimePathForComparison(left) === normalizeRuntimePathForComparison(right)
 }
 
-function normalizeBranchRef(branch: string): string {
-  return branch.startsWith('refs/heads/') ? branch.slice('refs/heads/'.length) : branch
+function inferWorktreeIdFromPtyId(ptyId: string): string | null {
+  return parsePtySessionId(ptyId).worktreeId
 }
 
-function inferWorktreeIdFromPtyId(ptyId: string): string | null {
-  const separatorIndex = ptyId.lastIndexOf('@@')
-  if (separatorIndex <= 0) {
-    return null
+function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
+  if (a.size !== b.size) {
+    return false
   }
-  const worktreeId = ptyId.slice(0, separatorIndex)
-  return parseRuntimeWorktreeId(worktreeId) ? worktreeId : null
+  for (const value of a) {
+    if (!b.has(value)) {
+      return false
+    }
+  }
+  return true
 }
 
 function parseRuntimeWorktreeId(
@@ -16318,6 +19950,16 @@ function parseRuntimeWorktreeId(
     return null
   }
   return parsed
+}
+
+function includeTargetResolvedWorktree(
+  resolvedWorktrees: ResolvedWorktree[],
+  targetWorktree: ResolvedWorktree | null
+): ResolvedWorktree[] {
+  if (!targetWorktree || resolvedWorktrees.some((worktree) => worktree.id === targetWorktree.id)) {
+    return resolvedWorktrees
+  }
+  return [...resolvedWorktrees, targetWorktree]
 }
 
 function findResolvedWorktreeIdForPath(
@@ -16339,23 +19981,75 @@ function getLeafWorktreeStatus(
 ): RuntimeWorktreeStatus {
   // Why: recompute from the live title each call so worktree.ps mirrors what
   // the desktop sidebar's getWorktreeStatus does (no sticky state). Prefer
-  // the runtime-tracked OSC title (covers daemon-hosted terminals) over the
-  // renderer-pushed leaf.title and the tab title. Falling back to
-  // lastAgentStatus only when no title is available preserves a sensible
-  // signal for very fresh leaves before any title has been observed.
-  const liveTitle = leaf.lastOscTitle ?? leaf.title ?? tabTitle ?? ''
-  const detected = liveTitle ? detectAgentStatusFromTitle(liveTitle) : leaf.lastAgentStatus
-  if (detected === 'permission') {
-    return 'permission'
+  // the freshest pane/OSC title, then tab title. Falling back to lastAgentStatus
+  // only when no title is available preserves a sensible signal for very fresh
+  // leaves before any title has been observed.
+  const titleCandidates = [
+    { title: leaf.paneTitle, updatedAt: leaf.paneTitleUpdatedAt },
+    { title: leaf.lastOscTitle, updatedAt: leaf.lastOscTitleAt },
+    { title: tabTitle, updatedAt: 0 }
+  ]
+  const latestTitle = getLatestAgentCandidateTitle(...titleCandidates)
+  const detected = latestTitle ? detectAgentStatusFromTitle(latestTitle) : leaf.lastAgentStatus
+  return getDetectedWorktreeStatus(detected, leaf.ptyId !== null)
+}
+
+function classifyLatestAgentTitle(
+  ...titles: { title: string | null | undefined; updatedAt: number | null | undefined }[]
+): 'agent' | 'management' | 'neutral' {
+  return classifyAgentTitle(getLatestAgentCandidateTitle(...titles))
+}
+
+function getLatestPtyTitle(pty: RuntimePtyWorktreeRecord): string | null {
+  return getLatestAgentCandidateTitle(
+    { title: pty.title, updatedAt: pty.titleUpdatedAt },
+    { title: pty.lastOscTitle, updatedAt: pty.lastOscTitleAt }
+  )
+}
+
+function getLatestLeafTitle(leaf: RuntimeLeafRecord, tabTitle: string | null): string | null {
+  return getLatestAgentCandidateTitle(
+    { title: leaf.paneTitle, updatedAt: leaf.paneTitleUpdatedAt },
+    { title: leaf.lastOscTitle, updatedAt: leaf.lastOscTitleAt },
+    { title: tabTitle, updatedAt: 0 }
+  )
+}
+
+function classifyAgentTitle(title: string | null): 'agent' | 'management' | 'neutral' {
+  if (!title) {
+    return 'neutral'
   }
-  if (detected === 'working') {
-    return 'working'
+  if (isClaudeManagementTitle(title)) {
+    return 'management'
   }
-  return leaf.ptyId ? 'active' : 'inactive'
+  return detectAgentStatusFromTitle(title) !== null ? 'agent' : 'neutral'
+}
+
+function getLatestAgentCandidateTitle(
+  ...titles: { title: string | null | undefined; updatedAt: number | null | undefined }[]
+): string | null {
+  let latest: { title: string; updatedAt: number } | null = null
+  for (const candidate of titles) {
+    const title = candidate.title?.trim()
+    if (!title) {
+      continue
+    }
+    const updatedAt = candidate.updatedAt ?? 0
+    if (!latest || updatedAt > latest.updatedAt) {
+      latest = { title, updatedAt }
+    }
+  }
+  return latest?.title ?? null
 }
 
 function getSavedTabWorktreeStatus(title: string, hasPty: boolean): RuntimeWorktreeStatus {
-  const detected = detectAgentStatusFromTitle(title)
+  return getDetectedWorktreeStatus(detectAgentStatusFromTitle(title), hasPty)
+}
+
+function getDetectedWorktreeStatus(
+  detected: AgentStatus | null,
+  hasPty: boolean
+): RuntimeWorktreeStatus {
   if (detected === 'permission') {
     return 'permission'
   }
@@ -16372,18 +20066,50 @@ function mergeWorktreeStatus(
   return WORKTREE_STATUS_PRIORITY[next] > WORKTREE_STATUS_PRIORITY[current] ? next : current
 }
 
-function normalizeTerminalChunk(chunk: string): string {
+function normalizeTerminalChunk(
+  chunk: string,
+  pendingAnsi: string = ''
+): { text: string; pendingAnsi: string } {
   // Why: most high-throughput PTY chunks are plain printable text. Avoid
   // running every ANSI/OSC regex over megabytes that do not need normalization.
-  if (!terminalChunkNeedsNormalization(chunk)) {
-    return chunk
+  if (pendingAnsi.length === 0 && !terminalChunkNeedsNormalization(chunk)) {
+    return { text: chunk, pendingAnsi: '' }
   }
-  return chunk
-    .replace(/\r\n/g, '\n')
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\x1b[@-_]/g, '')
-    .replace(/[^\x08\x09\x0a\x0d\x20-\x7e]/g, '')
+  const combined = `${pendingAnsi}${chunk}`
+  let text = ''
+  for (let index = 0; index < combined.length; index += 1) {
+    const char = combined[index]
+    if (char === '\x1b') {
+      if (index + 1 >= combined.length) {
+        return { text, pendingAnsi: combined.slice(index) }
+      }
+      const parsed = parseAnsiControlSequence(combined, index)
+      if (!parsed) {
+        return {
+          text,
+          pendingAnsi: trimPendingAnsiControl(combined.slice(index))
+        }
+      }
+      index = parsed.endIndex
+      continue
+    }
+    if (char === '\r' && combined[index + 1] === '\n') {
+      text += '\n'
+      index += 1
+      continue
+    }
+    const code = combined.charCodeAt(index)
+    if (code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0d) {
+      text += char
+    } else if (isTerminalPreviewPrintableCodeUnit(code)) {
+      text += char
+    }
+  }
+  return { text, pendingAnsi: '' }
+}
+
+function isTerminalPreviewPrintableCodeUnit(code: number): boolean {
+  return code >= 0x20 && code !== 0x7f && (code < 0x80 || code > 0x9f)
 }
 
 function terminalChunkNeedsNormalization(chunk: string): boolean {
@@ -16391,15 +20117,25 @@ function terminalChunkNeedsNormalization(chunk: string): boolean {
     const code = chunk.charCodeAt(index)
     if (
       code === 0x1b ||
+      code === 0x7f ||
       code === 0x0d ||
       code < 0x09 ||
       (code > 0x0a && code < 0x20) ||
-      code > 0x7e
+      (code >= 0x80 && code <= 0x9f)
     ) {
       return true
     }
   }
   return false
+}
+
+function trimPendingAnsiControl(value: string): string {
+  if (value.length <= MAX_TAIL_PENDING_ANSI_CHARS) {
+    return value
+  }
+  const introducer = value.slice(0, Math.min(2, value.length))
+  const suffixBudget = Math.max(0, MAX_TAIL_PENDING_ANSI_CHARS - introducer.length)
+  return `${introducer}${value.slice(-suffixBudget)}`
 }
 
 function maxTimestamp(left: number | null, right: number | null): number | null {

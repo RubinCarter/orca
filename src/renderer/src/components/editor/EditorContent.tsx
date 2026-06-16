@@ -28,6 +28,7 @@ import { useMarkdownDocuments } from './useMarkdownDocuments'
 import { findGitConflictBlocks } from './monaco-conflict-decorations'
 import { getDiffContentSignature } from './diff-content-signature'
 import { translate } from '@/i18n/i18n'
+import { CheckRunDetailsPanel } from './CheckRunDetailsPanel'
 
 const MonacoEditor = lazy(() => import('./MonacoEditor'))
 const DiffViewer = lazy(() => import('./DiffViewer'))
@@ -81,11 +82,14 @@ function FileLoadErrorView({
       <div className="flex max-w-xl items-start gap-3 rounded-md border border-border bg-background p-4">
         <AlertCircle className="mt-0.5 size-4 flex-shrink-0 text-destructive" />
         <div className="min-w-0">
-          <div className="font-medium text-foreground">{translate("auto.components.editor.EditorContent.39f018b052", "Unable to load file")}</div>
+          <div className="font-medium text-foreground">
+            {translate('auto.components.editor.EditorContent.39f018b052', 'Unable to load file')}
+          </div>
           <div className="mt-1 break-words">{message}</div>
           <Button type="button" variant="outline" size="sm" className="mt-3" onClick={onRetry}>
             <RefreshCw className="size-3.5" />
-            {translate("auto.components.editor.EditorContent.2a512bb46a", "Retry")}</Button>
+            {translate('auto.components.editor.EditorContent.2a512bb46a', 'Retry')}
+          </Button>
         </div>
       </div>
     </div>
@@ -164,6 +168,7 @@ export function EditorContent({
   const closeFile = useAppStore((s) => s.closeFile)
   const setRightSidebarTab = useAppStore((s) => s.setRightSidebarTab)
   const setPendingEditorReveal = useAppStore((s) => s.setPendingEditorReveal)
+  const reloadOpenCheckRunDetailsTab = useAppStore((s) => s.reloadOpenCheckRunDetailsTab)
   const [conflictNavigationIndexByFile, setConflictNavigationIndexByFile] = React.useState<
     Record<string, number>
   >({})
@@ -253,8 +258,10 @@ export function EditorContent({
               conflictKind: entry.conflictKind,
               conflictStatus: entry.conflictStatus,
               conflictStatusSource: entry.conflictStatusSource,
-              message:
-                translate("auto.components.editor.EditorContent.8b1a605bae", "This file is in a conflict state, but no working-tree file is available to edit."),
+              message: translate(
+                'auto.components.editor.EditorContent.8b1a605bae',
+                'This file is in a conflict state, but no working-tree file is available to edit.'
+              ),
               guidance: 'Resolve the conflict in Git or restore one side before reopening it.'
             }
           : {
@@ -477,7 +484,8 @@ export function EditorContent({
       return (
         <div className={className}>
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            {translate("auto.components.editor.EditorContent.b2735221f5", "Loading...")}</div>
+            {translate('auto.components.editor.EditorContent.b2735221f5', 'Loading...')}
+          </div>
         </div>
       )
     }
@@ -506,7 +514,11 @@ export function EditorContent({
       return (
         <div className={className}>
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            {translate("auto.components.editor.EditorContent.b9de81ba52", "Binary file — cannot display")}</div>
+            {translate(
+              'auto.components.editor.EditorContent.b9de81ba52',
+              'Binary file — cannot display'
+            )}
+          </div>
         </div>
       )
     }
@@ -604,6 +616,34 @@ export function EditorContent({
     )
   }
 
+  if (activeFile.mode === 'check-details') {
+    const checkRunDetails = activeFile.checkRunDetails
+    if (!checkRunDetails) {
+      return (
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          {translate(
+            'auto.components.editor.EditorContent.6c4f1a8d2e',
+            'Check details are unavailable.'
+          )}
+        </div>
+      )
+    }
+    const details = checkRunDetails.details
+    const openUrl = details?.detailsUrl ?? details?.url ?? checkRunDetails.check.url
+    return (
+      <CheckRunDetailsPanel
+        check={checkRunDetails.check}
+        details={checkRunDetails.details}
+        loading={checkRunDetails.loading}
+        error={checkRunDetails.error}
+        openUrl={openUrl}
+        onRefresh={() => {
+          void reloadOpenCheckRunDetailsTab(activeFile.id)
+        }}
+      />
+    )
+  }
+
   if (activeFile.mode === 'conflict-review') {
     return (
       <ConflictReviewPanel
@@ -650,7 +690,8 @@ export function EditorContent({
     if (!fc) {
       return (
         <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-          {translate("auto.components.editor.EditorContent.37a0e81fa6", "Loading preview...")}</div>
+          {translate('auto.components.editor.EditorContent.37a0e81fa6', 'Loading preview...')}
+        </div>
       )
     }
     if (fc.loadError) {
@@ -661,7 +702,11 @@ export function EditorContent({
     if (fc.isBinary) {
       return (
         <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-          {translate("auto.components.editor.EditorContent.8608ce4cb1", "Markdown preview is unavailable for binary files.")}</div>
+          {translate(
+            'auto.components.editor.EditorContent.8608ce4cb1',
+            'Markdown preview is unavailable for binary files.'
+          )}
+        </div>
       )
     }
     const previewSourceFileId = activeFile.markdownPreviewSourceFileId ?? activeFile.filePath
@@ -694,7 +739,8 @@ export function EditorContent({
     if (!fc) {
       return (
         <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-          {translate("auto.components.editor.EditorContent.b2735221f5", "Loading...")}</div>
+          {translate('auto.components.editor.EditorContent.b2735221f5', 'Loading...')}
+        </div>
       )
     }
     if (fc.loadError) {
@@ -710,7 +756,11 @@ export function EditorContent({
       }
       return (
         <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-          {translate("auto.components.editor.EditorContent.b9de81ba52", "Binary file — cannot display")}</div>
+          {translate(
+            'auto.components.editor.EditorContent.b9de81ba52',
+            'Binary file — cannot display'
+          )}
+        </div>
       )
     }
     if (isChangesMode) {
@@ -744,19 +794,19 @@ export function EditorContent({
         <div className="min-h-0 flex-1 relative">
           {isMarkdown ? (
             renderMarkdownContent(fc)
-          ) : isMermaid && mdViewMode === "rich" ? (
+          ) : isMermaid && mdViewMode === 'rich' ? (
             <MermaidViewer
               key={activeFile.id}
               content={editBuffers[activeFile.id] ?? fc.content}
               filePath={activeFile.filePath}
             />
-          ) : isCsv && mdViewMode === "rich" ? (
+          ) : isCsv && mdViewMode === 'rich' ? (
             <CsvViewer
               key={activeFile.id}
               content={editBuffers[activeFile.id] ?? fc.content}
               filePath={activeFile.filePath}
             />
-          ) : isNotebook && mdViewMode === "rich" ? (
+          ) : isNotebook && mdViewMode === 'rich' ? (
             <IpynbViewer
               key={activeFile.id}
               content={editBuffers[activeFile.id] ?? fc.content}
@@ -781,7 +831,8 @@ export function EditorContent({
   if (!dc) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        {translate("auto.components.editor.EditorContent.c88c73a0d3", "Loading diff...")}</div>
+        {translate('auto.components.editor.EditorContent.c88c73a0d3', 'Loading diff...')}
+      </div>
     )
   }
   const isEditable = activeFile.diffSource === 'unstaged'
@@ -800,18 +851,32 @@ export function EditorContent({
     return (
       <div className="flex h-full items-center justify-center px-6 text-center">
         <div className="space-y-2">
-          <div className="text-sm font-medium text-foreground">{translate("auto.components.editor.EditorContent.78541e254e", "Binary file changed")}</div>
+          <div className="text-sm font-medium text-foreground">
+            {translate('auto.components.editor.EditorContent.78541e254e', 'Binary file changed')}
+          </div>
           <div className="text-xs text-muted-foreground">
-            {activeFile.diffSource === "branch"
-              ? translate("auto.components.editor.EditorContent.3c6e71df22", "Text diff is unavailable for this file in branch compare.")
-              : translate("auto.components.editor.EditorContent.8a0898ae4c", "Text diff is unavailable for this file.")}
+            {activeFile.diffSource === 'branch'
+              ? translate(
+                  'auto.components.editor.EditorContent.3c6e71df22',
+                  'Text diff is unavailable for this file in branch compare.'
+                )
+              : translate(
+                  'auto.components.editor.EditorContent.8a0898ae4c',
+                  'Text diff is unavailable for this file.'
+                )}
           </div>
         </div>
       </div>
     )
   }
-  const modifiedDiffContent = editBuffers[activeFile.id] ?? dc.modifiedContent
-  if (isMarkdown && mdViewMode === 'preview') {
+  const modifiedDiffBuffer = editBuffers[activeFile.id]
+  const modifiedDiffContent = modifiedDiffBuffer ?? dc.modifiedContent
+  const largeDiffSaveContentAvailable = !(
+    dc.largeDiffRenderLimit?.limited === true &&
+    modifiedDiffBuffer === undefined &&
+    dc.modifiedContent.length === 0
+  )
+  if (isMarkdown && mdViewMode === 'preview' && dc.largeDiffRenderLimit?.limited !== true) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <div className="border-b border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
@@ -819,7 +884,11 @@ export function EditorContent({
           deletions simultaneously, so preview mode intentionally shows the
           modified side of the diff. Source mode remains available for the
           actual line-by-line comparison. */}
-          {translate("auto.components.editor.EditorContent.9640d1d3db", "Previewing the modified version of this diff. Switch to source mode to inspect changes.")}</div>
+          {translate(
+            'auto.components.editor.EditorContent.9640d1d3db',
+            'Previewing the modified version of this diff. Switch to source mode to inspect changes.'
+          )}
+        </div>
         <div className="min-h-0 flex-1">
           <MarkdownPreview
             key={viewStateScopeId}
@@ -852,6 +921,8 @@ export function EditorContent({
       modifiedModelKey={modifiedModelKey}
       originalContent={dc.originalContent}
       modifiedContent={modifiedDiffContent}
+      largeDiffRenderLimit={dc.largeDiffRenderLimit}
+      largeDiffSaveContentAvailable={largeDiffSaveContentAvailable}
       language={monacoLanguage}
       filePath={activeFile.filePath}
       relativePath={activeFile.relativePath}
@@ -878,8 +949,10 @@ function FrontMatterBanner({ raw }: { raw: string }): React.JSX.Element {
   return (
     <div className="border-b border-border/60 bg-muted/40 px-3 py-2">
       <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        {translate("auto.components.editor.EditorContent.e4b074749d", "Front Matter")}<span className="ml-2 font-normal normal-case tracking-normal opacity-70">
-          {translate("auto.components.editor.EditorContent.56dba34e1a", "(edit in source mode)")}</span>
+        {translate('auto.components.editor.EditorContent.e4b074749d', 'Front Matter')}
+        <span className="ml-2 font-normal normal-case tracking-normal opacity-70">
+          {translate('auto.components.editor.EditorContent.56dba34e1a', '(edit in source mode)')}
+        </span>
       </div>
       <pre className="max-h-32 overflow-auto whitespace-pre-wrap text-xs text-muted-foreground font-mono scrollbar-editor">
         {inner}

@@ -2,7 +2,6 @@
    it owns app lifecycle, service wiring, window creation, and hook/daemon
    startup. Splitting by line count would fragment tightly coupled startup
    logic across files without a cleaner ownership seam. */
-import { grantDirAcl } from './win32-utils'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import os from 'node:os'
@@ -71,7 +70,9 @@ import {
   logSingleInstanceLockFailure,
   shouldBypassSingleInstanceLock
 } from './startup/single-instance-lock'
+import { startEventLoopStallProbe } from './startup/event-loop-stall-probe'
 import { isStartupDiagnosticsEnabled, logStartupDiagnostic } from './startup/startup-diagnostics'
+import { ensureWindowsUserDataAclGrant } from './startup/windows-user-data-acl'
 import { RateLimitService } from './rate-limits/service'
 import { getInitialClaudeRateLimitTarget } from './rate-limits/claude-rate-limit-target'
 import { getInitialCodexRateLimitTarget } from './rate-limits/codex-rate-limit-target'
@@ -91,7 +92,10 @@ import { ClaudeRuntimeAuthService } from './claude-accounts/runtime-auth-service
 import { StarNagService } from './star-nag/service'
 import { agentHookServer } from './agent-hooks/server'
 import { maybeAutoRenameBranchOnFirstWork } from './agent-hooks/first-work-branch-rename'
+import { renameWorktreeFolderOnFirstWork } from './agent-hooks/first-work-folder-rename'
+import { moveWorktree } from './git/worktree'
 import { getRepoIdFromWorktreeId } from '../shared/worktree-id'
+import { parseWorkspaceKey } from '../shared/workspace-scope'
 import { setMigrationUnsupportedPtyListener } from './agent-hooks/migration-unsupported-pty-state'
 import {
   clearProviderPtyState,
@@ -107,6 +111,7 @@ import { browserManager } from './browser/browser-manager'
 import { initializeBrowserSessionsForApp } from './browser/browser-session-startup'
 import { setUnreadDockBadgeCount } from './dock/unread-badge'
 import { AutomationService } from './automations/service'
+import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
 import { AgentAwakeService } from './agent-awake-service'
 import {
   getCrashBreadcrumbSnapshot,
@@ -158,6 +163,16 @@ let claudeRuntimeAuth: ClaudeRuntimeAuthService | null = null
 let runtime: OrcaRuntimeService | null = null
 let rateLimits: RateLimitService | null = null
 let runtimeRpc: OrcaRuntimeRpcServer | null = null
+
+function buildHeadlessAutomationWorkspaceName(runTitle: string, scheduledFor: number): string {
+  const slug = runTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40)
+  const stamp = new Date(scheduledFor).toISOString().replace(/[-:]/g, '').slice(0, 13)
+  return `auto-${slug || 'run'}-${stamp}`
+}
 let starNag: StarNagService | null = null
 let agentAwakeService: AgentAwakeService | null = null
 let crashReports: CrashReportStore | null = null
@@ -179,6 +194,12 @@ const appImageCliRedirect = maybeRedirectAppImageCliLaunch({
 if (appImageCliRedirect.redirected) {
   app.exit(appImageCliRedirect.status)
 }
+
+// Kill switch for the first-work on-disk folder rename. The renderer reconciles a
+// worktree id change via migrateWorktreeIdentity + a rename-aware worktrees:changed
+// handler, so an old->new id change is no longer mistaken for a deletion. Flip off
+// to disable the on-disk move (branch + display rename still happen) if needed.
+const ENABLE_FIRST_WORK_FOLDER_RENAME = true
 
 // Why: the store/runtime singletons live here in index.ts; injecting them keeps
 // the rename orchestrator free of module-level state and unit-testable.
@@ -208,7 +229,29 @@ function maybeAutoRenameBranchOnFirstWorkFromHook(event: {
       getSettings: () => currentStore.getSettings(),
       getRepo: (repoId) => currentStore.getRepo(repoId),
       getAgentEnvResolvers: () => currentRuntime.getCommitMessageAgentEnvironmentResolvers(),
-      getCurrentDisplayName: (worktreeId) => currentStore.getWorktreeMeta(worktreeId)?.displayName,
+      getCurrentDisplayName: (worktreeId) => {
+        const scope = parseWorkspaceKey(worktreeId)
+        if (scope?.type === 'folder') {
+          return currentStore.getFolderWorkspace(scope.folderWorkspaceId)?.name
+        }
+        return currentStore.getWorktreeMeta(worktreeId)?.displayName
+      },
+      getFolderWorkspacePath: (worktreeId) => {
+        const scope = parseWorkspaceKey(worktreeId)
+        return scope?.type === 'folder'
+          ? currentStore.getFolderWorkspace(scope.folderWorkspaceId)?.folderPath
+          : undefined
+      },
+      isPendingFirstAgentMessageRename: (worktreeId) => {
+        const scope = parseWorkspaceKey(worktreeId)
+        if (scope?.type === 'folder') {
+          return (
+            currentStore.getFolderWorkspace(scope.folderWorkspaceId)
+              ?.pendingFirstAgentMessageRename === true
+          )
+        }
+        return currentStore.getWorktreeMeta(worktreeId)?.pendingFirstAgentMessageRename === true
+      },
       canRenameOrcaCreatedBranch: (worktreeId) => {
         const meta = currentStore.getWorktreeMeta(worktreeId)
         // Why: a user/imported branch can coincidentally be named after a creature.
@@ -216,6 +259,16 @@ function maybeAutoRenameBranchOnFirstWorkFromHook(event: {
         return !!meta?.orcaCreationSource && meta.preserveBranchOnDelete !== true
       },
       setDisplayName: (worktreeId, displayName) => {
+        const scope = parseWorkspaceKey(worktreeId)
+        if (scope?.type === 'folder') {
+          currentStore.updateFolderWorkspace(scope.folderWorkspaceId, {
+            name: displayName,
+            pendingFirstAgentMessageRename: false,
+            firstAgentMessageRenameError: null
+          })
+          currentRuntime.notifyFolderWorkspaceChanged()
+          return
+        }
         currentStore.setWorktreeMeta(worktreeId, {
           displayName,
           pendingFirstAgentMessageRename: false,
@@ -224,9 +277,36 @@ function maybeAutoRenameBranchOnFirstWorkFromHook(event: {
           firstAgentMessageRenameError: null
         })
       },
+      renameWorktreeFolder: ENABLE_FIRST_WORK_FOLDER_RENAME
+        ? (worktreeId, newLeaf) =>
+            renameWorktreeFolderOnFirstWork(worktreeId, newLeaf, {
+              getRepo: (repoId) => currentStore.getRepo(repoId),
+              getSettings: () => currentStore.getSettings(),
+              migrateWorktreeIdentity: (oldId, newId) =>
+                currentStore.migrateWorktreeIdentity(oldId, newId),
+              notifyWorktreeRenamed: (repoId, oldId, newId) =>
+                currentRuntime.notifyWorktreeFolderRenamed(repoId, oldId, newId),
+              pathExists: async (candidate) => existsSync(candidate),
+              moveWorktree
+            })
+        : undefined,
       setRenameError: (worktreeId, error) => {
         // Skip the write + renderer push when nothing changes — benign skips
         // clear the error on every settled worktree, most of which never had one.
+        const scope = parseWorkspaceKey(worktreeId)
+        if (scope?.type === 'folder') {
+          const current = currentStore.getFolderWorkspace(
+            scope.folderWorkspaceId
+          )?.firstAgentMessageRenameError
+          if ((current ?? null) === (error ?? null)) {
+            return
+          }
+          currentStore.updateFolderWorkspace(scope.folderWorkspaceId, {
+            firstAgentMessageRenameError: error
+          })
+          currentRuntime.notifyFolderWorkspaceChanged()
+          return
+        }
         const current = currentStore.getWorktreeMeta(worktreeId)?.firstAgentMessageRenameError
         if ((current ?? null) === (error ?? null)) {
           return
@@ -237,7 +317,13 @@ function maybeAutoRenameBranchOnFirstWorkFromHook(event: {
         currentRuntime.notifyBranchRenamed(getRepoIdFromWorktreeId(worktreeId))
       },
       resolveWorktreeIdForTab: (tabId) => currentStore.getWorktreeIdForTab(tabId),
-      onRenamed: (repoId) => currentRuntime.notifyBranchRenamed(repoId)
+      onRenamed: (repoIdOrWorktreeId) => {
+        if (parseWorkspaceKey(repoIdOrWorktreeId)?.type === 'folder') {
+          currentRuntime.notifyFolderWorkspaceChanged()
+          return
+        }
+        currentRuntime.notifyBranchRenamed(repoIdOrWorktreeId)
+      }
     }
   )
 }
@@ -281,6 +367,15 @@ if (startupDiagnosticsEnabled) {
     userData: app.getPath('userData'),
     e2eUserData: Boolean(process.env.ORCA_E2E_USER_DATA_DIR)
   })
+  startEventLoopStallProbe()
+}
+
+// Why: startup benchmarking needs in-process timestamps — harness-side stderr
+// arrival times include pipe buffering jitter. `t` is ms since process start.
+function logStartupMilestone(event: string, details: Record<string, unknown> = {}): void {
+  if (startupDiagnosticsEnabled) {
+    logStartupDiagnostic(event, { t: Math.round(performance.now()), ...details })
+  }
 }
 
 function focusExistingWindow(): void {
@@ -469,6 +564,7 @@ function prepareCodexRuntimeHomeForLaunch(target?: CodexAccountSelectionTarget):
 }
 
 function openMainWindow(): BrowserWindow {
+  logStartupMilestone('open-main-window-start')
   if (!store) {
     throw new Error('Store must be initialized before opening the main window')
   }
@@ -512,16 +608,21 @@ function openMainWindow(): BrowserWindow {
   }
 
   // Why: Chromium's BrowserWindow constructor resets the userData DACL to a
-  // Protected DACL. Grant explicit Full Control ACEs on all existing children
-  // before the constructor runs so they survive the upcoming DACL reset.
-  // Per-write EPERM retries in fs-utils/installer-utils serve as the backstop
-  // for any directories created after startup.
+  // Protected DACL, breaking writes in pre-existing subdirs. Explicit ACEs on
+  // userData + immediate children fix the tree permanently; the grant runs in
+  // the background on first launch only (marker-gated) because the previous
+  // synchronous recursive walk blocked startup ~60s on large profiles. See
+  // startup/windows-user-data-acl.ts; per-write EPERM retries are the backstop.
   if (process.platform === 'win32') {
-    try {
-      grantDirAcl(app.getPath('userData'), { recursive: true })
-    } catch {
-      // Non-fatal; per-call retries are the backstop.
-    }
+    logStartupMilestone('acl-grant-start')
+    ensureWindowsUserDataAclGrant(app.getPath('userData'), {
+      onDone: (result) => {
+        logStartupMilestone('acl-grant-done', { mode: result.mode })
+        if (result.mode === 'failed') {
+          console.warn('[win32-acl] userData ACL grant failed:', result.reason)
+        }
+      }
+    })
   }
 
   const window = createMainWindow(store, {
@@ -566,6 +667,10 @@ function openMainWindow(): BrowserWindow {
     }
   })
   recordCrashBreadcrumb('main_window_created')
+  logStartupMilestone('window-created')
+  window.once('ready-to-show', () => {
+    logStartupMilestone('ready-to-show')
+  })
 
   // Why: telemetry-plan.md§First-launch experience anchors default-on
   // `app_opened` to the first main-window load. Existing users in the
@@ -575,6 +680,7 @@ function openMainWindow(): BrowserWindow {
   const onFirstWindowLoad = (): void => {
     clearExpectedRendererReload(rendererWebContentsId)
     recordCrashBreadcrumb('main_window_loaded')
+    logStartupMilestone('did-finish-load')
     if (!store) {
       return
     }
@@ -606,6 +712,8 @@ function openMainWindow(): BrowserWindow {
     crashReports ?? undefined,
     keybindings,
     {
+      getAdditionalAiVaultCodexHomePaths: () =>
+        codexRuntimeHome ? [codexRuntimeHome.getHostRuntimeHomePath()] : [],
       onBeforeRelaunch: () => {
         isQuitting = true
         store?.flush()
@@ -717,6 +825,7 @@ function openMainWindow(): BrowserWindow {
       })
     }
   })
+  logStartupMilestone('load-start')
   loadMainWindow(window)
   return window
 }
@@ -1124,10 +1233,12 @@ function driveSyntheticTitleFromHook(
 }
 
 app.whenReady().then(async () => {
+  logStartupMilestone('app-ready')
   electronApp.setAppUserModelId(devInstanceIdentity.appUserModelId)
   app.setName(devInstanceIdentity.name)
 
   store = new Store()
+  logStartupMilestone('store-loaded')
   applyAppIcon(store.getSettings().appIcon)
   if (shouldSuppressDevEducation({ isDev: is.dev })) {
     suppressDevEducationForStore(store)
@@ -1250,10 +1361,101 @@ app.whenReady().then(async () => {
               mainWindow.webContents.send('pty:sideEffect', batch)
             }
           }
-        })
+        }),
+    // Why: hook-reported agent status is the same source the desktop sidebar
+    // reads. worktree.ps pulls it at query time so mobile shows the same agents.
+    getAgentStatusSnapshot: () => agentHookServer.getStatusSnapshot()
   })
   runtime = runtimeService
-  automations = new AutomationService(store, { claudeUsage, codexUsage })
+  automations = new AutomationService(store, {
+    claudeUsage,
+    codexUsage,
+    // Why: desktop clients may mirror remote-host automations, but only a
+    // server process should execute schedules owned by `remote_host_service`.
+    allowRemoteHostScheduling: isServeMode,
+    headlessDispatcher: isServeMode
+      ? async ({ automation, run, target }) => {
+          const terminalSnapshotLimit = 2_000
+          let terminalHandle: string
+          let terminalSessionId: string | null = null
+          let workspaceId: string
+          let workspaceDisplayName: string | null = null
+
+          if (automation.workspaceMode === 'new_per_run') {
+            const created = await runtimeService.createManagedWorktree({
+              repoSelector: target.repo.id,
+              name: buildHeadlessAutomationWorkspaceName(run.title, run.scheduledFor),
+              baseBranch: automation.baseBranch ?? undefined,
+              setupDecision: 'inherit',
+              activate: false,
+              createdWithAgent: automation.agentId,
+              startupAgent: automation.agentId,
+              startupPrompt: automation.prompt,
+              telemetrySource: 'unknown'
+            })
+            terminalHandle = created.startupTerminal?.handle ?? ''
+            terminalSessionId = created.startupTerminal?.tabId ?? null
+            workspaceId = created.worktree.id
+            workspaceDisplayName = created.worktree.displayName ?? null
+            if (!terminalHandle) {
+              throw new Error(
+                created.warning ||
+                  'Automation workspace was created, but no agent terminal started.'
+              )
+            }
+          } else {
+            if (!automation.workspaceId) {
+              throw new Error('The target workspace is no longer available.')
+            }
+            const terminal = await runtimeService.launchAgentTerminal(
+              `id:${automation.workspaceId}`,
+              {
+                agent: automation.agentId,
+                prompt: automation.prompt,
+                title: run.title
+              }
+            )
+            terminalHandle = terminal.handle
+            terminalSessionId = terminal.tabId ?? null
+            workspaceId = terminal.worktreeId
+            const worktree = await runtimeService.showManagedWorktree(`id:${workspaceId}`)
+            workspaceDisplayName = worktree.displayName ?? null
+          }
+
+          const completion = (async () => {
+            const wait = await runtimeService.waitForTerminal(terminalHandle, {
+              condition: 'tui-idle'
+            })
+            const read = await runtimeService.readTerminal(terminalHandle, {
+              limit: terminalSnapshotLimit
+            })
+            const snapshotBuffer = createHeadlessAutomationOutputSnapshotBuffer()
+            snapshotBuffer.append(read.tail.join('\n'))
+            if (wait.satisfied) {
+              return {
+                status: 'completed' as const,
+                outputSnapshot: snapshotBuffer.snapshot(),
+                error: null
+              }
+            }
+            return {
+              status: 'dispatch_failed' as const,
+              outputSnapshot: snapshotBuffer.snapshot(),
+              error: wait.blockedReason
+                ? `Automation agent is blocked: ${wait.blockedReason}.`
+                : 'Automation agent did not report completion.'
+            }
+          })()
+
+          return {
+            workspaceId,
+            workspaceDisplayName,
+            terminalSessionId,
+            completion
+          }
+        }
+      : undefined
+  })
   runtimeService.setAutomationService(automations)
   runtimeService.setAccountServices({ claudeAccounts, codexAccounts, rateLimits })
   runtimeService.setCommitMessageAgentEnvironmentResolvers({
@@ -1302,8 +1504,10 @@ app.whenReady().then(async () => {
     })
   })
 
+  logStartupMilestone('services-initialized')
   await ensureMainI18n()
   await setMainUiLanguage(store.getSettings().uiLanguage)
+  logStartupMilestone('i18n-ready')
 
   registerAppMenu({
     onCheckForUpdates: (options) => checkForUpdatesFromMenu(options),

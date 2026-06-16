@@ -189,25 +189,11 @@ export class HeadlessEmulator {
       return Promise.resolve()
     }
 
-    this.oscText.scan(data)
     const forwardQueryReplies = opts.forwardQueryReplies === true
-    const writeSync = (this.terminal as TerminalWithSynchronousWrite)._core?.writeSync
-    if (typeof writeSync === 'function') {
-      if (forwardQueryReplies) {
-        this.queryReplyForwardingDepth += 1
-      }
-      try {
-        // Why: hidden renderer restore snapshots are requested immediately after
-        // PTY bursts; queued headless writes can snapshot half-cleared TUI rows.
-        writeSync.call((this.terminal as TerminalWithSynchronousWrite)._core, data)
-      } finally {
-        if (forwardQueryReplies) {
-          this.queryReplyForwardingDepth -= 1
-        }
-      }
-      this.mouseModes.scan(data)
+    if (this.tryWriteSync(data, { forwardQueryReplies })) {
       return Promise.resolve()
     }
+    this.oscText.scan(data)
     // Why the sentinel: xterm parses queued writes asynchronously, so opening
     // the window at enqueue time would leak it over earlier queued unflagged
     // chunks (seed/hydration bytes parsing while depth > 0). Write callbacks
@@ -230,6 +216,40 @@ export class HeadlessEmulator {
         resolve()
       })
     })
+  }
+
+  /** Synchronous write used by cold-restore log replay, where a snapshot is
+   *  taken immediately after the last record and queued async writes would
+   *  serialize a half-applied stream. Returns false when xterm's synchronous
+   *  write path is unavailable — callers must then abandon the replay. */
+  writeSync(data: string): boolean {
+    if (this.disposed) {
+      return false
+    }
+    return this.tryWriteSync(data)
+  }
+
+  private tryWriteSync(data: string, opts: HeadlessEmulatorWriteOptions = {}): boolean {
+    const writeSync = (this.terminal as TerminalWithSynchronousWrite)._core?.writeSync
+    if (typeof writeSync !== 'function') {
+      return false
+    }
+    this.oscText.scan(data)
+    const forwardQueryReplies = opts.forwardQueryReplies === true
+    if (forwardQueryReplies) {
+      this.queryReplyForwardingDepth += 1
+    }
+    // Why: hidden renderer restore snapshots are requested immediately after
+    // PTY bursts; queued headless writes can snapshot half-cleared TUI rows.
+    try {
+      writeSync.call((this.terminal as TerminalWithSynchronousWrite)._core, data)
+    } finally {
+      if (forwardQueryReplies) {
+        this.queryReplyForwardingDepth -= 1
+      }
+    }
+    this.mouseModes.scan(data)
+    return true
   }
 
   resize(cols: number, rows: number): void {
