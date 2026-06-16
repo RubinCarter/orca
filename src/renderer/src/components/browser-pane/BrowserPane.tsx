@@ -5232,7 +5232,7 @@ function BrowserPagePane({
                   <Button
                     size="icon-xs"
                     variant="ghost"
-                    className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
+                    className="can-hover:opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
                     onClick={() => handleDeleteBrowserAnnotation(annotation.id)}
                     aria-label={translate(
                       'auto.components.browser.pane.BrowserPane.f2d0c22d67',

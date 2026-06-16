@@ -1,7 +1,10 @@
 /* eslint-disable max-lines -- Why: git status/discard/chunking behavior is verified together here to keep the command contract readable in one place. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import path from 'path'
-import { MAX_RENDERED_DIFF_COMBINED_CHARACTERS } from '../../shared/large-diff-render-limit'
+import {
+  MAX_RENDERED_DIFF_COMBINED_CHARACTERS,
+  MAX_RENDERED_DIFF_LINES_PER_SIDE
+} from '../../shared/large-diff-render-limit'
 
 const {
   gitExecFileAsyncMock,
@@ -381,6 +384,33 @@ describe('getDiff', () => {
     expect(result.largeDiffRenderLimit.reason).toBe('character-count')
     expect(result.largeDiffRenderLimit.characterCount).toBe(
       oversizedText.length + 'index-content\n'.length
+    )
+  })
+
+  it('omits over-limit text bodies when line-count exceeds the cap', async () => {
+    const oversizedByLines = 'x\n'.repeat(MAX_RENDERED_DIFF_LINES_PER_SIDE)
+    gitExecFileAsyncBufferMock.mockResolvedValueOnce({ stdout: Buffer.from('index-content\n') })
+    statMock.mockResolvedValueOnce({
+      isFile: () => true,
+      size: oversizedByLines.length
+    })
+    readFileMock.mockResolvedValue(Buffer.from(oversizedByLines))
+
+    const result = await getDiff('/repo', 'dist/large-lines.log', false)
+
+    expect(result.kind).toBe('text')
+    if (result.kind !== 'text') {
+      throw new Error('expected text diff result')
+    }
+    expect(result.originalContent).toBe('')
+    expect(result.modifiedContent).toBe('')
+    expect(result.largeDiffRenderLimit?.limited).toBe(true)
+    if (result.largeDiffRenderLimit?.limited !== true) {
+      throw new Error('expected large diff render limit')
+    }
+    expect(result.largeDiffRenderLimit.reason).toBe('line-count')
+    expect(result.largeDiffRenderLimit.lineCounts?.modified).toBeGreaterThan(
+      MAX_RENDERED_DIFF_LINES_PER_SIDE
     )
   })
 

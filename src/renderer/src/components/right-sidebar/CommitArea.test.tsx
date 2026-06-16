@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { CommitArea, ConflictSummaryCard, OperationBanner } from './SourceControl'
-import { resolvePrimaryAction, type PrimaryActionInputs } from './source-control-primary-action'
+import {
+  resolveCommitAreaPrimaryAction,
+  type PrimaryActionInputs
+} from './source-control-primary-action'
 import { resolveDropdownItems, type DropdownActionKind } from './source-control-dropdown-items'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
@@ -39,7 +42,7 @@ function baseProps(overrides: Partial<PrimaryActionInputs> = {}) {
     hasUnresolvedConflicts: inputs.hasUnresolvedConflicts,
     isRemoteOperationActive: inputs.isRemoteOperationActive,
     inFlightRemoteOpKind: inputs.inFlightRemoteOpKind ?? null,
-    primaryAction: resolvePrimaryAction(inputs),
+    primaryAction: resolveCommitAreaPrimaryAction(inputs),
     dropdownItems: resolveDropdownItems(inputs),
     onCommitMessageChange: vi.fn(),
     onGenerate: vi.fn(),
@@ -50,7 +53,7 @@ function baseProps(overrides: Partial<PrimaryActionInputs> = {}) {
   }
 }
 
-function renderCommitArea(props: ReturnType<typeof baseProps>): string {
+function renderCommitArea(props: Parameters<typeof CommitArea>[0]): string {
   return renderToStaticMarkup(
     <TooltipProvider>
       <CommitArea {...props} />
@@ -326,6 +329,96 @@ describe('CommitArea', () => {
     const button = firstButton(renderCommitArea({ ...props, isCommitting: true }))
     expect(button).toContain('animate-spin')
     expect(button).not.toContain('lucide-check')
+  })
+
+  it('keeps Stage All as the commit-area primary when review prep can stage changes', () => {
+    const input = buildInputs({
+      stagedCount: 0,
+      hasUnstagedChanges: true,
+      hasStageableChanges: true,
+      hasPartiallyStagedChanges: false,
+      hasMessage: false,
+      upstreamStatus: { hasUpstream: true, ahead: 0, behind: 0 },
+      hostedReviewCreation: {
+        provider: 'github',
+        review: null,
+        canCreate: false,
+        blockedReason: 'dirty',
+        nextAction: 'commit'
+      }
+    })
+    const markup = renderCommitArea(baseProps(input))
+
+    const stageAllButton = firstButton(markup)
+    expect(stageAllButton).toContain('Stage All')
+    expect(stageAllButton).not.toContain('disabled=""')
+    expect(stageAllButton).toContain('lucide-plus')
+    expect(stageAllButton).toContain('rounded-r-none')
+    expect(markup).toContain('aria-label="More commit and remote actions"')
+    expect(markup).toContain('Stage all changes')
+    expect(
+      (markup.match(/<button\b[\s\S]*?<\/button>/g) ?? []).some((button) =>
+        button.includes('Commit</button>')
+      )
+    ).toBe(false)
+  })
+
+  it('keeps Push as the commit-area primary when review prep can create after pushing', () => {
+    const input = buildInputs({
+      stagedCount: 0,
+      hasUnstagedChanges: false,
+      hasStageableChanges: false,
+      hasPartiallyStagedChanges: false,
+      hasMessage: false,
+      upstreamStatus: { hasUpstream: true, ahead: 2, behind: 0 },
+      hostedReviewCreation: {
+        provider: 'github',
+        review: null,
+        canCreate: false,
+        blockedReason: 'needs_push',
+        nextAction: 'push'
+      }
+    })
+    const markup = renderCommitArea(baseProps(input))
+
+    const pushButton = firstButton(markup)
+    expect(pushButton).toContain('Push')
+    expect(pushButton).not.toContain('disabled=""')
+    expect(pushButton).toContain('lucide-arrow-up')
+    expect(pushButton).toContain('rounded-r-none')
+    expect(markup).toContain('aria-label="More commit and remote actions"')
+  })
+
+  it('hides the composer generate affordance while Create PR intent is in flight', () => {
+    const markup = renderCommitArea({
+      ...baseProps(),
+      aiEnabled: true,
+      aiAgentConfigured: true,
+      isGenerating: true,
+      isCreatePrIntentInFlight: true,
+      createPrIntentNotice: {
+        tone: 'muted',
+        message: 'Generating commit message…'
+      }
+    })
+
+    expect(markup).not.toContain('lucide-sparkles')
+    expect(markup).not.toContain('animate-spin')
+    expect(markup).toContain('Generating commit message…')
+  })
+
+  it('renders Create PR failures in the visible inline notice', () => {
+    const markup = renderCommitArea({
+      ...baseProps(),
+      createPrIntentNotice: {
+        tone: 'destructive',
+        message: 'Create PR failed: push this branch first.'
+      }
+    })
+
+    expect(markup).toContain('id="commit-area-create-pr-intent"')
+    expect(markup).toContain('role="alert"')
+    expect(markup).toContain('Create PR failed: push this branch first.')
   })
 })
 

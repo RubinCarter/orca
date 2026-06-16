@@ -17,6 +17,12 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Why: hover-reveal controls (sidebar/row action buttons) hide with `opacity-0`
+   and fade in via `group-hover`. Touch devices have no hover, so those controls
+   stay invisible. Gate the hide behind `can-hover:` so touch (hover: none) keeps
+   them visible while pointer devices preserve the reveal-on-hover behavior. */
+@custom-variant can-hover (@media (hover: hover));
+
 .theme-transition-disabled *,
 .theme-transition-disabled *::before,
 .theme-transition-disabled *::after {

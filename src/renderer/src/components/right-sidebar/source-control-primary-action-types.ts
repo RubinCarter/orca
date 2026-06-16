@@ -15,6 +15,7 @@ export type PrimaryActionKind =
   | 'pull'
   | 'sync'
   | 'publish'
+  | 'create_pr_intent'
   | 'create_pr'
 
 // Why: the in-flight remote op tracker stores which action the user actually
@@ -65,6 +66,7 @@ export type PrimaryActionInputs = {
   // Why: detached HEAD can look like an unpublished branch from upstream
   // status alone, but it has no branch ref that Publish Branch can push.
   hasCurrentBranch?: boolean
+  isPrIntentInFlight?: boolean
 }
 
 export const PRIMARY_LABEL_BY_KIND: Record<Exclude<PrimaryActionKind, 'commit'>, string> = {
@@ -73,5 +75,6 @@ export const PRIMARY_LABEL_BY_KIND: Record<Exclude<PrimaryActionKind, 'commit'>,
   pull: 'Pull',
   sync: 'Sync',
   publish: 'Publish Branch',
+  create_pr_intent: 'Create PR',
   create_pr: 'Create PR'
 }

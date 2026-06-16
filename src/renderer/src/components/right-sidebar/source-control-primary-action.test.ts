@@ -1,6 +1,9 @@
-/* eslint-disable max-lines -- Why: this state-machine table intentionally keeps every primary-action priority case together so merge regressions are visible in one file. */
 import { describe, expect, it } from 'vitest'
-import { resolvePrimaryAction, type PrimaryActionInputs } from './source-control-primary-action'
+import {
+  resolveCommitAreaPrimaryAction,
+  resolvePrimaryAction,
+  type PrimaryActionInputs
+} from './source-control-primary-action'
 
 // Why: a shared defaults object keeps each case row terse while making the
 // "this is the one knob that differs from the baseline" intent obvious.
@@ -380,6 +383,58 @@ describe('resolvePrimaryAction', () => {
     expect(result.disabled).toBe(false)
   })
 
+  it('keeps Stage All available in the commit area when Create PR intent is additive', () => {
+    const input = inputs({
+      stagedCount: 0,
+      hasUnstagedChanges: true,
+      hasStageableChanges: true,
+      hasPartiallyStagedChanges: false,
+      hasMessage: false,
+      upstreamStatus: upstreamInSync,
+      hostedReviewCreation: {
+        provider: 'github',
+        review: null,
+        canCreate: false,
+        blockedReason: 'dirty',
+        nextAction: 'commit'
+      }
+    })
+
+    expect(resolvePrimaryAction(input).kind).toBe('create_pr_intent')
+    expect(resolveCommitAreaPrimaryAction(input)).toEqual({
+      kind: 'stage',
+      label: 'Stage All',
+      title: 'Stage all changes',
+      disabled: false
+    })
+  })
+
+  it('keeps the partial-staging reason on the additive commit-area Stage All action', () => {
+    const input = inputs({
+      stagedCount: 1,
+      hasUnstagedChanges: true,
+      hasStageableChanges: true,
+      hasPartiallyStagedChanges: true,
+      hasMessage: true,
+      upstreamStatus: upstreamInSync,
+      hostedReviewCreation: {
+        provider: 'github',
+        review: null,
+        canCreate: false,
+        blockedReason: 'dirty',
+        nextAction: 'commit'
+      }
+    })
+
+    expect(resolvePrimaryAction(input).kind).toBe('create_pr_intent')
+    expect(resolveCommitAreaPrimaryAction(input)).toEqual({
+      kind: 'stage',
+      label: 'Stage All',
+      title: 'Stage all changes before committing partially staged files',
+      disabled: false
+    })
+  })
+
   it('still resolves to Commit when staged and unrelated unstaged files exist', () => {
     const result = resolvePrimaryAction(
       inputs({
@@ -486,4 +541,28 @@ describe('resolvePrimaryAction', () => {
       disabled: false
     })
   })
+
+  it.each(['azure-devops', 'gitea'] as const)(
+    'returns Create PR when a clean tracked %s branch is eligible for review creation',
+    (provider) => {
+      const result = resolvePrimaryAction(
+        inputs({
+          upstreamStatus: upstreamInSync,
+          hostedReviewCreation: {
+            provider,
+            review: null,
+            canCreate: true,
+            blockedReason: null,
+            nextAction: null
+          }
+        })
+      )
+      expect(result).toEqual({
+        kind: 'create_pr',
+        label: 'Create PR',
+        title: 'Create a pull request for this branch',
+        disabled: false
+      })
+    }
+  )
 })

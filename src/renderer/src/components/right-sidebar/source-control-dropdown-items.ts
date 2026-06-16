@@ -4,6 +4,7 @@
 import type { PrimaryActionInputs } from './source-control-primary-action'
 import type { GitConflictOperation } from '../../../../shared/types'
 import { shouldForcePushWithLeaseForUpstream } from '../../../../shared/git-upstream-status'
+import { supportsHostedReviewCreation } from '../../../../shared/hosted-review-creation-providers'
 import { translate } from '@/i18n/i18n'
 import {
   localizedHostedReviewCopy,
@@ -96,11 +97,19 @@ function formatRebaseBaseRef(baseRef: string): string {
 function reviewCopy(
   provider: NonNullable<PrimaryActionInputs['hostedReviewCreation']>['provider'] | undefined
 ): ReturnType<typeof localizedHostedReviewCopy> & {
-  authCommand: 'gh auth login' | 'glab auth login'
+  authInstruction: string
 } {
+  const authInstruction =
+    provider === 'gitlab'
+      ? 'Run glab auth login'
+      : provider === 'azure-devops'
+        ? 'Set ORCA_AZURE_DEVOPS_TOKEN'
+        : provider === 'gitea'
+          ? 'Set ORCA_GITEA_TOKEN'
+          : 'Run gh auth login'
   return {
     ...localizedHostedReviewCopy(resolveSupportedHostedReviewCopyProvider(provider)),
-    authCommand: provider === 'gitlab' ? 'glab auth login' : 'gh auth login'
+    authInstruction
   }
 }
 
@@ -491,7 +500,7 @@ export function resolveDropdownItems(inputs: DropdownActionInputs): DropdownEntr
       case 'needs_sync':
         return shouldForcePushWithLease ? 'Force Push first' : 'Sync first'
       case 'auth_required':
-        return `Run ${createReviewCopy.authCommand} in this environment`
+        return `${createReviewCopy.authInstruction} in this environment`
       case 'unsupported_provider':
         return 'Unsupported provider'
       case 'existing_review':
@@ -521,7 +530,7 @@ export function resolveDropdownItems(inputs: DropdownActionInputs): DropdownEntr
   const canPushAndCreate =
     !globalBusy &&
     !upstreamLoading &&
-    (hostedReviewCreation?.provider === 'github' || hostedReviewCreation?.provider === 'gitlab') &&
+    supportsHostedReviewCreation(hostedReviewCreation?.provider) &&
     (hostedReviewCreation.blockedReason === 'needs_push' ||
       (hostedReviewCreation.blockedReason === 'needs_sync' && shouldForcePushWithLease))
   const pushCreatePRItem: DropdownItem = {

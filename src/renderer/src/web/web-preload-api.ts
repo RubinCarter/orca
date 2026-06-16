@@ -1102,6 +1102,7 @@ function createWorktreesApi(): NonNullable<Partial<PreloadApi>['worktrees']> {
         repo: args.repoId,
         name: args.name,
         baseBranch: args.baseBranch,
+        compareBaseRef: args.compareBaseRef,
         branchNameOverride: args.branchNameOverride,
         linkedIssue: args.linkedIssue,
         linkedPR: args.linkedPR,
@@ -1133,18 +1134,20 @@ function createWorktreesApi(): NonNullable<Partial<PreloadApi>['worktrees']> {
         baseBranch
       })
     },
-    resolvePrBase: async ({ repoId, prNumber, headRefName, isCrossRepository }) =>
+    resolvePrBase: async ({ repoId, prNumber, headRefName, baseRefName, isCrossRepository }) =>
       callRuntimeResult('worktree.resolvePrBase', {
         repo: repoId,
         prNumber,
         headRefName,
+        baseRefName,
         isCrossRepository
       }),
-    resolveMrBase: async ({ repoId, mrIid, sourceBranch, isCrossRepository }) =>
+    resolveMrBase: async ({ repoId, mrIid, sourceBranch, targetBranch, isCrossRepository }) =>
       callRuntimeResult('worktree.resolveMrBase', {
         repo: repoId,
         mrIid,
         sourceBranch,
+        targetBranch,
         isCrossRepository
       }),
     remove: async ({ worktreeId, force }) => {

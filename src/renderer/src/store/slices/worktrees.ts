@@ -1553,7 +1553,8 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     linkedLinearIssueOrganizationUrlKey,
     linkedBitbucketPR,
     linkedAzureDevOpsPR,
-    linkedGiteaPR
+    linkedGiteaPR,
+    compareBaseRef
   ) => {
     const retryableConflictPatterns = [
       /already exists locally/i,
@@ -1588,6 +1589,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
             repoId,
             name: candidateName,
             baseBranch,
+            ...(compareBaseRef ? { compareBaseRef } : {}),
             ...(branchNameOverride ? { branchNameOverride } : {}),
             setupDecision,
             sparseCheckout,
@@ -1627,6 +1629,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
                     repo: repoId,
                     name: candidateName,
                     baseBranch,
+                    ...(compareBaseRef ? { compareBaseRef } : {}),
                     ...(branchNameOverride ? { branchNameOverride } : {}),
                     setupDecision,
                     sparseCheckout,

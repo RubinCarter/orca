@@ -15385,6 +15385,10 @@ describe('OrcaRuntimeService', () => {
       getRepos: () => [localRepo],
       getRepo: (id: string) => (id === localRepo.id ? localRepo : undefined)
     }
+    getGitLabProjectRefForRemoteMock.mockResolvedValue({
+      host: 'gitlab.example',
+      path: 'group/repo'
+    })
     const runtime = new OrcaRuntimeService(runtimeStore as never)
     const gitSpy = vi.spyOn(gitRunner, 'gitExecFileAsync').mockImplementation(async (args) => {
       if (args[0] === 'fetch') {
@@ -15401,13 +15405,21 @@ describe('OrcaRuntimeService', () => {
         repoSelector: 'id:repo-1',
         mrIid: 42,
         sourceBranch: 'contrib/fix',
+        targetBranch: 'main',
         isCrossRepository: true
       })
 
-      expect(result).toEqual({ baseBranch: 'fork-mr-sha' })
+      expect(result).toEqual({
+        baseBranch: 'fork-mr-sha',
+        compareBaseRef: 'refs/remotes/origin/main'
+      })
       expect(gitSpy).toHaveBeenCalledWith(['fetch', 'origin', 'refs/merge-requests/42/head'], {
         cwd: TEST_REPO_PATH
       })
+      expect(gitSpy).toHaveBeenCalledWith(
+        ['fetch', 'origin', '+refs/heads/main:refs/remotes/origin/main'],
+        { cwd: TEST_REPO_PATH }
+      )
       expect(gitSpy).toHaveBeenCalledWith(['rev-parse', '--verify', 'FETCH_HEAD'], {
         cwd: TEST_REPO_PATH
       })
@@ -15440,7 +15452,8 @@ describe('OrcaRuntimeService', () => {
           return { stdout: 'remote-fork-mr-sha\n', stderr: '' }
         }
         throw new Error(`unexpected git call: ${args.join(' ')}`)
-      })
+      }),
+      fetchRemoteTrackingRef: vi.fn().mockResolvedValue(undefined)
     }
     registerSshGitProvider('ssh-1', provider as never)
     getGlabKnownHostsMock.mockResolvedValue(['gitlab.com', 'git.internal'])
@@ -15450,13 +15463,23 @@ describe('OrcaRuntimeService', () => {
       repoSelector: 'id:repo-1',
       mrIid: 77,
       sourceBranch: 'contrib/remote-fix',
+      targetBranch: 'main',
       isCrossRepository: true
     })
 
-    expect(result).toEqual({ baseBranch: 'remote-fork-mr-sha' })
+    expect(result).toEqual({
+      baseBranch: 'remote-fork-mr-sha',
+      compareBaseRef: 'refs/remotes/origin/main'
+    })
     expect(provider.exec).toHaveBeenCalledWith(
       ['fetch', 'origin', 'refs/merge-requests/77/head'],
       '/remote/repo'
+    )
+    expect(provider.fetchRemoteTrackingRef).toHaveBeenCalledWith(
+      '/remote/repo',
+      'origin',
+      'main',
+      'refs/remotes/origin/main'
     )
     expect(provider.exec).toHaveBeenCalledWith(
       ['rev-parse', '--verify', 'FETCH_HEAD'],

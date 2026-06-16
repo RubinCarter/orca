@@ -8,6 +8,7 @@ import {
   CloudUpload,
   Minus,
   Plus,
+  Loader2,
   RefreshCw,
   Settings2,
   Sparkle,
@@ -53,7 +54,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import {
-  resolvePrimaryAction,
+  resolveCommitAreaPrimaryAction,
   type PrimaryAction,
   type RemoteOpKind
 } from './source-control-primary-action'
@@ -86,7 +87,10 @@ import {
   SourceControlDiscardDialog,
   type PendingDiscardConfirmation
 } from './source-control-discard-dialog'
-import { refreshGitStatusForWorktree } from './git-status-refresh'
+import {
+  refreshGitStatusForWorktree,
+  refreshGitStatusForWorktreeStrict
+} from './git-status-refresh'
 import { describeForkPushTarget } from './fork-push-target-label'
 import { toast } from 'sonner'
 import {
@@ -166,6 +170,8 @@ import type {
   HostedReviewInfo,
   HostedReviewProvider
 } from '../../../../shared/hosted-review'
+import { resolveHostedReviewCreationProvider } from '../../../../shared/hosted-review-creation-providers'
+import { humanizeBranchSlug } from '../../../../shared/branch-name-from-work'
 import { STATUS_COLORS, STATUS_LABELS } from './status-display'
 import { isCustomAgentId } from '../../../../shared/commit-message-agent-spec'
 import {
@@ -190,6 +196,7 @@ import {
 } from './source-control-split-open'
 import { SourceControlAgentActionDialog } from './SourceControlAgentActionDialog'
 import { SourceControlTextGenerationDialog } from './SourceControlTextGenerationDialog'
+import { CreateHostedReviewComposer } from './CreateHostedReviewComposer'
 import {
   hasConfiguredCommitMessageGenerationDefaults,
   hasConfiguredSourceControlTextGenerationDefaults
@@ -200,7 +207,16 @@ import {
   localizedHostedReviewCopy,
   resolveSupportedHostedReviewCopyProvider
 } from '@/i18n/hosted-review-localized-copy'
-import { CreateHostedReviewComposer } from './CreateHostedReviewComposer'
+import {
+  createCreatePrIntentRunToken,
+  createPrIntentGitStatusMatchesToken,
+  createPrIntentRunTokenMatches,
+  getCreatePrIntentStagePaths,
+  resolveCreatePrIntentRemoteStep,
+  type CreatePrIntentRunToken
+} from './source-control-create-pr-intent-flow'
+import { resolveVisibleCreatePrHeaderAction } from './source-control-create-pr-intent-state'
+import { resolveCreatePrHeaderAction } from './source-control-primary-create-pr-intent-action'
 import {
   createRunningPullRequestGenerationRecord,
   getPullRequestGenerationRecordKey,
@@ -232,18 +248,109 @@ export type SourceControlActionError = {
   kind: RemoteOpKind | AbortActionErrorKind
   message: string
 }
+type CreatePrIntentTone = 'muted' | 'destructive'
+type CreatePrIntentNotice = {
+  message: string
+  tone: CreatePrIntentTone
+  action?: 'settings'
+}
 
 export function resolveSourceControlBaseRef(input: {
   worktreeBaseRef?: string | null
+  reviewBaseRefName?: string | null
   repoBaseRef?: string | null
   defaultBaseRef?: string | null
 }): string | null {
-  return (
-    input.worktreeBaseRef?.trim() ||
-    input.repoBaseRef?.trim() ||
-    input.defaultBaseRef?.trim() ||
-    null
-  )
+  const worktreeBaseRef = input.worktreeBaseRef?.trim() || null
+  const hasReviewBaseRefName = Boolean(input.reviewBaseRefName?.trim())
+  const reviewBaseRef = resolveHostedReviewCompareBaseRef(input.reviewBaseRefName, [
+    input.repoBaseRef,
+    input.defaultBaseRef
+  ])
+  if (worktreeBaseRef && isFullGitCommitOid(worktreeBaseRef) && hasReviewBaseRefName) {
+    return reviewBaseRef
+  }
+  return worktreeBaseRef || input.repoBaseRef?.trim() || input.defaultBaseRef?.trim() || null
+}
+
+export function resolveSourceControlPickerBaseRef(input: {
+  pinnedBaseRef?: string | null
+  effectiveBaseRef?: string | null
+}): string | undefined {
+  const pinnedBaseRef = input.pinnedBaseRef?.trim()
+  if (!pinnedBaseRef) {
+    return undefined
+  }
+  return input.effectiveBaseRef?.trim() || pinnedBaseRef
+}
+
+function isFullGitCommitOid(value: string): boolean {
+  return /^[0-9a-f]{40}$/i.test(value)
+}
+
+function resolveHostedReviewCompareBaseRef(
+  baseRefName: string | null | undefined,
+  candidates: (string | null | undefined)[]
+): string | null {
+  const branch = baseRefName?.trim()
+  if (!branch) {
+    return null
+  }
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim()
+    if (!trimmed) {
+      continue
+    }
+    if (getCompareBaseCandidateBranchName(trimmed) === branch) {
+      return trimmed
+    }
+  }
+  for (const candidate of candidates) {
+    const rewritten = rewriteCompareBaseBranchFromCandidate(candidate, branch)
+    if (rewritten) {
+      return rewritten
+    }
+  }
+  return null
+}
+
+function getCompareBaseCandidateBranchName(candidate: string): string {
+  const remoteRefPrefix = 'refs/remotes/'
+  if (candidate.startsWith(remoteRefPrefix)) {
+    const remoteAndBranch = candidate.slice(remoteRefPrefix.length)
+    const slashIndex = remoteAndBranch.indexOf('/')
+    return slashIndex > 0 ? remoteAndBranch.slice(slashIndex + 1) : remoteAndBranch
+  }
+  const headsRefPrefix = 'refs/heads/'
+  if (candidate.startsWith(headsRefPrefix)) {
+    return candidate.slice(headsRefPrefix.length)
+  }
+  const slashIndex = candidate.indexOf('/')
+  return slashIndex > 0 ? candidate.slice(slashIndex + 1) : candidate
+}
+
+function rewriteCompareBaseBranchFromCandidate(
+  candidate: string | null | undefined,
+  branch: string
+): string | null {
+  const trimmed = candidate?.trim()
+  if (!trimmed) {
+    return null
+  }
+  const remoteRefPrefix = 'refs/remotes/'
+  if (trimmed.startsWith(remoteRefPrefix)) {
+    const remoteAndBranch = trimmed.slice(remoteRefPrefix.length)
+    const slashIndex = remoteAndBranch.indexOf('/')
+    return slashIndex > 0
+      ? `${remoteRefPrefix}${remoteAndBranch.slice(0, slashIndex)}/${branch}`
+      : null
+  }
+  const headsRefPrefix = 'refs/heads/'
+  if (trimmed.startsWith(headsRefPrefix)) {
+    return `${headsRefPrefix}${branch}`
+  }
+  const slashIndex = trimmed.indexOf('/')
+  return slashIndex > 0 ? `${trimmed.slice(0, slashIndex)}/${branch}` : null
 }
 
 const EMPTY_GIT_STATUS_ENTRIES: GitStatusEntry[] = []
@@ -272,6 +379,7 @@ const PRIMARY_ICONS: Partial<
   push: ArrowUp,
   sync: ArrowDownUp,
   publish: CloudUpload,
+  create_pr_intent: GitPullRequestArrow,
   create_pr: GitPullRequestArrow
 }
 
@@ -846,6 +954,7 @@ function SourceControlInner(): React.JSX.Element {
   // Why: commit drafts/errors are worktree-scoped during the mounted session,
   // so switching worktrees restores each draft instead of wiping it.
   const [commitDrafts, setCommitDrafts] = useState<CommitDraftsByWorktree>({})
+  const commitDraftsRef = useRef<CommitDraftsByWorktree>(commitDrafts)
   const [commitErrors, setCommitErrors] = useState<Record<string, string | null>>({})
   const [remoteActionErrors, setRemoteActionErrors] = useState<
     Record<string, SourceControlActionError | null>
@@ -879,9 +988,29 @@ function SourceControlInner(): React.JSX.Element {
   const [createPrInFlightByWorktree, setCreatePrInFlightByWorktree] = useState<
     Record<string, boolean>
   >({})
-  const [createPrErrors, setCreatePrErrors] = useState<Record<string, string | null>>({})
   const isCreatingPr = createPrInFlightByWorktree[activeWorktreeId ?? ''] ?? false
-  const createPrError = createPrErrors[activeWorktreeId ?? ''] ?? null
+  const createPrIntentInFlightRef = useRef<Record<string, boolean>>({})
+  const createPrIntentRunTokenRef = useRef<Record<string, CreatePrIntentRunToken | null>>({})
+  const createPrIntentCurrentTargetRef = useRef({
+    repoId: null as string | null,
+    worktreeId: null as string | null,
+    worktreePath: null as string | null,
+    branch: null as string | null
+  })
+  const [createPrIntentInFlightByWorktree, setCreatePrIntentInFlightByWorktree] = useState<
+    Record<string, boolean>
+  >({})
+  const [createPrIntentNotices, setCreatePrIntentNotices] = useState<
+    Record<string, CreatePrIntentNotice | null>
+  >({})
+  const isCreatePrIntentInFlight = createPrIntentInFlightByWorktree[activeWorktreeId ?? ''] ?? false
+  const createPrIntentNotice = createPrIntentNotices[activeWorktreeId ?? ''] ?? null
+  const setCreatePrIntentNoticeForWorktree = useCallback(
+    (worktreeId: string, notice: CreatePrIntentNotice | null): void => {
+      setCreatePrIntentNotices((prev) => ({ ...prev, [worktreeId]: notice }))
+    },
+    []
+  )
   const prGenerationRecords = useAppStore((s) => s.pullRequestGenerationRecords)
   const allocatePullRequestGenerationRequestId = useAppStore(
     (s) => s.allocatePullRequestGenerationRequestId
@@ -902,6 +1031,21 @@ function SourceControlInner(): React.JSX.Element {
     : EMPTY_GIT_HISTORY_STATE
   const isGitHistoryExpanded = !collapsedSections.has('history')
 
+  useEffect(() => {
+    commitDraftsRef.current = commitDrafts
+  }, [commitDrafts])
+
+  const updateCommitDrafts = useCallback(
+    (updater: (drafts: CommitDraftsByWorktree) => CommitDraftsByWorktree): void => {
+      const next = updater(commitDraftsRef.current)
+      // Why: Create PR intent reads this ref after awaits to avoid overwriting
+      // user edits made before React's passive state sync effect runs.
+      commitDraftsRef.current = next
+      setCommitDrafts(next)
+    },
+    []
+  )
+
   const isFolder = activeRepo ? isFolderRepo(activeRepo) : false
   const worktreePath = activeWorktree?.path ?? null
   const activeConnectionId = activeWorktreeId
@@ -914,6 +1058,14 @@ function SourceControlInner(): React.JSX.Element {
   const gitIdentityDisplay = activeWorktree ? getWorktreeGitIdentityDisplay(activeWorktree) : null
   const detachedHeadDisplay = gitIdentityDisplay?.kind === 'detached' ? gitIdentityDisplay : null
   const branchName = gitIdentityDisplay?.kind === 'branch' ? gitIdentityDisplay.branchName : ''
+  useEffect(() => {
+    createPrIntentCurrentTargetRef.current = {
+      repoId: activeRepo?.id ?? null,
+      worktreeId: activeWorktreeId ?? null,
+      worktreePath,
+      branch: branchName
+    }
+  }, [activeRepo?.id, activeWorktreeId, branchName, worktreePath])
   const activePullRequestGenerationKey = getPullRequestGenerationRecordKey({
     worktreeId: activeWorktreeId,
     worktreePath,
@@ -974,6 +1126,36 @@ function SourceControlInner(): React.JSX.Element {
       console.warn('[SourceControl] post-mutation git status refresh failed', error)
     }
   }, [refreshActiveGitStatus])
+
+  const refreshActiveGitStatusAfterMutationStrict = useCallback(async () => {
+    if (!activeWorktreeId || !worktreePath || isFolder) {
+      return null
+    }
+    const connectionId = getConnectionId(activeWorktreeId) ?? undefined
+    return await refreshGitStatusForWorktreeStrict({
+      // Why: the PR intent sequence chains decisions after refresh, so this
+      // variant must fail loudly instead of letting stale snapshots drive pushes.
+      settings: activeRepoSettings,
+      worktreeId: activeWorktreeId,
+      worktreePath,
+      connectionId,
+      pushTarget: activeWorktree?.pushTarget,
+      deps: {
+        setGitStatus,
+        updateWorktreeGitIdentity,
+        setUpstreamStatus
+      }
+    })
+  }, [
+    activeRepoSettings,
+    activeWorktree?.pushTarget,
+    activeWorktreeId,
+    isFolder,
+    setGitStatus,
+    setUpstreamStatus,
+    updateWorktreeGitIdentity,
+    worktreePath
+  ])
 
   // Why: when status is truncated at the entry limit, offer (once per worktree)
   // to .gitignore the folder most likely flooding it — the usual cause is a
@@ -1099,11 +1281,6 @@ function SourceControlInner(): React.JSX.Element {
 
   const normalizedWorktreeBaseRef = activeWorktree?.baseRef?.trim() || null
   const normalizedRepoBaseRef = activeRepo?.worktreeBaseRef?.trim() || null
-  const effectiveBaseRef = resolveSourceControlBaseRef({
-    worktreeBaseRef: normalizedWorktreeBaseRef,
-    repoBaseRef: normalizedRepoBaseRef,
-    defaultBaseRef
-  })
   const baseRefOwnedByWorktree = normalizedWorktreeBaseRef !== null
   const pinnedBaseRef = normalizedWorktreeBaseRef ?? normalizedRepoBaseRef
   const hasUncommittedEntries = entries.length > 0
@@ -1115,8 +1292,9 @@ function SourceControlInner(): React.JSX.Element {
     branchName === hostedReviewCreationState.branch
       ? hostedReviewCreationState.data
       : null
-  const hostedReviewCreateProvider =
-    hostedReviewCreation?.provider === 'gitlab' ? 'gitlab' : 'github'
+  const hostedReviewCreateProvider = resolveHostedReviewCreationProvider(
+    hostedReviewCreation?.provider
+  )
   const hostedReviewCreateCopy = localizedHostedReviewCopy(hostedReviewCreateProvider)
   const hostedReviewCacheKey =
     activeRepo && branchName
@@ -1149,6 +1327,16 @@ function SourceControlInner(): React.JSX.Element {
       ? { provider: 'github', ...activePrFromQueue, status: activePrFromQueue.checksStatus }
       : (hostedReviewEntry?.data ?? null)
     : null
+  const effectiveBaseRef = resolveSourceControlBaseRef({
+    worktreeBaseRef: normalizedWorktreeBaseRef,
+    reviewBaseRefName: hostedReview?.baseRefName,
+    repoBaseRef: normalizedRepoBaseRef,
+    defaultBaseRef
+  })
+  const pickerBaseRef = resolveSourceControlPickerBaseRef({
+    pinnedBaseRef,
+    effectiveBaseRef
+  })
 
   const linkedGitHubPR = activeWorktree?.linkedPR ?? null
   const fallbackGitHubPRNumber = linkedGitHubPR == null ? (activePrFromQueue?.number ?? null) : null
@@ -1394,13 +1582,15 @@ function SourceControlInner(): React.JSX.Element {
       }
       return changed ? next : prev
     }
-    setCommitDrafts((prev) => pruneRecord(prev))
+    updateCommitDrafts((prev) => pruneRecord(prev))
     setCommitErrors((prev) => pruneRecord(prev))
     setRemoteActionErrors((prev) => pruneRecord(prev))
     setCommitInFlightByWorktree((prev) => pruneRecord(prev))
     setAbortOperationInFlightByWorktree((prev) => pruneRecord(prev))
     setGenerateInFlightByWorktree((prev) => pruneRecord(prev))
     setGenerateErrors((prev) => pruneRecord(prev))
+    setCreatePrIntentInFlightByWorktree((prev) => pruneRecord(prev))
+    setCreatePrIntentNotices((prev) => pruneRecord(prev))
     setGitHistoryByWorktree((prev) => pruneRecord(prev))
     // Refs don't need setState — mutate in place to drop stale keys.
     for (const key of Object.keys(commitInFlightRef.current)) {
@@ -1413,12 +1603,18 @@ function SourceControlInner(): React.JSX.Element {
         delete generateInFlightRef.current[key]
       }
     }
+    for (const key of Object.keys(createPrIntentInFlightRef.current)) {
+      if (!worktreeMap.has(key)) {
+        delete createPrIntentInFlightRef.current[key]
+        delete createPrIntentRunTokenRef.current[key]
+      }
+    }
     for (const key of Object.keys(gitHistoryRequestByWorktreeRef.current)) {
       if (!worktreeMap.has(key)) {
         delete gitHistoryRequestByWorktreeRef.current[key]
       }
     }
-  }, [worktreeMap])
+  }, [updateCommitDrafts, worktreeMap])
 
   useEffect(() => {
     // Why: users often finish merge/rebase conflicts in a terminal. Once git
@@ -1465,104 +1661,115 @@ function SourceControlInner(): React.JSX.Element {
 
   // Why: returns true on success so compound actions ("Commit & Push" etc.)
   // can skip the follow-up remote operation when the commit itself failed.
-  const handleCommit = useCallback(async (): Promise<boolean> => {
-    if (!activeWorktreeId || !worktreePath) {
-      return false
-    }
-    const message = commitMessage.trim()
-    if (!message || grouped.staged.length === 0 || unresolvedConflicts.length > 0) {
-      return false
-    }
-
-    if (commitInFlightRef.current[activeWorktreeId]) {
-      return false
-    }
-    commitInFlightRef.current[activeWorktreeId] = true
-
-    const connectionId = getConnectionId(activeWorktreeId) ?? undefined
-    setCommitInFlightByWorktree((prev) => ({ ...prev, [activeWorktreeId]: true }))
-    setCommitErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
-    try {
-      const commitResult = await commitRuntimeGit(
-        {
-          // Why: route the commit by the repo OWNER host, not the focused runtime.
-          settings: activeRepoSettings,
-          worktreeId: activeWorktreeId,
-          worktreePath,
-          connectionId
-        },
-        message
-      )
-      if (!commitResult.success) {
-        setCommitErrors((prev) => ({
-          ...prev,
-          [activeWorktreeId]: commitResult.error ?? 'Commit failed'
-        }))
+  const handleCommit = useCallback(
+    async (
+      messageOverride?: string,
+      options?: { skipStagedSnapshotCheck?: boolean }
+    ): Promise<boolean> => {
+      if (!activeWorktreeId || !worktreePath) {
+        return false
+      }
+      const message = (messageOverride ?? commitMessage).trim()
+      if (
+        !message ||
+        (!options?.skipStagedSnapshotCheck && grouped.staged.length === 0) ||
+        unresolvedConflicts.length > 0
+      ) {
         return false
       }
 
-      // Why: the textarea stays enabled during the in-flight commit (only the
-      // button is disabled), so the user can keep typing after clicking Commit.
-      // Unconditionally clearing the draft here would silently discard those
-      // in-progress edits — the commit used the OLD `message` captured in this
-      // closure, so the dropped text would never have been committed either.
-      // Only clear when the current draft still matches what we committed.
-      setCommitDrafts((prev) => {
-        const current = prev[activeWorktreeId]
-        if (current !== undefined && current.trim() !== message) {
-          // User typed more after submit — preserve their in-progress edits.
-          return prev
-        }
-        return writeCommitDraftForWorktree(prev, activeWorktreeId, '')
-      })
-      setCommitErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
-      void refreshActiveGitStatusAfterMutation()
-      // Why: flip branchSummary to 'loading' synchronously so the empty-state
-      // guard
-      //   (!hasUncommittedEntries && branchSummary.status === 'ready' &&
-      //    branchEntries.length === 0)
-      // doesn't briefly read true between setGitStatus clearing the
-      // uncommitted list and the next branchCompare poll landing the new
-      // commit. Without this flip "No changes on this branch" flashes for
-      // the full poll-interval window.
-      //
-      // Then fire-and-forget refreshBranchCompare so the "Committed on
-      // Branch" section repopulates as soon as the IPC returns instead of
-      // waiting up to 5 seconds for the next poll. Unawaited on purpose:
-      // compound flows (runCompoundCommitAction) need handleCommit to
-      // resolve immediately so the push step starts without delay. Errors
-      // here are best-effort — the polling tick will retry.
-      if (effectiveBaseRef) {
-        beginGitBranchCompareRequest(
-          activeWorktreeId,
-          `${activeWorktreeId}:${effectiveBaseRef}:${Date.now()}:post-commit`,
-          effectiveBaseRef
-        )
+      if (commitInFlightRef.current[activeWorktreeId]) {
+        return false
       }
-      void refreshBranchCompareRef.current()
-      void refreshGitHistoryRef.current()
-      return true
-    } catch (error) {
-      setCommitErrors((prev) => ({
-        ...prev,
-        [activeWorktreeId]: error instanceof Error ? error.message : 'Commit failed'
-      }))
-      return false
-    } finally {
-      setCommitInFlightByWorktree((prev) => ({ ...prev, [activeWorktreeId]: false }))
-      commitInFlightRef.current[activeWorktreeId] = false
-    }
-  }, [
-    activeRepoSettings,
-    activeWorktreeId,
-    beginGitBranchCompareRequest,
-    commitMessage,
-    effectiveBaseRef,
-    grouped.staged.length,
-    refreshActiveGitStatusAfterMutation,
-    unresolvedConflicts.length,
-    worktreePath
-  ])
+      commitInFlightRef.current[activeWorktreeId] = true
+
+      const connectionId = getConnectionId(activeWorktreeId) ?? undefined
+      setCommitInFlightByWorktree((prev) => ({ ...prev, [activeWorktreeId]: true }))
+      setCommitErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
+      try {
+        const commitResult = await commitRuntimeGit(
+          {
+            // Why: route the commit by the repo OWNER host, not the focused runtime.
+            settings: activeRepoSettings,
+            worktreeId: activeWorktreeId,
+            worktreePath,
+            connectionId
+          },
+          message
+        )
+        if (!commitResult.success) {
+          setCommitErrors((prev) => ({
+            ...prev,
+            [activeWorktreeId]: commitResult.error ?? 'Commit failed'
+          }))
+          return false
+        }
+
+        // Why: the textarea stays enabled during the in-flight commit (only the
+        // button is disabled), so the user can keep typing after clicking Commit.
+        // Unconditionally clearing the draft here would silently discard those
+        // in-progress edits — the commit used the OLD `message` captured in this
+        // closure, so the dropped text would never have been committed either.
+        // Only clear when the current draft still matches what we committed.
+        updateCommitDrafts((prev) => {
+          const current = prev[activeWorktreeId]
+          if (current !== undefined && current.trim() !== message) {
+            // User typed more after submit — preserve their in-progress edits.
+            return prev
+          }
+          return writeCommitDraftForWorktree(prev, activeWorktreeId, '')
+        })
+        setCommitErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
+        void refreshActiveGitStatusAfterMutation()
+        // Why: flip branchSummary to 'loading' synchronously so the empty-state
+        // guard
+        //   (!hasUncommittedEntries && branchSummary.status === 'ready' &&
+        //    branchEntries.length === 0)
+        // doesn't briefly read true between setGitStatus clearing the
+        // uncommitted list and the next branchCompare poll landing the new
+        // commit. Without this flip "No changes on this branch" flashes for
+        // the full poll-interval window.
+        //
+        // Then fire-and-forget refreshBranchCompare so the "Committed on
+        // Branch" section repopulates as soon as the IPC returns instead of
+        // waiting up to 5 seconds for the next poll. Unawaited on purpose:
+        // compound flows (runCompoundCommitAction) need handleCommit to
+        // resolve immediately so the push step starts without delay. Errors
+        // here are best-effort — the polling tick will retry.
+        if (effectiveBaseRef) {
+          beginGitBranchCompareRequest(
+            activeWorktreeId,
+            `${activeWorktreeId}:${effectiveBaseRef}:${Date.now()}:post-commit`,
+            effectiveBaseRef
+          )
+        }
+        void refreshBranchCompareRef.current()
+        void refreshGitHistoryRef.current()
+        return true
+      } catch (error) {
+        setCommitErrors((prev) => ({
+          ...prev,
+          [activeWorktreeId]: error instanceof Error ? error.message : 'Commit failed'
+        }))
+        return false
+      } finally {
+        setCommitInFlightByWorktree((prev) => ({ ...prev, [activeWorktreeId]: false }))
+        commitInFlightRef.current[activeWorktreeId] = false
+      }
+    },
+    [
+      activeRepoSettings,
+      activeWorktreeId,
+      beginGitBranchCompareRequest,
+      commitMessage,
+      effectiveBaseRef,
+      grouped.staged.length,
+      refreshActiveGitStatusAfterMutation,
+      updateCommitDrafts,
+      unresolvedConflicts.length,
+      worktreePath
+    ]
+  )
 
   const handleGenerate = useCallback(
     async (overrides?: RuntimeGenerateCommitMessageOverrides): Promise<void> => {
@@ -1625,7 +1832,7 @@ function SourceControlInner(): React.JSX.Element {
         // Why: race protection — the user may have started typing into the
         // textarea while the agent was running. In that case we silently drop
         // the generated message rather than overwrite their in-progress edits.
-        setCommitDrafts((prev) => {
+        updateCommitDrafts((prev) => {
           const current = prev[activeWorktreeId]
           if (current && current.length > 0) {
             return prev
@@ -1645,7 +1852,13 @@ function SourceControlInner(): React.JSX.Element {
         generateInFlightRef.current[activeWorktreeId] = false
       }
     },
-    [activeRepoSettings, activeWorktreeId, resolvedCommitMessageAi, worktreePath]
+    [
+      activeRepoSettings,
+      activeWorktreeId,
+      resolvedCommitMessageAi,
+      updateCommitDrafts,
+      worktreePath
+    ]
   )
 
   const handleGenerateCommitMessageClick = useCallback((): void => {
@@ -1658,6 +1871,74 @@ function SourceControlInner(): React.JSX.Element {
     }
     openCommitGenerationDialog()
   }, [activeRepo, handleGenerate, openCommitGenerationDialog, resolvedCommitMessageAi, settings])
+
+  const generateCommitMessageForCreatePrIntent = useCallback(async (): Promise<{
+    ok: boolean
+    message?: string
+    reason?: 'settings' | 'failed' | 'canceled'
+  }> => {
+    if (!activeWorktreeId || !worktreePath) {
+      return { ok: false, reason: 'failed' }
+    }
+    if (
+      !hasConfiguredCommitMessageGenerationDefaults({ settings, repo: activeRepo ?? null }) ||
+      resolvedCommitMessageAi?.ok !== true
+    ) {
+      return { ok: false, reason: 'settings' }
+    }
+    if (isCustomAgentId(resolvedCommitMessageAi.value.params.agentId)) {
+      const command = resolvedCommitMessageAi.value.params.customAgentCommand?.trim() ?? ''
+      if (!command) {
+        return { ok: false, reason: 'settings' }
+      }
+    }
+    if (generateInFlightRef.current[activeWorktreeId]) {
+      return { ok: false, reason: 'failed' }
+    }
+
+    generateInFlightRef.current[activeWorktreeId] = true
+    const connectionId = getConnectionId(activeWorktreeId) ?? undefined
+    setGenerateInFlightByWorktree((prev) => ({ ...prev, [activeWorktreeId]: true }))
+    setGenerateErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
+    try {
+      const result = await generateRuntimeCommitMessage(
+        {
+          // Why: route generation by the repo OWNER host, not the focused runtime.
+          settings: activeRepoSettings,
+          worktreeId: activeWorktreeId,
+          worktreePath,
+          connectionId
+        },
+        { sourceControlAiResolvedParams: resolvedCommitMessageAi.value.params }
+      )
+      if (!result.success) {
+        if (!result.canceled) {
+          setGenerateErrors((prev) => ({ ...prev, [activeWorktreeId]: result.error }))
+        }
+        return { ok: false, reason: result.canceled ? 'canceled' : 'failed' }
+      }
+      useAppStore.getState().recordFeatureInteraction('ai-commit-generation')
+      setGenerateErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
+      return { ok: true, message: result.message }
+    } catch (error) {
+      setGenerateErrors((prev) => ({
+        ...prev,
+        [activeWorktreeId]:
+          error instanceof Error ? error.message : 'Failed to generate commit message'
+      }))
+      return { ok: false, reason: 'failed' }
+    } finally {
+      setGenerateInFlightByWorktree((prev) => ({ ...prev, [activeWorktreeId]: false }))
+      generateInFlightRef.current[activeWorktreeId] = false
+    }
+  }, [
+    activeRepo,
+    activeRepoSettings,
+    activeWorktreeId,
+    resolvedCommitMessageAi,
+    settings,
+    worktreePath
+  ])
 
   const handleCancelGenerate = useCallback((): void => {
     if (!activeWorktreeId || !worktreePath) {
@@ -1694,9 +1975,9 @@ function SourceControlInner(): React.JSX.Element {
         | 'fetch'
         | 'publish'
         | 'rebase'
-    ): Promise<void> => {
+    ): Promise<boolean> => {
       if (!activeWorktreeId || !worktreePath) {
-        return
+        return false
       }
       const connectionId = getConnectionId(activeWorktreeId) ?? undefined
       setRemoteActionErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
@@ -1710,7 +1991,7 @@ function SourceControlInner(): React.JSX.Element {
             activeWorktree?.pushTarget,
             { runtimeTargetSettings: activeRepoSettings }
           )
-          return
+          return true
         }
         if (kind === 'push') {
           const forceWithLease = shouldForcePushWithLeaseForUpstream(remoteStatus)
@@ -1724,7 +2005,7 @@ function SourceControlInner(): React.JSX.Element {
               ? { forceWithLease: true, runtimeTargetSettings: activeRepoSettings }
               : { runtimeTargetSettings: activeRepoSettings }
           )
-          return
+          return true
         }
         if (kind === 'force_push') {
           await pushBranch(
@@ -1735,7 +2016,7 @@ function SourceControlInner(): React.JSX.Element {
             activeWorktree?.pushTarget,
             { forceWithLease: true, runtimeTargetSettings: activeRepoSettings }
           )
-          return
+          return true
         }
         if (kind === 'pull') {
           await pullBranch(
@@ -1747,7 +2028,7 @@ function SourceControlInner(): React.JSX.Element {
               runtimeTargetSettings: activeRepoSettings
             }
           )
-          return
+          return true
         }
         if (kind === 'fast_forward') {
           await fastForwardBranch(
@@ -1757,7 +2038,7 @@ function SourceControlInner(): React.JSX.Element {
             activeWorktree?.pushTarget,
             { runtimeTargetSettings: activeRepoSettings }
           )
-          return
+          return true
         }
         if (kind === 'fetch') {
           await fetchBranch(
@@ -1769,11 +2050,11 @@ function SourceControlInner(): React.JSX.Element {
               runtimeTargetSettings: activeRepoSettings
             }
           )
-          return
+          return true
         }
         if (kind === 'rebase') {
           if (!effectiveBaseRef) {
-            return
+            return false
           }
           await rebaseFromBase(
             activeWorktreeId,
@@ -1783,12 +2064,13 @@ function SourceControlInner(): React.JSX.Element {
             activeWorktree?.pushTarget,
             { runtimeTargetSettings: activeRepoSettings }
           )
-          return
+          return true
         }
         await syncBranch(activeWorktreeId, worktreePath, connectionId, activeWorktree?.pushTarget, {
           runtimeTargetSettings: activeRepoSettings
         })
         setRemoteActionErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
+        return true
       } catch (error) {
         // Why: remote action failures are surfaced by editor-slice actions to keep
         // one consistent toast path and avoid duplicate notifications in the UI.
@@ -1801,6 +2083,7 @@ function SourceControlInner(): React.JSX.Element {
             message: resolveRemoteActionError(kind, error)
           }
         }))
+        return false
       } finally {
         refreshSourceControlAfterRemoteAction({
           refreshGitStatus: refreshActiveGitStatusAfterMutation,
@@ -1956,13 +2239,34 @@ function SourceControlInner(): React.JSX.Element {
         if (activeWorktreeId && result.provider === 'gitlab') {
           await updateWorktreeMeta(activeWorktreeId, { linkedGitLabMR: result.number })
         }
+        if (activeWorktreeId && result.provider === 'azure-devops') {
+          await updateWorktreeMeta(activeWorktreeId, { linkedAzureDevOpsPR: result.number })
+        }
+        if (activeWorktreeId && result.provider === 'gitea') {
+          await updateWorktreeMeta(activeWorktreeId, { linkedGiteaPR: result.number })
+        }
+        const linkedReviewNumbers = {
+          linkedGitHubPR: result.provider === 'github' ? result.number : linkedGitHubPR,
+          fallbackGitHubPR: fallbackGitHubPRNumber,
+          linkedGitLabMR: result.provider === 'gitlab' ? result.number : linkedGitLabMR,
+          linkedBitbucketPR,
+          linkedAzureDevOpsPR:
+            result.provider === 'azure-devops' ? result.number : linkedAzureDevOpsPR,
+          linkedGiteaPR: result.provider === 'gitea' ? result.number : linkedGiteaPR
+        }
         if (result.provider === 'gitlab') {
           await fetchHostedReviewForBranch(activeRepo.path, branchName, {
             force: true,
             repoId: activeRepo.id,
-            linkedGitHubPR,
-            fallbackGitHubPR: fallbackGitHubPRNumber,
-            linkedGitLabMR: result.number
+            ...linkedReviewNumbers
+          })
+          return
+        }
+        if (result.provider !== 'github') {
+          await fetchHostedReviewForBranch(activeRepo.path, branchName, {
+            force: true,
+            repoId: activeRepo.id,
+            ...linkedReviewNumbers
           })
           return
         }
@@ -1970,8 +2274,7 @@ function SourceControlInner(): React.JSX.Element {
           fetchHostedReviewForBranch(activeRepo.path, branchName, {
             force: true,
             repoId: activeRepo.id,
-            linkedGitHubPR: result.number,
-            linkedGitLabMR
+            ...linkedReviewNumbers
           }),
           fetchPRForBranch(activeRepo.path, branchName, {
             force: true,
@@ -2006,6 +2309,9 @@ function SourceControlInner(): React.JSX.Element {
       fallbackGitHubPRNumber,
       fetchHostedReviewForBranch,
       fetchPRForBranch,
+      linkedAzureDevOpsPR,
+      linkedBitbucketPR,
+      linkedGiteaPR,
       linkedGitHubPR,
       linkedGitLabMR,
       setRightSidebarOpen,
@@ -2072,7 +2378,9 @@ function SourceControlInner(): React.JSX.Element {
             base: stripBaseRef(seed.base.trim()),
             title: seed.title,
             body: seed.body,
-            draft: seed.draft
+            draft: seed.draft,
+            provider: hostedReviewCreateProvider,
+            useTemplate: resolvedPrCreationDefaults.useTemplate
           },
           overrides
         )
@@ -2123,7 +2431,9 @@ function SourceControlInner(): React.JSX.Element {
       activeWorktreeId,
       allocatePullRequestGenerationRequestId,
       branchName,
+      hostedReviewCreateProvider,
       refreshGitStatusAfterPullRequestGeneration,
+      resolvedPrCreationDefaults.useTemplate,
       setPullRequestGenerationRecord,
       updatePullRequestGenerationRecord,
       worktreePath
@@ -2268,13 +2578,11 @@ function SourceControlInner(): React.JSX.Element {
       setHostedReviewCreationState(null)
       return
     }
-    // Why: skip refetches while the user's PR flow is mid-flight. AI generation
-    // rebases the branch (changing ahead/behind), and submission runs network
-    // calls that briefly perturb the same counts. Either flip can switch
-    // canCreate to false and tear down the composer underneath the user. The
-    // post-completion eligibility refresh in handlePullRequestCreated /
-    // onBranchChangedByGeneration restores the truth once the work settles.
-    if (prGenerating || isCreatingPr) {
+    // Why: skip refetches while the user's PR flow is mid-flight. AI generation,
+    // Create PR intent, and submission can all perturb ahead/behind or dirty
+    // state temporarily. Recomputing eligibility mid-flow can tear down the
+    // composer or rotate dropdown hints before the final refresh restores truth.
+    if (prGenerating || isCreatingPr || isCreatePrIntentInFlight) {
       return
     }
     let stale = false
@@ -2322,6 +2630,7 @@ function SourceControlInner(): React.JSX.Element {
     hasUncommittedEntries,
     isBranchVisible,
     isCreatingPr,
+    isCreatePrIntentInFlight,
     isFolder,
     linkedGitHubPR,
     fallbackGitHubPRNumber,
@@ -2353,32 +2662,32 @@ function SourceControlInner(): React.JSX.Element {
     const title = prTitle.trim()
 
     if (!title) {
-      setCreatePrErrors((prev) => ({
-        ...prev,
-        [activeWorktreeId]: translate(
+      setCreatePrIntentNoticeForWorktree(activeWorktreeId, {
+        tone: 'destructive',
+        message: translate(
           'auto.components.right.sidebar.SourceControl.f3a8b2c1d0e5',
           'Enter a {{value0}} title.',
           { value0: hostedReviewCreateCopy.reviewLabel }
         )
-      }))
+      })
       return
     }
 
     if (!base || stripBaseRef(base).toLowerCase() === stripBaseRef(branchName).toLowerCase()) {
-      setCreatePrErrors((prev) => ({
-        ...prev,
-        [activeWorktreeId]: translate(
+      setCreatePrIntentNoticeForWorktree(activeWorktreeId, {
+        tone: 'destructive',
+        message: translate(
           'auto.components.right.sidebar.SourceControl.ae743199cd',
           'Choose a different base branch before creating a {{value0}}.',
           { value0: hostedReviewCreateCopy.reviewLabel }
         )
-      }))
+      })
       return
     }
 
     createPrInFlightRef.current[activeWorktreeId] = true
     setCreatePrInFlightByWorktree((prev) => ({ ...prev, [activeWorktreeId]: true }))
-    setCreatePrErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
+    setCreatePrIntentNoticeForWorktree(activeWorktreeId, null)
     try {
       const result = await createHostedReview(activeRepo.path, {
         repoId: activeRepo.id,
@@ -2393,6 +2702,7 @@ function SourceControlInner(): React.JSX.Element {
       })
 
       if (result.ok) {
+        setCreatePrIntentNoticeForWorktree(activeWorktreeId, null)
         await handlePullRequestCreated({
           provider: hostedReviewCreateProvider,
           number: result.number,
@@ -2430,6 +2740,7 @@ function SourceControlInner(): React.JSX.Element {
           }
         )
         if (number) {
+          setCreatePrIntentNoticeForWorktree(activeWorktreeId, null)
           await handlePullRequestCreated({
             provider: hostedReviewCreateProvider,
             number,
@@ -2439,11 +2750,14 @@ function SourceControlInner(): React.JSX.Element {
         }
       }
 
-      setCreatePrErrors((prev) => ({ ...prev, [activeWorktreeId]: result.error }))
+      setCreatePrIntentNoticeForWorktree(activeWorktreeId, {
+        tone: 'destructive',
+        message: result.error
+      })
     } catch (error) {
-      setCreatePrErrors((prev) => ({
-        ...prev,
-        [activeWorktreeId]:
+      setCreatePrIntentNoticeForWorktree(activeWorktreeId, {
+        tone: 'destructive',
+        message:
           error instanceof Error
             ? error.message
             : translate(
@@ -2451,7 +2765,7 @@ function SourceControlInner(): React.JSX.Element {
                 'Failed to create {{value0}}',
                 { value0: hostedReviewCreateCopy.reviewLabel }
               )
-      }))
+      })
     } finally {
       createPrInFlightRef.current[activeWorktreeId] = false
       setCreatePrInFlightByWorktree((prev) => ({ ...prev, [activeWorktreeId]: false }))
@@ -2474,6 +2788,603 @@ function SourceControlInner(): React.JSX.Element {
     prTitle,
     resolvedPrCreationDefaults.openAfterCreate,
     resolvedPrCreationDefaults.useTemplate,
+    setCreatePrIntentNoticeForWorktree,
+    worktreePath
+  ])
+
+  const createHostedReviewForCreatePrIntent = useCallback(
+    async (
+      token: CreatePrIntentRunToken,
+      eligibility: HostedReviewCreationEligibility
+    ): Promise<boolean> => {
+      if (!activeRepo || !branchName || !eligibility.canCreate) {
+        return false
+      }
+
+      const base = stripBaseRef(
+        eligibility.defaultBaseRef ?? effectiveBaseRef ?? prBase ?? ''
+      ).trim()
+      if (!base || stripBaseRef(base).toLowerCase() === stripBaseRef(branchName).toLowerCase()) {
+        setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+          tone: 'destructive',
+          message: translate(
+            'auto.components.right.sidebar.SourceControl.ae743199cd',
+            'Choose a different base branch before creating a {{value0}}.',
+            { value0: hostedReviewCreateCopy.reviewLabel }
+          )
+        })
+        return false
+      }
+
+      const fallbackTitle =
+        eligibility.title?.trim() ||
+        humanizeBranchSlug(stripBaseRef(branchName).split('/').pop()?.replace(/_/g, '-') ?? '') ||
+        stripBaseRef(branchName)
+      let fields = {
+        base,
+        title: fallbackTitle,
+        body: eligibility.body ?? prBody,
+        draft: resolvedPrCreationDefaults.draft
+      }
+
+      if (
+        hasConfiguredSourceControlTextGenerationDefaults({
+          actionId: 'pullRequest',
+          settings,
+          repo: activeRepo
+        })
+      ) {
+        setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+          tone: 'muted',
+          message: translate(
+            'auto.components.right.sidebar.SourceControl.createPrIntentGeneratingDetails',
+            'Generating review details…'
+          )
+        })
+        try {
+          const generated = await generateRuntimePullRequestFields(
+            {
+              // Why: direct Create PR intent submission can run after focus
+              // changes; keep generation pinned to the original worktree.
+              settings: activeRepoSettings,
+              worktreeId: token.worktreeId,
+              worktreePath: token.worktreePath,
+              connectionId: getConnectionId(token.worktreeId) ?? undefined
+            },
+            {
+              ...fields,
+              provider: eligibility.provider,
+              useTemplate: resolvedPrCreationDefaults.useTemplate
+            }
+          )
+          if (generated.success) {
+            fields = {
+              // Why: Create PR intent auto-submits; generated details should
+              // not retarget the review without user confirmation.
+              base: fields.base,
+              title: generated.fields.title.trim() || fields.title,
+              body: generated.fields.body,
+              draft: generated.fields.draft
+            }
+          }
+        } catch (error) {
+          console.warn('[SourceControl] Create PR intent detail generation failed', error)
+        }
+      }
+
+      if (!createPrIntentRunTokenMatches(token, createPrIntentCurrentTargetRef.current)) {
+        return false
+      }
+
+      const title = fields.title.trim()
+      if (!title) {
+        setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+          tone: 'destructive',
+          message: translate(
+            'auto.components.right.sidebar.SourceControl.f3a8b2c1d0e5',
+            'Enter a {{value0}} title.',
+            { value0: hostedReviewCreateCopy.reviewLabel }
+          )
+        })
+        return false
+      }
+
+      setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+        tone: 'muted',
+        message: translate(
+          'auto.components.right.sidebar.SourceControl.createPrIntentCreatingReview',
+          'Creating review…'
+        )
+      })
+      createPrInFlightRef.current[token.worktreeId] = true
+      setCreatePrInFlightByWorktree((prev) => ({ ...prev, [token.worktreeId]: true }))
+      try {
+        const result = await createHostedReview(activeRepo.path, {
+          repoId: activeRepo.id,
+          provider: eligibility.provider,
+          base: fields.base,
+          head: normalizeHostedReviewHeadRef(branchName),
+          title,
+          body: fields.body,
+          draft: fields.draft,
+          worktreePath: token.worktreePath,
+          useTemplate: resolvedPrCreationDefaults.useTemplate
+        })
+
+        if (result.ok) {
+          await handlePullRequestCreated({
+            provider: eligibility.provider,
+            number: result.number,
+            url: result.url
+          })
+          if (resolvedPrCreationDefaults.openAfterCreate) {
+            window.api.shell.openUrl(result.url)
+          }
+          setCreatePrIntentNoticeForWorktree(token.worktreeId, null)
+          return true
+        }
+
+        if (result.existingReview?.number && result.existingReview.url) {
+          await handlePullRequestCreated({
+            provider: eligibility.provider,
+            number: result.existingReview.number,
+            url: result.existingReview.url
+          })
+          setCreatePrIntentNoticeForWorktree(token.worktreeId, null)
+          return true
+        }
+
+        setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+          tone: 'destructive',
+          message: result.error
+        })
+        return false
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : translate(
+                'auto.components.right.sidebar.SourceControl.e2b7a1c0d9f4',
+                'Failed to create {{value0}}',
+                { value0: hostedReviewCreateCopy.reviewLabel }
+              )
+        setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+          tone: 'destructive',
+          message
+        })
+        return false
+      } finally {
+        createPrInFlightRef.current[token.worktreeId] = false
+        setCreatePrInFlightByWorktree((prev) => ({ ...prev, [token.worktreeId]: false }))
+      }
+    },
+    [
+      activeRepo,
+      activeRepoSettings,
+      branchName,
+      createHostedReview,
+      effectiveBaseRef,
+      handlePullRequestCreated,
+      hostedReviewCreateCopy.reviewLabel,
+      prBase,
+      prBody,
+      resolvedPrCreationDefaults.draft,
+      resolvedPrCreationDefaults.openAfterCreate,
+      resolvedPrCreationDefaults.useTemplate,
+      setCreatePrIntentNoticeForWorktree,
+      settings
+    ]
+  )
+
+  const refreshBranchCompareForCreatePrIntent = useCallback(
+    async (token: CreatePrIntentRunToken): Promise<number | undefined> => {
+      if (!effectiveBaseRef) {
+        return undefined
+      }
+      const requestKey = `${token.worktreeId}:${effectiveBaseRef}:${Date.now()}:create-pr-intent`
+      beginGitBranchCompareRequest(token.worktreeId, requestKey, effectiveBaseRef)
+      const result = await getRuntimeGitBranchCompare(
+        {
+          // Why: the intent flow may continue after a worktree switch; use the
+          // token's original host target, not whatever branch is focused later.
+          settings: activeRepoSettings,
+          worktreeId: token.worktreeId,
+          worktreePath: token.worktreePath,
+          connectionId: getConnectionId(token.worktreeId) ?? undefined
+        },
+        effectiveBaseRef
+      )
+      setGitBranchCompareResult(token.worktreeId, requestKey, result)
+      return result.summary.status === 'ready' ? (result.summary.commitsAhead ?? 0) : undefined
+    },
+    [activeRepoSettings, beginGitBranchCompareRequest, effectiveBaseRef, setGitBranchCompareResult]
+  )
+
+  const readHostedReviewCreationEligibilityForIntent = useCallback(
+    async ({
+      hasUncommittedChanges,
+      upstreamStatus
+    }: {
+      hasUncommittedChanges: boolean
+      upstreamStatus?: NonNullable<typeof remoteStatus>
+    }): Promise<HostedReviewCreationEligibility | null> => {
+      if (!activeRepo || !activeWorktreeId || !branchName) {
+        return null
+      }
+      const result = await getHostedReviewCreationEligibility({
+        repoPath: activeRepo.path,
+        repoId: activeRepo.id,
+        ...(worktreePath ? { worktreePath } : {}),
+        branch: branchName,
+        base: effectiveBaseRef ?? null,
+        hasUncommittedChanges,
+        hasUpstream: upstreamStatus?.hasUpstream,
+        ahead: upstreamStatus?.ahead,
+        behind: upstreamStatus?.behind,
+        linkedGitHubPR,
+        fallbackGitHubPR: fallbackGitHubPRNumber,
+        linkedGitLabMR,
+        linkedBitbucketPR,
+        linkedAzureDevOpsPR,
+        linkedGiteaPR
+      })
+      setHostedReviewCreationState({
+        repoId: activeRepo.id,
+        worktreeId: activeWorktreeId,
+        branch: branchName,
+        data: result
+      })
+      return result
+    },
+    [
+      activeRepo,
+      activeWorktreeId,
+      branchName,
+      effectiveBaseRef,
+      fallbackGitHubPRNumber,
+      getHostedReviewCreationEligibility,
+      linkedAzureDevOpsPR,
+      linkedBitbucketPR,
+      linkedGiteaPR,
+      linkedGitHubPR,
+      linkedGitLabMR,
+      worktreePath
+    ]
+  )
+
+  const runCreatePrIntent = useCallback(async (): Promise<void> => {
+    if (
+      !activeRepo ||
+      !activeWorktreeId ||
+      !worktreePath ||
+      !branchName ||
+      isExecutingBulk ||
+      isCommitting ||
+      isGenerating ||
+      isRemoteOperationActive ||
+      prGenerating ||
+      isCreatingPr ||
+      createPrIntentInFlightRef.current[activeWorktreeId]
+    ) {
+      return
+    }
+
+    const token = createCreatePrIntentRunToken({
+      repoId: activeRepo.id,
+      worktreeId: activeWorktreeId,
+      worktreePath,
+      branch: branchName
+    })
+    const runIsCurrent = (): boolean =>
+      createPrIntentRunTokenMatches(token, createPrIntentCurrentTargetRef.current)
+    let abortedByStaleTarget = false
+    const abortIfStale = (): boolean => {
+      if (runIsCurrent()) {
+        return false
+      }
+      abortedByStaleTarget = true
+      return true
+    }
+    createPrIntentRunTokenRef.current[token.worktreeId] = token
+    createPrIntentInFlightRef.current[token.worktreeId] = true
+    setCreatePrIntentInFlightByWorktree((prev) => ({ ...prev, [token.worktreeId]: true }))
+    setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+      tone: 'muted',
+      message: translate(
+        'auto.components.right.sidebar.SourceControl.d37e68f61d',
+        'Preparing branch for review…'
+      )
+    })
+
+    try {
+      let latestStatusEntries = entries
+      let latestUpstreamStatus = remoteStatus
+      const refreshIntentSnapshot = async (): Promise<boolean> => {
+        const refreshed = await refreshActiveGitStatusAfterMutationStrict()
+        if (!refreshed) {
+          return false
+        }
+        // Why: terminal checkouts are observed by this strict status snapshot
+        // before React updates createPrIntentCurrentTargetRef. Stop before the
+        // intent flow stages, commits, or pushes on a different branch.
+        if (!createPrIntentGitStatusMatchesToken(token, refreshed.status)) {
+          abortedByStaleTarget = true
+          return false
+        }
+        if (abortIfStale()) {
+          return false
+        }
+        latestStatusEntries = refreshed.status.entries
+        latestUpstreamStatus = refreshed.upstreamStatus
+        return true
+      }
+      const stageLatestIntentPaths = async (): Promise<boolean> => {
+        const stagePaths = getCreatePrIntentStagePaths({
+          unstaged: latestStatusEntries.filter((entry) => entry.area === 'unstaged'),
+          untracked: latestStatusEntries.filter((entry) => entry.area === 'untracked')
+        })
+        if (stagePaths.length === 0) {
+          return true
+        }
+        setIsExecutingBulk(true)
+        try {
+          await bulkStageRuntimeGitPaths(
+            {
+              // Why: route staging by the repo OWNER host, not the focused runtime.
+              settings: activeRepoSettings,
+              worktreeId: token.worktreeId,
+              worktreePath: token.worktreePath,
+              connectionId: getConnectionId(token.worktreeId) ?? undefined
+            },
+            stagePaths
+          )
+        } finally {
+          setIsExecutingBulk(false)
+        }
+        if (abortIfStale()) {
+          return false
+        }
+        return refreshIntentSnapshot()
+      }
+
+      if (!(await refreshIntentSnapshot())) {
+        return
+      }
+
+      if (!(await stageLatestIntentPaths())) {
+        return
+      }
+
+      const stagedEntries = latestStatusEntries.filter((entry) => entry.area === 'staged')
+      if (stagedEntries.length > 0) {
+        let message = readCommitDraftForWorktree(commitDraftsRef.current, token.worktreeId).trim()
+        if (!message) {
+          setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+            tone: 'muted',
+            message: translate(
+              'auto.components.right.sidebar.SourceControl.8d8f5c6c94',
+              'Generating commit message…'
+            )
+          })
+          const generated = await generateCommitMessageForCreatePrIntent()
+          if (abortIfStale()) {
+            return
+          }
+          if (!generated.ok || !generated.message) {
+            setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+              tone: generated.reason === 'settings' ? 'muted' : 'destructive',
+              message: translate(
+                generated.reason === 'settings'
+                  ? 'auto.components.right.sidebar.SourceControl.createPrIntentConfigureAi'
+                  : 'auto.components.right.sidebar.SourceControl.createPrIntentGenerateFailed',
+                generated.reason === 'settings'
+                  ? 'Add a commit message or configure Source Control AI settings.'
+                  : 'Could not generate a commit message. Add one and retry.'
+              ),
+              action: generated.reason === 'settings' ? 'settings' : undefined
+            })
+            return
+          }
+          const draftAfterGeneration = readCommitDraftForWorktree(
+            commitDraftsRef.current,
+            token.worktreeId
+          ).trim()
+          if (draftAfterGeneration) {
+            setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+              tone: 'muted',
+              message: translate(
+                'auto.components.right.sidebar.SourceControl.fda060d6ce',
+                'Review the commit message, then retry Create PR.'
+              )
+            })
+            return
+          }
+          message = generated.message
+          updateCommitDrafts((prev) => writeCommitDraftForWorktree(prev, token.worktreeId, message))
+        }
+
+        setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+          tone: 'muted',
+          message: translate(
+            'auto.components.right.sidebar.SourceControl.b75cb1fd0c',
+            'Committing changes…'
+          )
+        })
+        const committed = await handleCommit(message, { skipStagedSnapshotCheck: true })
+        if (abortIfStale()) {
+          return
+        }
+        if (!committed) {
+          // Why: pre-commit/lint hooks may rewrite tracked files before
+          // failing. Re-stage those safe hook outputs so retrying Create PR
+          // does not strand changes outside the intended all-in commit.
+          if (await refreshIntentSnapshot()) {
+            await stageLatestIntentPaths()
+          }
+          if (abortIfStale()) {
+            return
+          }
+          setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+            tone: 'destructive',
+            message: translate(
+              'auto.components.right.sidebar.SourceControl.createPrIntentCommitFailed',
+              'Could not commit changes. Fix the issue, then retry Create PR.'
+            )
+          })
+          return
+        }
+        if (!(await refreshIntentSnapshot())) {
+          return
+        }
+      }
+
+      const branchAhead = await refreshBranchCompareForCreatePrIntent(token)
+      if (abortIfStale()) {
+        return
+      }
+      let eligibility = await readHostedReviewCreationEligibilityForIntent({
+        hasUncommittedChanges: latestStatusEntries.length > 0,
+        upstreamStatus: latestUpstreamStatus
+      })
+      if (abortIfStale() || !eligibility) {
+        return
+      }
+      if (eligibility.canCreate) {
+        await createHostedReviewForCreatePrIntent(token, eligibility)
+        if (abortIfStale()) {
+          return
+        }
+        return
+      }
+      if (eligibility.blockedReason === 'existing_review') {
+        setCreatePrIntentNoticeForWorktree(token.worktreeId, null)
+        return
+      }
+
+      const remoteStep = resolveCreatePrIntentRemoteStep({
+        upstreamStatus: latestUpstreamStatus,
+        hostedReviewCreation: eligibility,
+        branchCommitsAhead: branchAhead,
+        hasCurrentBranch: Boolean(branchName)
+      })
+      if (remoteStep === 'blocked' || remoteStep === 'none') {
+        setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+          tone: 'muted',
+          message: translate(
+            eligibility.blockedReason === 'needs_sync'
+              ? 'auto.components.right.sidebar.SourceControl.createPrIntentNeedsSync'
+              : 'auto.components.right.sidebar.SourceControl.createPrIntentBranchNotReady',
+            eligibility.blockedReason === 'needs_sync'
+              ? 'Sync this branch before creating a review.'
+              : 'Branch is not ready to create a review yet.'
+          )
+        })
+        return
+      }
+
+      setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+        tone: 'muted',
+        message: translate(
+          remoteStep === 'publish'
+            ? 'auto.components.right.sidebar.SourceControl.createPrIntentPublishing'
+            : remoteStep === 'force_push'
+              ? 'auto.components.right.sidebar.SourceControl.createPrIntentForcePushing'
+              : 'auto.components.right.sidebar.SourceControl.createPrIntentPushing',
+          remoteStep === 'publish'
+            ? 'Publishing branch…'
+            : remoteStep === 'force_push'
+              ? 'Force pushing with lease…'
+              : 'Pushing commits…'
+        )
+      })
+      const remoteOk = await runRemoteAction(remoteStep)
+      if (abortIfStale()) {
+        return
+      }
+      if (!remoteOk) {
+        setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+          tone: 'destructive',
+          message: translate(
+            'auto.components.right.sidebar.SourceControl.createPrIntentRemoteFailed',
+            'Could not update the remote branch. Retry Create PR.'
+          )
+        })
+        return
+      }
+      if (!(await refreshIntentSnapshot())) {
+        return
+      }
+      await refreshBranchCompareForCreatePrIntent(token)
+      if (abortIfStale()) {
+        return
+      }
+      eligibility = await readHostedReviewCreationEligibilityForIntent({
+        hasUncommittedChanges: latestStatusEntries.length > 0,
+        upstreamStatus: latestUpstreamStatus
+      })
+      if (abortIfStale()) {
+        return
+      }
+      if (eligibility?.canCreate) {
+        await createHostedReviewForCreatePrIntent(token, eligibility)
+        if (abortIfStale()) {
+          return
+        }
+        return
+      }
+      setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+        tone: 'muted',
+        message: translate(
+          'auto.components.right.sidebar.SourceControl.995c5e67ec',
+          'Review setup needs attention.'
+        )
+      })
+    } catch (error) {
+      console.warn('[SourceControl] Create PR intent failed', error)
+      if (!abortIfStale()) {
+        setCreatePrIntentNoticeForWorktree(token.worktreeId, {
+          tone: 'destructive',
+          message: translate(
+            'auto.components.right.sidebar.SourceControl.d7492cafce',
+            'Could not refresh Source Control. Retry Create PR.'
+          )
+        })
+      }
+    } finally {
+      if (createPrIntentRunTokenRef.current[token.worktreeId] === token) {
+        createPrIntentInFlightRef.current[token.worktreeId] = false
+        createPrIntentRunTokenRef.current[token.worktreeId] = null
+        if (abortedByStaleTarget) {
+          setCreatePrIntentNoticeForWorktree(token.worktreeId, null)
+        }
+        setCreatePrIntentInFlightByWorktree((prev) => ({
+          ...prev,
+          [token.worktreeId]: false
+        }))
+      }
+    }
+  }, [
+    activeRepo,
+    activeRepoSettings,
+    activeWorktreeId,
+    branchName,
+    createHostedReviewForCreatePrIntent,
+    entries,
+    generateCommitMessageForCreatePrIntent,
+    handleCommit,
+    isCommitting,
+    isCreatingPr,
+    isExecutingBulk,
+    isGenerating,
+    isRemoteOperationActive,
+    prGenerating,
+    readHostedReviewCreationEligibilityForIntent,
+    refreshActiveGitStatusAfterMutationStrict,
+    refreshBranchCompareForCreatePrIntent,
+    remoteStatus,
+    runRemoteAction,
+    setCreatePrIntentNoticeForWorktree,
+    updateCommitDrafts,
     worktreePath
   ])
 
@@ -2488,7 +3399,7 @@ function SourceControlInner(): React.JSX.Element {
   }, [grouped.staged, grouped.unstaged])
 
   const primaryAction: PrimaryAction = useMemo(() => {
-    const action = resolvePrimaryAction({
+    return resolveCommitAreaPrimaryAction({
       stagedCount: grouped.staged.length,
       hasUnstagedChanges,
       hasStageableChanges,
@@ -2504,19 +3415,9 @@ function SourceControlInner(): React.JSX.Element {
       hostedReviewCreation,
       branchCommitsAhead:
         branchSummary?.status === 'ready' ? (branchSummary.commitsAhead ?? 0) : undefined,
-      hasCurrentBranch: Boolean(branchName)
+      hasCurrentBranch: Boolean(branchName),
+      isPrIntentInFlight: isCreatePrIntentInFlight
     })
-    return isCreatingPr && action.kind === 'create_pr'
-      ? {
-          ...action,
-          title: translate(
-            'auto.components.right.sidebar.SourceControl.fe5bd1a610',
-            'Creating {{value0}}...',
-            { value0: hostedReviewCreateCopy.reviewLabel }
-          ),
-          disabled: true
-        }
-      : action
   }, [
     commitMessage,
     grouped.staged.length,
@@ -2528,16 +3429,77 @@ function SourceControlInner(): React.JSX.Element {
     isRemoteOperationActive,
     inFlightRemoteOpKind,
     hostedReviewCreation,
-    hostedReviewCreateCopy.reviewLabel,
     isHostedReviewStateLoading,
     hostedReview?.state,
-    isCreatingPr,
+    isCreatePrIntentInFlight,
     branchSummary?.commitsAhead,
     branchSummary?.status,
     branchName,
     remoteStatus,
     unresolvedConflicts.length
   ])
+
+  const createPrHeaderAction: PrimaryAction | null = useMemo(() => {
+    const action = resolveCreatePrHeaderAction({
+      stagedCount: grouped.staged.length,
+      hasUnstagedChanges,
+      hasStageableChanges,
+      hasPartiallyStagedChanges,
+      hasMessage: commitMessage.trim().length > 0,
+      hasUnresolvedConflicts: unresolvedConflicts.length > 0,
+      isCommitting,
+      isRemoteOperationActive: isRemoteOperationActive || isAbortingOperation,
+      upstreamStatus: remoteStatus,
+      prState: hostedReview?.state ?? null,
+      isPRStateLoading: isHostedReviewStateLoading,
+      inFlightRemoteOpKind,
+      hostedReviewCreation,
+      branchCommitsAhead:
+        branchSummary?.status === 'ready' ? (branchSummary.commitsAhead ?? 0) : undefined,
+      hasCurrentBranch: Boolean(branchName),
+      isPrIntentInFlight: isCreatePrIntentInFlight
+    })
+    return isCreatingPr && action?.kind === 'create_pr'
+      ? {
+          ...action,
+          title: translate(
+            'auto.components.right.sidebar.SourceControl.fe5bd1a610',
+            'Creating {{value0}}...',
+            { value0: hostedReviewCreateCopy.reviewLabel }
+          ),
+          disabled: true
+        }
+      : action
+  }, [
+    branchName,
+    branchSummary?.commitsAhead,
+    branchSummary?.status,
+    commitMessage,
+    grouped.staged.length,
+    hasPartiallyStagedChanges,
+    hasStageableChanges,
+    hasUnstagedChanges,
+    hostedReview?.state,
+    hostedReviewCreation,
+    hostedReviewCreateCopy.reviewLabel,
+    inFlightRemoteOpKind,
+    isAbortingOperation,
+    isCommitting,
+    isCreatePrIntentInFlight,
+    isCreatingPr,
+    isHostedReviewStateLoading,
+    isRemoteOperationActive,
+    remoteStatus,
+    unresolvedConflicts.length
+  ])
+  const directCreatePrAction =
+    createPrHeaderAction?.kind === 'create_pr' ? createPrHeaderAction : null
+  const visibleCreatePrHeaderAction = resolveVisibleCreatePrHeaderAction({
+    createPrHeaderAction,
+    directCreatePrAction,
+    isCreatePrIntentInFlight,
+    primaryActionKind: primaryAction.kind
+  })
 
   const dropdownItems: DropdownEntry[] = useMemo(
     () =>
@@ -2556,7 +3518,7 @@ function SourceControlInner(): React.JSX.Element {
         isPRStateLoading: isHostedReviewStateLoading,
         inFlightRemoteOpKind,
         hostedReviewCreation,
-        isPullRequestOperationActive: prGenerating || isCreatingPr,
+        isPullRequestOperationActive: prGenerating || isCreatingPr || isCreatePrIntentInFlight,
         branchCommitsAhead:
           branchSummary?.status === 'ready' ? (branchSummary.commitsAhead ?? 0) : undefined,
         hasCurrentBranch: Boolean(branchName),
@@ -2575,6 +3537,7 @@ function SourceControlInner(): React.JSX.Element {
       inFlightRemoteOpKind,
       hostedReviewCreation,
       isCreatingPr,
+      isCreatePrIntentInFlight,
       isHostedReviewStateLoading,
       hostedReview?.state,
       prGenerating,
@@ -2593,7 +3556,7 @@ function SourceControlInner(): React.JSX.Element {
   // pure remote actions go through runRemoteAction.
   const handleActionInvoke = useCallback(
     (kind: DropdownActionKind): void => {
-      if (prGenerating || isCreatingPr) {
+      if (prGenerating || isCreatingPr || isCreatePrIntentInFlight) {
         return
       }
       switch (kind) {
@@ -2616,7 +3579,7 @@ function SourceControlInner(): React.JSX.Element {
           void handleCreatePullRequest()
           return
         case 'push_create_pr':
-          void runRemoteAction('push')
+          void runCreatePrIntent()
           return
         case 'push':
         case 'force_push':
@@ -2635,7 +3598,9 @@ function SourceControlInner(): React.JSX.Element {
       handleAbortMerge,
       handleAbortRebase,
       isCreatingPr,
+      isCreatePrIntentInFlight,
       prGenerating,
+      runCreatePrIntent,
       runCompoundCommitAction,
       runRemoteAction
     ]
@@ -2998,8 +3963,24 @@ function SourceControlInner(): React.JSX.Element {
       case 'publish':
       case 'create_pr':
         handleActionInvoke(primaryAction.kind)
+        return
+      case 'create_pr_intent':
+        void runCreatePrIntent()
     }
-  }, [handleActionInvoke, handleStageAllPrimary, primaryAction.kind])
+  }, [handleActionInvoke, handleStageAllPrimary, primaryAction.kind, runCreatePrIntent])
+
+  const handleCreatePrHeaderClick = useCallback((): void => {
+    if (!createPrHeaderAction || createPrHeaderAction.disabled) {
+      return
+    }
+    if (createPrHeaderAction.kind === 'create_pr') {
+      void handleCreatePullRequest()
+      return
+    }
+    if (createPrHeaderAction.kind === 'create_pr_intent') {
+      void runCreatePrIntent()
+    }
+  }, [createPrHeaderAction, handleCreatePullRequest, runCreatePrIntent])
 
   const handleUnstageAll = useCallback(async () => {
     if (!worktreePath || isExecutingBulk) {
@@ -3770,13 +4751,43 @@ function SourceControlInner(): React.JSX.Element {
                   )}
             </button>
           ))}
-          {hostedReview && (
+          {(visibleCreatePrHeaderAction || hostedReview) && (
             <div className="ml-auto mb-1.5 flex items-center gap-1.5 min-w-0 text-[11.5px] leading-none">
-              <HostedReviewIcon review={hostedReview} className="size-3 shrink-0" />
-              <HostedReviewHeaderLink
-                review={hostedReview}
-                onOpenHostedReviewInChecks={openHostedReviewInChecks}
-              />
+              {visibleCreatePrHeaderAction && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex shrink-0">
+                      <Button
+                        type="button"
+                        size="xs"
+                        disabled={visibleCreatePrHeaderAction.disabled}
+                        onClick={handleCreatePrHeaderClick}
+                        className="h-6 px-2 text-[11px]"
+                        title={visibleCreatePrHeaderAction.title}
+                      >
+                        {isCreatePrIntentInFlight || isCreatingPr ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <GitPullRequestArrow className="size-3.5" aria-hidden="true" />
+                        )}
+                        {visibleCreatePrHeaderAction.label}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={6} className="max-w-72">
+                    {visibleCreatePrHeaderAction.title}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {hostedReview && (
+                <>
+                  <HostedReviewIcon review={hostedReview} className="size-3 shrink-0" />
+                  <HostedReviewHeaderLink
+                    review={hostedReview}
+                    onOpenHostedReviewInChecks={openHostedReviewInChecks}
+                  />
+                </>
+              )}
             </div>
           )}
         </div>
@@ -4071,7 +5082,7 @@ function SourceControlInner(): React.JSX.Element {
           ) : null}
 
           {shouldRenderCommitArea(scope, unresolvedConflicts.length, conflictOperation) &&
-            (primaryAction.kind === 'create_pr' ? (
+            (directCreatePrAction ? (
               <CreateHostedReviewComposer
                 provider={hostedReviewCreateProvider}
                 branch={branchName}
@@ -4093,13 +5104,17 @@ function SourceControlInner(): React.JSX.Element {
                 generateDisabled={prGenerateDisabled}
                 generateDisabledReason={prGenerateDisabledReason}
                 generateError={prGenerateError}
-                createError={createPrError}
+                createError={
+                  createPrIntentNotice?.tone === 'destructive' ? createPrIntentNotice.message : null
+                }
                 isCreating={isCreatingPr}
-                primaryAction={primaryAction}
+                primaryAction={directCreatePrAction}
                 dropdownItems={dropdownItems}
                 onGenerate={handleGeneratePullRequestFieldsClick}
                 onCancelGenerate={handleCancelGeneratePullRequestFields}
-                onPrimaryAction={handlePrimaryClick}
+                onPrimaryAction={() => {
+                  void handleCreatePullRequest()
+                }}
                 onDropdownAction={handleActionInvoke}
               />
             ) : (
@@ -4112,8 +5127,11 @@ function SourceControlInner(): React.JSX.Element {
                 commitError={commitError}
                 commitFailureRecoveryPrompt={commitFailureRecoveryPrompt}
                 remoteActionError={remoteActionError?.message ?? null}
+                createPrIntentNotice={createPrIntentNotice}
                 isCommitting={isCommitting}
                 isFixingCommitFailureWithAI={isLaunchingCommitFailureAgent}
+                isCreatingPr={isCreatingPr || isCreatePrIntentInFlight}
+                isCreatePrIntentInFlight={isCreatePrIntentInFlight}
                 groupId={activeGroupId ?? activeWorktreeId}
                 showComposer={!(scope === 'all' && showGenericEmptyState)}
                 aiEnabled={resolvedCommitMessageAi?.ok === true}
@@ -4131,7 +5149,7 @@ function SourceControlInner(): React.JSX.Element {
                   if (!activeWorktreeId) {
                     return
                   }
-                  setCommitDrafts((prev) =>
+                  updateCommitDrafts((prev) =>
                     writeCommitDraftForWorktree(prev, activeWorktreeId, value)
                   )
                 }}
@@ -4196,7 +5214,7 @@ function SourceControlInner(): React.JSX.Element {
                               focusing any action reveals all three siblings —
                               otherwise keyboard users tab into an invisible
                               next stop. */}
-                          <div className="flex items-center opacity-0 transition-opacity group-hover/section:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                          <div className="flex items-center can-hover:opacity-0 transition-opacity group-hover/section:opacity-100 focus-within:opacity-100">
                             {canRevertAll && (
                               <ActionButton
                                 icon={area === 'untracked' ? Trash : Undo2}
@@ -4543,7 +5561,7 @@ function SourceControlInner(): React.JSX.Element {
           </DialogHeader>
           <BaseRefPicker
             repoId={activeRepo.id}
-            currentBaseRef={pinnedBaseRef ?? undefined}
+            currentBaseRef={pickerBaseRef}
             onSelect={(ref) => {
               if (baseRefOwnedByWorktree && activeWorktreeId) {
                 void updateWorktreeMeta(activeWorktreeId, { baseRef: ref })
@@ -4829,9 +5847,11 @@ type CommitAreaProps = {
   commitError: string | null
   commitFailureRecoveryPrompt: string | null
   remoteActionError: string | null
+  createPrIntentNotice?: CreatePrIntentNotice | null
   isCommitting: boolean
   isFixingCommitFailureWithAI: boolean
   isCreatingPr?: boolean
+  isCreatePrIntentInFlight?: boolean
   showComposer?: boolean
   aiEnabled: boolean
   aiAgentConfigured: boolean
@@ -4868,9 +5888,11 @@ export function CommitArea({
   commitError,
   commitFailureRecoveryPrompt,
   remoteActionError,
+  createPrIntentNotice,
   isCommitting,
   isFixingCommitFailureWithAI,
   isCreatingPr = false,
+  isCreatePrIntentInFlight = false,
   showComposer = true,
   aiEnabled,
   aiAgentConfigured,
@@ -4897,9 +5919,9 @@ export function CommitArea({
   // the existing style) — the browser scrolls internally past 12 rows.
   const rows = Math.min(12, Math.max(2, commitMessage.split('\n').length))
   // Why: only spin the primary when its label matches what's actually
-  // running. resolvePrimaryAction overrides the primary kind to mirror the
-  // in-flight op (e.g. user picks Sync from the dropdown → primary becomes
-  // "Sync"), so the equality check spins the button for any primary-
+  // running. The commit-area resolver overrides the primary kind to mirror
+  // the in-flight op (e.g. user picks Sync from the dropdown → primary
+  // becomes "Sync"), so the equality check spins the button for any primary-
   // eligible remote op the user triggered. Background ops the primary
   // doesn't show (Fetch) leave primaryAction.kind unchanged and the
   // mismatch keeps the spinner off — the disabled state alone is enough
@@ -4909,7 +5931,7 @@ export function CommitArea({
     primaryAction.kind === inFlightRemoteOpKind ||
     (primaryAction.kind === 'push' && inFlightRemoteOpKind === 'force_push')
   const showSpinner =
-    primaryAction.kind === 'create_pr'
+    primaryAction.kind === 'create_pr' || primaryAction.kind === 'create_pr_intent'
       ? isCreatingPr
       : primaryAction.kind === 'commit'
         ? isCommitting
@@ -4989,6 +6011,7 @@ export function CommitArea({
   const describedBy = [
     commitError ? 'commit-area-error' : null,
     remoteActionError ? 'commit-area-remote-error' : null,
+    createPrIntentNotice ? 'commit-area-create-pr-intent' : null,
     generateError ? 'commit-area-generate-error' : null
   ]
     .filter(Boolean)
@@ -4996,7 +6019,10 @@ export function CommitArea({
 
   // Why: only render Generate when it has a runnable path; otherwise the
   // composer should stay focused on the normal Commit action.
-  const showGenerate = showComposer && aiEnabled && (aiAgentConfigured || isGenerating)
+  // Why: Create PR intent owns message generation and surfaces status via the
+  // inline notice; a second composer spinner stacks on the primary spinner.
+  const showGenerate =
+    showComposer && aiEnabled && !isCreatePrIntentInFlight && (aiAgentConfigured || isGenerating)
   let generateDisabledReason: string | undefined
   if (isGenerating) {
     generateDisabledReason = 'Generating commit message…'
@@ -5016,6 +6042,55 @@ export function CommitArea({
     stagedCount === 0 ||
     hasMessage ||
     hasUnresolvedConflicts
+  const moreCommitAndRemoteActionsLabel = translate(
+    'auto.components.right.sidebar.SourceControl.cc199ccc5f',
+    'More commit and remote actions'
+  )
+  const moreActionsLabel = translate(
+    'auto.components.right.sidebar.SourceControl.4d6e1fd7f3',
+    'More actions'
+  )
+  const dropdownMenuContent = (
+    <DropdownMenuContent align="end" className="min-w-[14rem]">
+      {dropdownItems.map((entry, index) =>
+        entry.kind === 'separator' ? (
+          <DropdownMenuSeparator key={`sep-${index}`} />
+        ) : (
+          <Tooltip key={entry.kind}>
+            <TooltipTrigger asChild>
+              <div className="block">
+                <DropdownMenuItem
+                  disabled={entry.disabled}
+                  title={entry.title}
+                  variant={entry.variant}
+                  className="w-full"
+                  onSelect={(event) => {
+                    if (entry.disabled) {
+                      event.preventDefault()
+                      return
+                    }
+                    onDropdownAction(entry.kind)
+                  }}
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <span>{entry.label}</span>
+                    {entry.hint ? (
+                      <span className="truncate text-[10px] text-muted-foreground">
+                        {entry.hint}
+                      </span>
+                    ) : null}
+                  </span>
+                </DropdownMenuItem>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="left" sideOffset={8} className="max-w-72">
+              {entry.title}
+            </TooltipContent>
+          </Tooltip>
+        )
+      )}
+    </DropdownMenuContent>
+  )
 
   return (
     <div className="px-3 pb-2">
@@ -5096,124 +6171,77 @@ export function CommitArea({
             ))}
         </div>
       ) : null}
-      {/* Why: primary + chevron sit together as a visual split button so the
-          edit → commit → push loop stays in a single vertical band. The
-          chevron exposes the full action surface (fetch, pull, sync,
-          publish, compound commits) without forcing morphing labels to
-          carry every possible intent. */}
-      <div className={cn(showComposer ? 'mt-1 flex items-stretch' : 'flex items-stretch')}>
-        {/* Why: match the hosted-review action buttons in Checks
-            (size="xs", px-3 text-[11px]) so the sidebar has a consistent
-            action-button shape across Source Control and Checks. The primary
-            and chevron share a single rounded rectangle — rounded-r-none on
-            the primary and rounded-l-none + border-l on the chevron make the
-            pair read as one split button instead of two detached buttons. */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="flex flex-1">
-              <Button
-                type="button"
-                size="xs"
-                disabled={primaryAction.disabled}
-                onClick={() => onPrimaryAction()}
-                className="w-full rounded-r-none px-3 text-[11px]"
-                title={primaryAction.title}
-              >
-                {showSpinner ? (
-                  <RefreshCw className="size-3.5 animate-spin" />
-                ) : PrimaryIcon ? (
-                  <PrimaryIcon className="size-3.5" aria-hidden="true" />
-                ) : null}
-                {primaryAction.label}
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={6} className="max-w-72">
-            {primaryAction.title}
-          </TooltipContent>
-        </Tooltip>
-        <DropdownMenu>
+      {/* Why: the current manual action + chevron sit together as a visual
+          split button so the edit → commit → push loop stays in a single
+          vertical band. The chevron exposes the full action surface without
+          forcing morphing labels to carry every possible intent. */}
+      <div
+        className={cn(showComposer ? 'mt-1 flex items-stretch gap-1' : 'flex items-stretch gap-1')}
+      >
+        <div className="flex flex-1 items-stretch">
+          {/* Why: match the hosted-review action buttons in Checks
+              (size="xs", px-3 text-[11px]) so the sidebar has a consistent
+              action-button shape across Source Control and Checks. */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="inline-flex shrink-0">
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    size="xs"
-                    className={cn(
-                      'rounded-l-none border-l border-primary-foreground/20 px-1.5 shrink-0',
-                      // Why: mirror the primary's disabled dimming so the split
-                      // button reads as one unit when Commit is unavailable. The
-                      // chevron itself stays clickable — its dropdown exposes
-                      // independently-gated remote actions (push / fetch / pull)
-                      // that are still valid when the primary is disabled.
-                      primaryAction.disabled && 'opacity-50'
-                    )}
-                    aria-label={translate(
-                      'auto.components.right.sidebar.SourceControl.cc199ccc5f',
-                      'More commit and remote actions'
-                    )}
-                    title={translate(
-                      'auto.components.right.sidebar.SourceControl.4d6e1fd7f3',
-                      'More actions'
-                    )}
-                  >
-                    {showChevronSpinner ? (
-                      <RefreshCw className="size-3.5 animate-spin" />
-                    ) : (
-                      <ChevronDown className="size-3.5" />
-                    )}
-                  </Button>
-                </DropdownMenuTrigger>
+              <span className="flex flex-1">
+                <Button
+                  type="button"
+                  size="xs"
+                  disabled={primaryAction.disabled}
+                  onClick={() => onPrimaryAction()}
+                  className="w-full rounded-r-none px-3 text-[11px]"
+                  title={primaryAction.title}
+                >
+                  {showSpinner ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : PrimaryIcon ? (
+                    <PrimaryIcon className="size-3.5" aria-hidden="true" />
+                  ) : null}
+                  {primaryAction.label}
+                </Button>
               </span>
             </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={6}>
-              {translate(
-                'auto.components.right.sidebar.SourceControl.cc199ccc5f',
-                'More commit and remote actions'
-              )}
+            <TooltipContent side="top" sideOffset={6} className="max-w-72">
+              {primaryAction.title}
             </TooltipContent>
           </Tooltip>
-          <DropdownMenuContent align="end" className="min-w-[14rem]">
-            {dropdownItems.map((entry, index) =>
-              entry.kind === 'separator' ? (
-                <DropdownMenuSeparator key={`sep-${index}`} />
-              ) : (
-                <Tooltip key={entry.kind}>
-                  <TooltipTrigger asChild>
-                    <div className="block">
-                      <DropdownMenuItem
-                        disabled={entry.disabled}
-                        title={entry.title}
-                        variant={entry.variant}
-                        className="w-full"
-                        onSelect={(event) => {
-                          if (entry.disabled) {
-                            event.preventDefault()
-                            return
-                          }
-                          onDropdownAction(entry.kind)
-                        }}
-                      >
-                        <span className="flex min-w-0 flex-col">
-                          <span>{entry.label}</span>
-                          {entry.hint ? (
-                            <span className="truncate text-[10px] text-muted-foreground">
-                              {entry.hint}
-                            </span>
-                          ) : null}
-                        </span>
-                      </DropdownMenuItem>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="left" sideOffset={8} className="max-w-72">
-                    {entry.title}
-                  </TooltipContent>
-                </Tooltip>
-              )
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex shrink-0">
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="xs"
+                      className={cn(
+                        'rounded-l-none border-l border-primary-foreground/20 px-1.5 shrink-0',
+                        // Why: mirror the primary's disabled dimming so the split
+                        // button reads as one unit when Commit is unavailable. The
+                        // chevron itself stays clickable — its dropdown exposes
+                        // independently-gated remote actions (push / fetch / pull)
+                        // that are still valid when the primary is disabled.
+                        primaryAction.disabled && 'opacity-50'
+                      )}
+                      aria-label={moreCommitAndRemoteActionsLabel}
+                      title={moreActionsLabel}
+                    >
+                      {showChevronSpinner ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <ChevronDown className="size-3.5" />
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={6}>
+                {moreCommitAndRemoteActionsLabel}
+              </TooltipContent>
+            </Tooltip>
+            {dropdownMenuContent}
+          </DropdownMenu>
+        </div>
       </div>
       {commitError && (
         // Why: role="alert" + aria-live="polite" lets screen readers announce
@@ -5352,6 +6380,33 @@ export function CommitArea({
         >
           {remoteActionError}
         </p>
+      )}
+      {createPrIntentNotice && (
+        <div
+          id="commit-area-create-pr-intent"
+          role={createPrIntentNotice.tone === 'destructive' ? 'alert' : 'status'}
+          aria-live="polite"
+          className={cn(
+            'mt-1 flex min-w-0 items-center gap-1.5 text-[11px]',
+            createPrIntentNotice.tone === 'destructive'
+              ? 'text-destructive'
+              : 'text-muted-foreground'
+          )}
+        >
+          <span className="min-w-0 flex-1 truncate">{createPrIntentNotice.message}</span>
+          {createPrIntentNotice.action === 'settings' && onOpenSourceControlAiSettings ? (
+            <button
+              type="button"
+              className="shrink-0 font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground"
+              onClick={() => onOpenSourceControlAiSettings()}
+            >
+              {translate(
+                'auto.components.right.sidebar.SourceControl.473f18758e',
+                'Source Control AI settings'
+              )}
+            </button>
+          ) : null}
+        </div>
       )}
       {generateError && (
         <p
@@ -5715,7 +6770,7 @@ function DiffCommentsInlineList({
             </button>
             <button
               type="button"
-              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/file:opacity-100"
+              className="shrink-0 rounded p-0.5 text-muted-foreground can-hover:opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/file:opacity-100"
               onClick={() => onClearFile(filePath)}
               title={translate(
                 'auto.components.right.sidebar.SourceControl.59654650d3',
@@ -5777,7 +6832,7 @@ function DiffCommentsInlineList({
                 </button>
                 <button
                   type="button"
-                  className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground can-hover:opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                   onClick={() => void handleCopyOne(c)}
                   title={translate(
                     'auto.components.right.sidebar.SourceControl.1623bf4e19',
@@ -5793,7 +6848,7 @@ function DiffCommentsInlineList({
                 </button>
                 <button
                   type="button"
-                  className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground can-hover:opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
                   onClick={() => onDelete(c.id)}
                   title={translate(
                     'auto.components.right.sidebar.SourceControl.b656381c18',

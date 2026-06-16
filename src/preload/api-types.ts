@@ -5,7 +5,8 @@ import type {
   HostedReviewCreationEligibility,
   HostedReviewCreationEligibilityArgs,
   HostedReviewForBranchArgs,
-  HostedReviewInfo
+  HostedReviewInfo,
+  HostedReviewProvider
 } from '../shared/hosted-review'
 import type { NativeFileDropPayload } from '../shared/native-file-drop'
 import type { AppIdentity } from '../shared/app-identity'
@@ -935,6 +936,7 @@ export type PreloadApi = {
       repoId: string
       prNumber: number
       headRefName?: string
+      baseRefName?: string
       isCrossRepository?: boolean
     }) => Promise<GitHubPrStartPoint | { error: string }>
     /** GitLab parallel of resolvePrBase. For same-project MRs returns
@@ -944,8 +946,12 @@ export type PreloadApi = {
       repoId: string
       mrIid: number
       sourceBranch?: string
+      targetBranch?: string
       isCrossRepository?: boolean
-    }) => Promise<{ baseBranch: string; pushTarget?: GitPushTarget } | { error: string }>
+    }) => Promise<
+      | { baseBranch: string; compareBaseRef?: string; pushTarget?: GitPushTarget }
+      | { error: string }
+    >
     remove: (args: {
       worktreeId: string
       force?: boolean
@@ -2209,6 +2215,8 @@ export type PreloadApi = {
       title: string
       body: string
       draft: boolean
+      provider?: HostedReviewProvider
+      useTemplate?: boolean
       connectionId?: string
       sourceControlAiResolvedParams?: ResolvedSourceControlAiGenerationParams
       sourceControlAi?: SourceControlAiSettings
