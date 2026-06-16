@@ -12,6 +12,7 @@
 # it across runs), which is why we import a .p12 into the keychain first.
 
 require "tempfile"
+require "base64"
 
 default_platform(:ios)
 
@@ -38,12 +39,14 @@ platform :ios do
     # pre-imported into the keychain by the workflow; the API key only
     # generates/downloads the provisioning profile.
     #
-    # `app_store_connect_api_key` returns the DECODED key bytes in api_key[:key]
-    # (it does not write a file), so we materialize the .p8 ourselves for
-    # -authenticationKeyPath. Tempfile lives for the process; the runner VM is
-    # ephemeral so nothing secret persists.
+    # Why decode the secret ourselves instead of using api_key[:key]: feeding
+    # api_key[:key] to xcodebuild produced "Invalid authentication key
+    # credential (invalidPEMDocument)" — fastlane's stored value wasn't clean
+    # PEM. Decode the base64 secret directly so the .p8 is exactly the original
+    # PEM. Tempfile lives for the process; the runner VM is ephemeral so nothing
+    # secret persists.
     key_file = Tempfile.new(["asc_api_key", ".p8"])
-    key_file.write(api_key[:key])
+    key_file.write(Base64.decode64(ENV.fetch("ASC_API_KEY_P8")))
     key_file.close
 
     auth_args =
