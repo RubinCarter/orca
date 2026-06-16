@@ -6,7 +6,7 @@ import {
   type GitHistoryItemViewModel
 } from '../../../../shared/git-history-graph'
 
-const SWIMLANE_HEIGHT = 34
+const SWIMLANE_HEIGHT = 24
 const SWIMLANE_WIDTH = 11
 const SWIMLANE_CURVE_RADIUS = 5
 const SWIMLANE_NODE_Y = SWIMLANE_HEIGHT / 2
@@ -169,7 +169,7 @@ export function GitHistoryGraphSvg({
       viewBox={`0 0 ${width} ${SWIMLANE_HEIGHT}`}
     >
       {paths}
-      {viewModel.kind === "HEAD" && (
+      {viewModel.kind === 'HEAD' && (
         <>
           <circle
             cx={cx}
@@ -211,13 +211,13 @@ export function GitHistoryGraphSvg({
           />
         </>
       )}
-      {!isBoundaryNode && viewModel.kind !== "HEAD" && isMergeNode && (
+      {!isBoundaryNode && viewModel.kind !== 'HEAD' && isMergeNode && (
         <>
           <circle cx={cx} cy={cy} r={CIRCLE_RADIUS + 1} fill={graphColor(circleColor)} />
           <circle cx={cx} cy={cy} r={CIRCLE_RADIUS - 1.5} fill="var(--background)" />
         </>
       )}
-      {!isBoundaryNode && viewModel.kind !== "HEAD" && !isMergeNode && (
+      {!isBoundaryNode && viewModel.kind !== 'HEAD' && !isMergeNode && (
         <circle cx={cx} cy={cy} r={CIRCLE_RADIUS} fill={graphColor(circleColor)} />
       )}
     </svg>

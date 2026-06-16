@@ -12,9 +12,12 @@ import { isWslUncPath } from '../../shared/wsl-paths'
 import { splitWorktreeId } from '../../shared/worktree-id'
 import { DEFAULT_WORKSPACE_STATUS_ID } from '../../shared/workspace-statuses'
 import { getWslHome, parseWslPath } from '../wsl'
+import { getLinkedWorkItemMetadata } from './worktree-linked-work-item-metadata'
 
 type WorktreePathSettings = Pick<GlobalSettings, 'nestWorkspaces' | 'workspaceDir'>
 type WorktreeBasePathRepo = Pick<Repo, 'path' | 'worktreeBasePath'>
+
+export { computeBranchName, getConfiguredBranchPrefix } from './worktree-branch-name'
 
 /**
  * Sanitize a worktree name for use in branch names and directory paths.
@@ -74,24 +77,6 @@ export function ensurePathWithinWorkspace(targetPath: string, workspaceDir: stri
   }
 
   return resolvedTargetPath
-}
-
-/**
- * Compute the full branch name by applying the configured prefix strategy.
- */
-export function computeBranchName(
-  sanitizedName: string,
-  settings: { branchPrefix: string; branchPrefixCustom?: string },
-  gitUsername: string | null
-): string {
-  if (settings.branchPrefix === 'git-username') {
-    if (gitUsername) {
-      return `${gitUsername}/${sanitizedName}`
-    }
-  } else if (settings.branchPrefix === 'custom' && settings.branchPrefixCustom) {
-    return `${settings.branchPrefixCustom}/${sanitizedName}`
-  }
-  return sanitizedName
 }
 
 /**
@@ -279,6 +264,11 @@ export function mergeWorktree(
     id: `${repoId}::${git.path}`,
     ...(meta?.instanceId !== undefined ? { instanceId: meta.instanceId } : {}),
     repoId,
+    ...(meta?.projectId !== undefined ? { projectId: meta.projectId } : {}),
+    ...(meta?.hostId !== undefined ? { hostId: meta.hostId } : {}),
+    ...(meta?.projectHostSetupId !== undefined
+      ? { projectHostSetupId: meta.projectHostSetupId }
+      : {}),
     path: git.path,
     head: git.head,
     branch: git.branch,
@@ -290,8 +280,9 @@ export function mergeWorktree(
     linkedIssue: meta?.linkedIssue ?? null,
     linkedPR: meta?.linkedPR ?? null,
     linkedLinearIssue: meta?.linkedLinearIssue ?? null,
-    linkedGitLabMR: meta?.linkedGitLabMR ?? null,
-    linkedGitLabIssue: meta?.linkedGitLabIssue ?? null,
+    linkedLinearIssueWorkspaceId: meta?.linkedLinearIssueWorkspaceId ?? null,
+    linkedLinearIssueOrganizationUrlKey: meta?.linkedLinearIssueOrganizationUrlKey ?? null,
+    ...getLinkedWorkItemMetadata(meta),
     isArchived: meta?.isArchived ?? false,
     isUnread: meta?.isUnread ?? false,
     isPinned: meta?.isPinned ?? false,
@@ -319,7 +310,8 @@ export function mergeWorktree(
     // Why: diff comments are persisted on WorktreeMeta (see `WorktreeMeta` in
     // shared/types) and forwarded verbatim so the renderer store mirrors
     // on-disk state. `undefined` here means the worktree has no comments yet.
-    diffComments: meta?.diffComments
+    diffComments: meta?.diffComments,
+    mobileDiffReview: meta?.mobileDiffReview
   }
 }
 
