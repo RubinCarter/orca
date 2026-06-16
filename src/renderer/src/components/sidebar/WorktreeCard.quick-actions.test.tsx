@@ -157,7 +157,22 @@ describe('WorktreeCard quick actions', () => {
     expect(markup).toContain('data-worktree-card-meta-row=""')
   })
 
-  it('renders folder kind in the detailed metadata row', () => {
+  it('can render the current workspace with a secondary active surface', () => {
+    const markup = renderToStaticMarkup(
+      <WorktreeCard
+        worktree={makeWorktree()}
+        repo={makeRepo()}
+        isActive
+        activeSurfaceVariant="secondary"
+      />
+    )
+
+    expect(markup).toContain('data-worktree-card-active="secondary"')
+    expect(markup).toContain('bg-sidebar-accent/45')
+    expect(markup).not.toContain('bg-black/[0.08]')
+  })
+
+  it('renders folder kind and directory in the detailed metadata row', () => {
     const markup = renderToStaticMarkup(
       <WorktreeCard
         worktree={makeWorktree({ displayName: 'Docs folder', branch: '' })}
@@ -168,6 +183,27 @@ describe('WorktreeCard quick actions', () => {
 
     expect(markup).toContain('Docs folder')
     expect(markup).toContain('>Folder</span>')
+    expect(markup).toContain('>quick-action</span>')
+    expect(markup).toContain('data-worktree-card-meta-row=""')
+  })
+
+  it('renders synthetic folder workspace directory in the detailed metadata row', () => {
+    const markup = renderToStaticMarkup(
+      <WorktreeCard
+        worktree={makeWorktree({
+          id: 'folder:folder-1',
+          displayName: 'Docs folder',
+          branch: '',
+          path: '/repo/worktrees/quick-action'
+        })}
+        repo={undefined}
+        isActive={false}
+      />
+    )
+
+    expect(markup).toContain('Docs folder')
+    expect(markup).toContain('>Folder</span>')
+    expect(markup).toContain('>quick-action</span>')
     expect(markup).toContain('data-worktree-card-meta-row=""')
   })
 
@@ -180,9 +216,11 @@ describe('WorktreeCard quick actions', () => {
       />
     )
 
-    expect(markup).toContain('aria-label="Will be renamed from first agent message"')
+    expect(markup).toContain(
+      'aria-label="This worktree will be renamed from the first agent message"'
+    )
     expect(markup).toContain('rename pending')
-    expect(markup).toContain('Will be renamed from first agent message')
+    expect(markup).toContain('This worktree will be renamed from the first agent message')
   })
 
   it('renders the repeated branch metadata row in detailed cards', () => {

@@ -4,7 +4,10 @@ import { FileText, GitCompare, Globe2, TerminalSquare } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { activateCyclableTab } from '../../hooks/ipc-tab-switch'
 import { getShortcutPlatform } from '../../hooks/useShortcutLabel'
-import { matchesRecentTabSwitcherChord } from '../../../../shared/window-shortcut-policy'
+import {
+  isRecentTabSwitcherCommitRelease,
+  matchesRecentTabSwitcherChord
+} from '../../../../shared/window-shortcut-policy'
 import {
   buildRecentTabSwitcherModel,
   getNextRecentTabSwitcherIndex,
@@ -18,6 +21,11 @@ type SwitcherState = {
   selectedIndex: number
 }
 
+function consumeKeyboardEvent(event: KeyboardEvent): void {
+  event.preventDefault()
+  event.stopPropagation()
+}
+
 function TabIcon({ item }: { item: RecentTabSwitcherItem }): React.JSX.Element {
   const className = 'size-4 shrink-0 text-muted-foreground'
   if (item.type === 'terminal') {
@@ -26,7 +34,11 @@ function TabIcon({ item }: { item: RecentTabSwitcherItem }): React.JSX.Element {
   if (item.type === 'browser') {
     return <Globe2 className={className} />
   }
-  if (item.contentType === 'diff' || item.contentType === 'conflict-review') {
+  if (
+    item.contentType === 'diff' ||
+    item.contentType === 'conflict-review' ||
+    item.contentType === 'check-details'
+  ) {
     return <GitCompare className={className} />
   }
   return <FileText className={className} />
@@ -105,36 +117,32 @@ export default function RecentTabSwitcher(): React.JSX.Element | null {
         // Why: Electron's native before-input-event path is authoritative, but
         // CDP/test-dispatched keys can reach the renderer directly. Respect the
         // keybinding registry here too so tests do not bypass user customization.
-        event.preventDefault()
-        event.stopPropagation()
+        consumeKeyboardEvent(event)
         openOrAdvance(event.shiftKey ? -1 : 1)
         return
       }
-      if (!switcherRef.current || event.key !== 'Escape') {
+      if (!switcherRef.current) {
         return
       }
-      event.preventDefault()
-      cancel()
+      if (event.key === 'Escape') {
+        consumeKeyboardEvent(event)
+        cancel()
+      }
     }
     const onKeyUp = (event: KeyboardEvent): void => {
-      if (
-        !switcherRef.current ||
-        (event.code !== 'ControlLeft' && event.code !== 'ControlRight' && event.key !== 'Control')
-      ) {
+      if (!switcherRef.current || !isRecentTabSwitcherCommitRelease(event)) {
         return
       }
-      event.preventDefault()
-      event.stopPropagation()
+      consumeKeyboardEvent(event)
       commit()
     }
-    const onBlur = (): void => cancel()
     window.addEventListener('keydown', onKeyDown, { capture: true })
     window.addEventListener('keyup', onKeyUp, { capture: true })
-    window.addEventListener('blur', onBlur)
+    window.addEventListener('blur', cancel)
     return () => {
       window.removeEventListener('keydown', onKeyDown, { capture: true })
       window.removeEventListener('keyup', onKeyUp, { capture: true })
-      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('blur', cancel)
     }
   }, [cancel, commit, openOrAdvance])
 
@@ -147,10 +155,14 @@ export default function RecentTabSwitcher(): React.JSX.Element | null {
       <div
         className="w-[min(520px,calc(100vw-48px))] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
         role="listbox"
-        aria-label={translate("auto.components.tab.bar.RecentTabSwitcher.07ad4cd0b7", "Switch tabs")}
+        aria-label={translate(
+          'auto.components.tab.bar.RecentTabSwitcher.07ad4cd0b7',
+          'Switch tabs'
+        )}
       >
         <div className="border-b border-border px-3 py-2 text-xs font-semibold text-muted-foreground">
-          {translate("auto.components.tab.bar.RecentTabSwitcher.329638ff6f", "Switch Tab")}</div>
+          {translate('auto.components.tab.bar.RecentTabSwitcher.329638ff6f', 'Switch Tab')}
+        </div>
         <div className="max-h-[min(360px,60vh)] overflow-hidden py-1">
           {switcher.items.map((item, index) => {
             const selected = index === switcher.selectedIndex

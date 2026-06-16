@@ -4,10 +4,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { useAppStore } from '@/store'
 import { showLocalPathOpenBlockedToast } from '@/lib/local-path-open-guard'
+import { useShortcutLabel } from '@/hooks/useShortcutLabel'
 import type { OpenFile } from '../../store/slices/editor'
 import { shouldBlockEditorTabLocalOpen } from './editor-tab-local-open-guard'
 import { translate } from '@/i18n/i18n'
@@ -77,6 +79,8 @@ export function EditorFileTabContextMenu({
   onOpenMarkdownPreview
 }: EditorFileTabContextMenuProps): React.JSX.Element {
   const sourceVisibleTabId = file.tabId ?? file.id
+  const closeAllShortcut = useShortcutLabel('tab.closeAll')
+  const showCloseAllShortcut = closeAllShortcut !== 'Unassigned'
 
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
@@ -102,16 +106,20 @@ export function EditorFileTabContextMenu({
       >
         <DropdownMenuItem onSelect={() => onSplitGroup('up', sourceVisibleTabId)}>
           <Rows2 className="mr-1.5 size-3.5" />
-          {translate("auto.components.tab.bar.EditorFileTabContextMenu.6b3efb106e", "Split Up")}</DropdownMenuItem>
+          {translate('auto.components.tab.bar.EditorFileTabContextMenu.6b3efb106e', 'Split Up')}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onSplitGroup('down', sourceVisibleTabId)}>
           <Rows2 className="mr-1.5 size-3.5" />
-          {translate("auto.components.tab.bar.EditorFileTabContextMenu.1d04b1630b", "Split Down")}</DropdownMenuItem>
+          {translate('auto.components.tab.bar.EditorFileTabContextMenu.1d04b1630b', 'Split Down')}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onSplitGroup('left', sourceVisibleTabId)}>
           <Columns2 className="mr-1.5 size-3.5" />
-          {translate("auto.components.tab.bar.EditorFileTabContextMenu.e3ff145b98", "Split Left")}</DropdownMenuItem>
+          {translate('auto.components.tab.bar.EditorFileTabContextMenu.e3ff145b98', 'Split Left')}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onSplitGroup('right', sourceVisibleTabId)}>
           <Columns2 className="mr-1.5 size-3.5" />
-          {translate("auto.components.tab.bar.EditorFileTabContextMenu.f7c3d7d5af", "Split Right")}</DropdownMenuItem>
+          {translate('auto.components.tab.bar.EditorFileTabContextMenu.f7c3d7d5af', 'Split Right')}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           disabled={!canRename || isRenaming}
@@ -122,18 +130,34 @@ export function EditorFileTabContextMenu({
           }}
         >
           <Pencil className="mr-1.5 size-3.5" />
-          {translate("auto.components.tab.bar.EditorFileTabContextMenu.68cc610e7f", "Rename")}</DropdownMenuItem>
+          {translate('auto.components.tab.bar.EditorFileTabContextMenu.68cc610e7f', 'Rename')}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onTogglePin}>
           {isPinned ? <PinOff className="mr-1.5 size-3.5" /> : <Pin className="mr-1.5 size-3.5" />}
-          {isPinned ? translate("auto.components.tab.bar.EditorFileTabContextMenu.8e9d603a09", "Unpin Tab") : translate("auto.components.tab.bar.EditorFileTabContextMenu.fdd29eb669", "Pin Tab")}
+          {isPinned
+            ? translate('auto.components.tab.bar.EditorFileTabContextMenu.8e9d603a09', 'Unpin Tab')
+            : translate('auto.components.tab.bar.EditorFileTabContextMenu.fdd29eb669', 'Pin Tab')}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => !isPinned && onClose()} disabled={isPinned}>
-          {translate("auto.components.tab.bar.EditorFileTabContextMenu.1ba8492c5b", "Close")}</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onCloseAll}>{translate("auto.components.tab.bar.EditorFileTabContextMenu.ba1369dd24", "Close All Editor Tabs")}</DropdownMenuItem>
+          {translate('auto.components.tab.bar.EditorFileTabContextMenu.1ba8492c5b', 'Close')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onCloseAll}>
+          {translate(
+            'auto.components.tab.bar.EditorFileTabContextMenu.ba1369dd24',
+            'Close All Editor Tabs'
+          )}
+          {showCloseAllShortcut ? (
+            <DropdownMenuShortcut>{closeAllShortcut}</DropdownMenuShortcut>
+          ) : null}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={onCloseToRight} disabled={!hasTabsToRight}>
-          {translate("auto.components.tab.bar.EditorFileTabContextMenu.e5ff31ccaf", "Close Tabs To The Right")}</DropdownMenuItem>
+          {translate(
+            'auto.components.tab.bar.EditorFileTabContextMenu.e5ff31ccaf',
+            'Close Tabs To The Right'
+          )}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {canShowMarkdownPreview ? (
           <>
@@ -152,7 +176,11 @@ export function EditorFileTabContextMenu({
                 )
               }}
             >
-              {translate("auto.components.tab.bar.EditorFileTabContextMenu.bfd5797ef4", "Open Markdown Preview")}</DropdownMenuItem>
+              {translate(
+                'auto.components.tab.bar.EditorFileTabContextMenu.bfd5797ef4',
+                'Open Markdown Preview'
+              )}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
         ) : null}
@@ -162,14 +190,19 @@ export function EditorFileTabContextMenu({
           }}
         >
           <Copy className="w-3.5 h-3.5 mr-1.5" />
-          {translate("auto.components.tab.bar.EditorFileTabContextMenu.5b85754786", "Copy Path")}</DropdownMenuItem>
+          {translate('auto.components.tab.bar.EditorFileTabContextMenu.5b85754786', 'Copy Path')}
+        </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => {
             void window.api.ui.writeClipboardText(file.relativePath)
           }}
         >
           <Copy className="w-3.5 h-3.5 mr-1.5" />
-          {translate("auto.components.tab.bar.EditorFileTabContextMenu.52ce4f4605", "Copy Relative Path")}</DropdownMenuItem>
+          {translate(
+            'auto.components.tab.bar.EditorFileTabContextMenu.52ce4f4605',
+            'Copy Relative Path'
+          )}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => {

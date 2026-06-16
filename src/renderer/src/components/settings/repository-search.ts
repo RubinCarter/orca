@@ -63,6 +63,50 @@ export function getRepositoryPaneSearchEntries(repo: Repo): SettingsSearchEntry[
         )
       ]
     },
+    ...(repo.upstream && !isFolder
+      ? [
+          {
+            title: translate(
+              'auto.components.settings.repository.search.keepForkUpToDate',
+              'Keep Fork Up to Date'
+            ),
+            description: translate(
+              'auto.components.settings.repository.search.keepForkUpToDateDescription',
+              'Safely fast-forward this fork from upstream.'
+            ),
+            keywords: [
+              repo.displayName,
+              repo.upstream.owner,
+              repo.upstream.repo,
+              ...translateSearchKeyword('auto.components.settings.repository.search.fork', 'fork'),
+              ...translateSearchKeyword(
+                'auto.components.settings.repository.search.upstream',
+                'upstream'
+              ),
+              ...translateSearchKeyword(
+                'auto.components.settings.repository.search.syncFork',
+                'sync fork'
+              ),
+              ...translateSearchKeyword(
+                'auto.components.settings.repository.search.fastForward',
+                'fast-forward'
+              ),
+              ...translateSearchKeyword(
+                'auto.components.settings.repository.search.behindUpstream',
+                'behind upstream'
+              ),
+              ...translateSearchKeyword(
+                'auto.components.settings.repository.search.origin',
+                'origin'
+              ),
+              ...translateSearchKeyword(
+                'auto.components.settings.repository.search.defaultBranch',
+                'default branch'
+              )
+            ]
+          }
+        ]
+      : []),
     ...(isFolder ? [] : getRepositoryGitWorktreeSearchEntries(repo)),
     {
       title: translate('auto.components.settings.repository.search.c5266c2c9d', 'Remove Project'),
@@ -86,6 +130,41 @@ export function getRepositoryPaneSearchEntries(repo: Repo): SettingsSearchEntry[
         )
       ]
     },
+    {
+      title: translate('auto.components.settings.repository.search.b24f00294a', 'Project Icon'),
+      description: translate(
+        'auto.components.settings.repository.search.a1f3a2bd47',
+        'Project icon and color used in the sidebar and tabs.'
+      ),
+      keywords: [
+        repo.displayName,
+        ...translateSearchKeyword(
+          'auto.components.settings.repository.search.6438a94c63',
+          'project icon'
+        ),
+        ...translateSearchKeyword(
+          'auto.components.settings.repository.search.b2546efab5',
+          'repository icon'
+        ),
+        ...translateSearchKeyword('auto.components.settings.repository.search.8d045419b1', 'color'),
+        ...translateSearchKeyword('auto.components.settings.repository.search.6d8de2f090', 'hex'),
+        ...translateSearchKeyword('auto.components.settings.repository.search.c1075178cf', 'badge'),
+        ...translateSearchKeyword(
+          'auto.components.settings.repository.search.cb4b4de666',
+          'avatar'
+        ),
+        ...translateSearchKeyword(
+          'auto.components.settings.repository.search.9dc60d7f6d',
+          'github'
+        ),
+        ...translateSearchKeyword('auto.components.settings.repository.search.1e73e840ff', 'emoji'),
+        ...translateSearchKeyword(
+          'auto.components.settings.repository.search.27733eb6c1',
+          'favicon'
+        )
+      ]
+    },
+    ...(isFolder ? [] : getRepositoryGitWorktreeSearchEntries(repo)),
     ...(isFolder
       ? []
       : [...getRepositoryGitAuthorSearchEntries(repo), ...getRepositoryGitHooksSearchEntries(repo)])

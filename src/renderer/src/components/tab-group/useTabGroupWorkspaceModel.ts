@@ -27,6 +27,8 @@ import { closeTerminalTab } from '../terminal/terminal-tab-actions'
 import { openTabBarEntry, type TabCreateEntryArgs } from '../tab-bar/tab-create-entry-action'
 import { openMobileEmulatorTab } from '@/lib/open-mobile-emulator-tab'
 import { ensureSimulatorTab, getSimulatorTabForWorktree } from '@/lib/ensure-simulator-tab'
+import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
+import { browserWorkspaceHasRemoteOwner } from '@/runtime/remote-browser-tab-ownership'
 
 export function recordTerminalTabGroupSplit(createdTerminal: TerminalTab | null | undefined): void {
   if (!createdTerminal) {
@@ -164,7 +166,8 @@ export function useTabGroupWorkspaceModel({
           (item) =>
             item.contentType === 'editor' ||
             item.contentType === 'diff' ||
-            item.contentType === 'conflict-review'
+            item.contentType === 'conflict-review' ||
+            item.contentType === 'check-details'
         )
         .map((item) => {
           const file = worktreeState.openFiles.find((candidate) => candidate.id === item.entityId)
@@ -194,7 +197,8 @@ export function useTabGroupWorkspaceModel({
           item.entityId === entityId &&
           (item.contentType === 'editor' ||
             item.contentType === 'diff' ||
-            item.contentType === 'conflict-review')
+            item.contentType === 'conflict-review' ||
+            item.contentType === 'check-details')
       )
       if (!otherReference) {
         const file = useAppStore.getState().openFiles.find((candidate) => candidate.id === entityId)
@@ -237,9 +241,10 @@ export function useTabGroupWorkspaceModel({
       if (item.isPinned) {
         return
       }
-      const runtimeEnvironmentId = useAppStore
-        .getState()
-        .settings?.activeRuntimeEnvironmentId?.trim()
+      const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(
+        useAppStore.getState(),
+        worktreeId
+      )
       if (item.contentType === 'terminal') {
         closeTerminalTab(item.entityId)
         if (!opts?.skipEmptyCheck) {
@@ -247,7 +252,11 @@ export function useTabGroupWorkspaceModel({
         }
         return
       }
-      if (item.contentType === 'browser' && isWebRuntimeSessionActive(runtimeEnvironmentId)) {
+      if (
+        item.contentType === 'browser' &&
+        isWebRuntimeSessionActive(runtimeEnvironmentId) &&
+        browserWorkspaceHasRemoteOwner(useAppStore.getState(), item.entityId, runtimeEnvironmentId)
+      ) {
         // Why: paired web clients mirror host-owned tabs. Closing locally races
         // the host session snapshot and leaves stale terminal/browser handles.
         void closeWebRuntimeSessionTab({
@@ -290,11 +299,18 @@ export function useTabGroupWorkspaceModel({
         if (!item || item.isPinned) {
           continue
         }
-        const runtimeEnvironmentId = useAppStore
-          .getState()
-          .settings?.activeRuntimeEnvironmentId?.trim()
+        const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(
+          useAppStore.getState(),
+          worktreeId
+        )
         if (
-          (item.contentType === 'terminal' || item.contentType === 'browser') &&
+          (item.contentType === 'terminal' ||
+            (item.contentType === 'browser' &&
+              browserWorkspaceHasRemoteOwner(
+                useAppStore.getState(),
+                item.entityId,
+                runtimeEnvironmentId
+              ))) &&
           isWebRuntimeSessionActive(runtimeEnvironmentId)
         ) {
           void closeWebRuntimeSessionTab({
@@ -332,9 +348,10 @@ export function useTabGroupWorkspaceModel({
       }
       focusGroup(worktreeId, groupId)
       activateTab(item.id)
-      const runtimeEnvironmentId = useAppStore
-        .getState()
-        .settings?.activeRuntimeEnvironmentId?.trim()
+      const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(
+        useAppStore.getState(),
+        worktreeId
+      )
       if (isWebRuntimeSessionActive(runtimeEnvironmentId)) {
         void activateWebRuntimeSessionTab({
           worktreeId,
@@ -402,10 +419,14 @@ export function useTabGroupWorkspaceModel({
       }
       focusGroup(worktreeId, groupId)
       activateTab(item.id)
-      const runtimeEnvironmentId = useAppStore
-        .getState()
-        .settings?.activeRuntimeEnvironmentId?.trim()
-      if (isWebRuntimeSessionActive(runtimeEnvironmentId)) {
+      const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(
+        useAppStore.getState(),
+        worktreeId
+      )
+      if (
+        isWebRuntimeSessionActive(runtimeEnvironmentId) &&
+        browserWorkspaceHasRemoteOwner(useAppStore.getState(), browserTabId, runtimeEnvironmentId)
+      ) {
         void activateWebRuntimeSessionTab({
           worktreeId,
           tabId: item.id,
@@ -490,7 +511,8 @@ export function useTabGroupWorkspaceModel({
       if (
         item.contentType === 'editor' ||
         item.contentType === 'diff' ||
-        item.contentType === 'conflict-review'
+        item.contentType === 'conflict-review' ||
+        item.contentType === 'check-details'
       ) {
         closeItem(item.id)
       }
@@ -601,13 +623,16 @@ export function useTabGroupWorkspaceModel({
           if (!source) {
             return
           }
+          const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(state, worktreeId)
           if (
-            await createWebRuntimeSessionBrowserTab({
+            browserWorkspaceHasRemoteOwner(state, source.id, runtimeEnvironmentId) &&
+            (await createWebRuntimeSessionBrowserTab({
               worktreeId,
+              environmentId: runtimeEnvironmentId,
               url: source.url,
               profileId: source.sessionProfileId,
               targetGroupId: groupId
-            })
+            }))
           ) {
             return
           }
@@ -633,6 +658,7 @@ export function useTabGroupWorkspaceModel({
           if (
             await createWebRuntimeSessionTerminal({
               worktreeId,
+              environmentId: getRuntimeEnvironmentIdForWorktree(useAppStore.getState(), worktreeId),
               targetGroupId: groupId,
               command: shellOverride,
               activate: true

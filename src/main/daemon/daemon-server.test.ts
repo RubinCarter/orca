@@ -198,6 +198,20 @@ describe('DaemonServer', () => {
       expect(result).toEqual({ pong: true })
     })
 
+    it('replies with an error to unknown request types and keeps serving', async () => {
+      await startServer()
+      const c = await connectClient()
+
+      // Why: downgraded clients can send request types this daemon does not
+      // know. Reject gracefully instead of crashing the session server.
+      await expect(c.request('definitelyUnknownRequest', undefined)).rejects.toThrow(
+        'Unknown request type: definitelyUnknownRequest'
+      )
+      await expect(c.request<{ pong: boolean }>('ping', undefined)).resolves.toEqual({
+        pong: true
+      })
+    })
+
     it('handles systemResolverHealth', async () => {
       await startServer()
       const c = await connectClient()
