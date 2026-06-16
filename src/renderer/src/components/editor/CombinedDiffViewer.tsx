@@ -57,8 +57,11 @@ import {
 } from './editor-autosave'
 import { getCombinedBranchEntries, getCombinedUncommittedEntries } from './combined-diff-entries'
 import { getDiffSectionEstimatedHeight, isIntrinsicHeightImageDiff } from './diff-section-layout'
+import { getLargeDiffRenderLimit } from './large-diff-render-limit'
+import { getStoredTextDiffContent, getStoredTextDiffResult } from './large-diff-section-content'
 import type { DiffSection } from './diff-section-types'
 import { getInitialCombinedDiffSectionLoadIndices } from './combined-diff-initial-section-load'
+import { removeDiffSectionMeasuredHeight } from './diff-section-height-cache'
 import { createCombinedDiffLoadScheduler } from './combined-diff-load-scheduler'
 import {
   beginCombinedDiffScrollbarDrag,
@@ -276,7 +279,11 @@ export default function CombinedDiffViewer({
     if (!container || container.scrollHeight <= container.clientHeight + 1) {
       setScrollThumb((prev) =>
         prev.visible
-          ? { visible: false, top: 0, height: COMBINED_DIFF_SCROLLBAR_THUMB_MIN_HEIGHT }
+          ? {
+              visible: false,
+              top: 0,
+              height: COMBINED_DIFF_SCROLLBAR_THUMB_MIN_HEIGHT
+            }
           : prev
       )
       return
@@ -485,7 +492,8 @@ export default function CombinedDiffViewer({
         loading: true,
         error: undefined,
         dirty: false,
-        diffResult: null
+        diffResult: null,
+        largeDiffRenderLimit: null
       }))
     )
     setSectionHeights({})
@@ -586,21 +594,33 @@ export default function CombinedDiffViewer({
         } as GitDiffResult
       }
 
+      const largeDiffRenderLimit =
+        !error && result.kind === 'text'
+          ? (result.largeDiffRenderLimit ??
+            getLargeDiffRenderLimit({
+              originalContent: result.originalContent,
+              modifiedContent: result.modifiedContent
+            }))
+          : null
+
       loadingIndicesRef.current.delete(index)
       if (generationRef.current !== gen) {
         return
       }
+      const storedContent = getStoredTextDiffContent(result, largeDiffRenderLimit)
+      const storedResult = getStoredTextDiffResult(result, largeDiffRenderLimit)
       loadedIndicesRef.current.add(index)
       setSections((prev) => {
         return prev.map((s, i) =>
           i === index
             ? {
                 ...s,
-                diffResult: result,
-                originalContent: result.kind === 'text' ? result.originalContent : '',
-                modifiedContent: result.kind === 'text' ? result.modifiedContent : '',
+                diffResult: storedResult,
+                originalContent: storedContent.originalContent,
+                modifiedContent: storedContent.modifiedContent,
                 loading: false,
-                error
+                error,
+                largeDiffRenderLimit
               }
             : s
         )
@@ -676,6 +696,7 @@ export default function CombinedDiffViewer({
       invalidateCombinedDiffViewStateCache()
       generationRef.current += 1
       setGeneration((prev) => prev + 1)
+      setSectionHeights((prev) => removeDiffSectionMeasuredHeight(prev, index))
       setSections((prev) =>
         prev.map((section, sectionIndex) =>
           sectionIndex === index
@@ -686,6 +707,7 @@ export default function CombinedDiffViewer({
                 diffResult: null,
                 originalContent: '',
                 modifiedContent: '',
+                largeDiffRenderLimit: null,
                 contentGeneration: (section.contentGeneration ?? 0) + 1
               }
             : section
@@ -720,7 +742,9 @@ export default function CombinedDiffViewer({
           section.added === undefined && section.removed === undefined
             ? undefined
             : (section.added ?? 0) + (section.removed ?? 0),
-        useIntrinsicImageHeight: isIntrinsicHeightImageDiff(section.diffResult)
+        useIntrinsicImageHeight: isIntrinsicHeightImageDiff(section.diffResult),
+        isLargeDiffLimited: section.largeDiffRenderLimit?.limited === true,
+        lineCounts: section.largeDiffRenderLimit?.lineCounts ?? undefined
       })
     },
     overscan: COMBINED_DIFF_OVERSCAN,
@@ -945,11 +969,11 @@ export default function CombinedDiffViewer({
         return
       }
       const modifiedEditor = modifiedEditorsRef.current.get(index)
-      if (!modifiedEditor) {
+      if (!modifiedEditor && !section.dirty) {
         return
       }
 
-      const content = modifiedEditor.getValue()
+      const content = modifiedEditor?.getValue() ?? section.modifiedContent
       const absolutePath = joinPath(file.filePath, section.path)
       try {
         const connectionId = getConnectionId(file.worktreeId) ?? undefined
@@ -967,20 +991,36 @@ export default function CombinedDiffViewer({
           absolutePath,
           content
         )
+        setSectionHeights((prev) => removeDiffSectionMeasuredHeight(prev, index))
         setSections((prev) =>
           prev.map((s, i) => {
             if (i !== index) {
               return s
             }
 
+            if (s.diffResult?.kind !== 'text') {
+              return {
+                ...s,
+                modifiedContent: content,
+                dirty: false,
+                largeDiffRenderLimit: s.largeDiffRenderLimit
+              }
+            }
+
+            const nextDiffResult = { ...s.diffResult, modifiedContent: content }
+            const nextLargeDiffRenderLimit = getLargeDiffRenderLimit({
+              originalContent: s.originalContent,
+              modifiedContent: content
+            })
+            const storedContent = getStoredTextDiffContent(nextDiffResult, nextLargeDiffRenderLimit)
+
             return {
               ...s,
-              modifiedContent: content,
+              modifiedContent: storedContent.modifiedContent,
+              originalContent: storedContent.originalContent,
               dirty: false,
-              diffResult:
-                s.diffResult?.kind === 'text'
-                  ? { ...s.diffResult, modifiedContent: content }
-                  : s.diffResult
+              diffResult: getStoredTextDiffResult(nextDiffResult, nextLargeDiffRenderLimit),
+              largeDiffRenderLimit: nextLargeDiffRenderLimit
             }
           })
         )
@@ -1219,7 +1259,12 @@ export default function CombinedDiffViewer({
       if (ok) {
         setClearNotesDialogOpen(false)
       } else {
-        toast.error(translate("auto.components.editor.CombinedDiffViewer.45cf23b418", "Failed to clear notes."))
+        toast.error(
+          translate(
+            'auto.components.editor.CombinedDiffViewer.45cf23b418',
+            'Failed to clear notes.'
+          )
+        )
       }
     } finally {
       if (mountedRef.current) {
@@ -1269,9 +1314,17 @@ export default function CombinedDiffViewer({
         <div className="flex flex-1 items-center justify-center px-6 text-center">
           <div className="max-w-md space-y-3">
             <div className="text-sm font-medium text-foreground">
-              {translate("auto.components.editor.CombinedDiffViewer.820ec01f24", "Conflicted files are reviewed separately")}</div>
+              {translate(
+                'auto.components.editor.CombinedDiffViewer.820ec01f24',
+                'Conflicted files are reviewed separately'
+              )}
+            </div>
             <div className="text-xs text-muted-foreground">
-              {translate("auto.components.editor.CombinedDiffViewer.eb5f40e49c", "This diff view excludes unresolved conflicts because the normal two-way diff pipeline is not conflict-safe.")}</div>
+              {translate(
+                'auto.components.editor.CombinedDiffViewer.eb5f40e49c',
+                'This diff view excludes unresolved conflicts because the normal two-way diff pipeline is not conflict-safe.'
+              )}
+            </div>
             <div className="text-xs text-muted-foreground">
               {file.skippedConflicts!.map((entry) => entry.path).join(', ')}
             </div>
@@ -1292,7 +1345,11 @@ export default function CombinedDiffViewer({
                   )
                 }
               >
-                {translate("auto.components.editor.CombinedDiffViewer.39f8007549", "Review conflicts")}</Button>
+                {translate(
+                  'auto.components.editor.CombinedDiffViewer.39f8007549',
+                  'Review conflicts'
+                )}
+              </Button>
             </div>
           </div>
         </div>
@@ -1305,7 +1362,11 @@ export default function CombinedDiffViewer({
       <div className="flex h-full min-h-0 flex-col">
         {commitHeader}
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-          {translate("auto.components.editor.CombinedDiffViewer.fd8892b120", "No changes to display")}</div>
+          {translate(
+            'auto.components.editor.CombinedDiffViewer.fd8892b120',
+            'No changes to display'
+          )}
+        </div>
       </div>
     )
   }
@@ -1313,9 +1374,21 @@ export default function CombinedDiffViewer({
   const skippedConflictNotice =
     (file.skippedConflicts?.length ?? 0) > 0 ? (
       <div className="mx-4 mt-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs">
-        <div className="font-medium text-foreground">{translate("auto.components.editor.CombinedDiffViewer.820ec01f24", "Conflicted files are reviewed separately")}</div>
+        <div className="font-medium text-foreground">
+          {translate(
+            'auto.components.editor.CombinedDiffViewer.820ec01f24',
+            'Conflicted files are reviewed separately'
+          )}
+        </div>
         <div className="mt-1 text-muted-foreground">
-          {file.skippedConflicts!.length} {translate("auto.components.editor.CombinedDiffViewer.689b99f8ad", "unresolved conflict")}{file.skippedConflicts!.length === 1 ? '' : 's'} {translate("auto.components.editor.CombinedDiffViewer.39e73e7181", "were excluded from this diff view.")}</div>
+          {file.skippedConflicts!.length}{' '}
+          {translate('auto.components.editor.CombinedDiffViewer.689b99f8ad', 'unresolved conflict')}
+          {file.skippedConflicts!.length === 1 ? '' : 's'}{' '}
+          {translate(
+            'auto.components.editor.CombinedDiffViewer.39e73e7181',
+            'were excluded from this diff view.'
+          )}
+        </div>
         <div className="mt-2 flex items-center gap-2">
           <Button
             type="button"
@@ -1334,7 +1407,8 @@ export default function CombinedDiffViewer({
               )
             }
           >
-            {translate("auto.components.editor.CombinedDiffViewer.39f8007549", "Review conflicts")}</Button>
+            {translate('auto.components.editor.CombinedDiffViewer.39f8007549', 'Review conflicts')}
+          </Button>
         </div>
       </div>
     ) : null
@@ -1352,19 +1426,40 @@ export default function CombinedDiffViewer({
                     type="button"
                     variant="ghost"
                     size="icon-xs"
-                    aria-label={translate("auto.components.editor.CombinedDiffViewer.b6c3b84476", "Show file tree")}
+                    aria-label={translate(
+                      'auto.components.editor.CombinedDiffViewer.b6c3b84476',
+                      'Show file tree'
+                    )}
                     onClick={() => setFileTreeCollapsed(false)}
                   >
                     <PanelLeftOpen className="size-3.5" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" sideOffset={6}>
-                  {translate("auto.components.editor.CombinedDiffViewer.b6c3b84476", "Show file tree")}</TooltipContent>
+                  {translate(
+                    'auto.components.editor.CombinedDiffViewer.b6c3b84476',
+                    'Show file tree'
+                  )}
+                </TooltipContent>
               </Tooltip>
             )}
             <span className="truncate text-xs text-muted-foreground">
-              {sections.length} {translate("auto.components.editor.CombinedDiffViewer.7e7ca60816", "changed files")}{isBranchMode && branchCompare ? translate("auto.components.editor.CombinedDiffViewer.6094135eec", " vs {{value0}}", { value0: branchCompare.baseRef }) : ''}
-              {isCommitMode && commitCompare ? translate("auto.components.editor.CombinedDiffViewer.724a13568d", " in {{value0}}", { value0: commitCompare.compareRef }) : ''}
+              {sections.length}{' '}
+              {translate('auto.components.editor.CombinedDiffViewer.7e7ca60816', 'changed files')}
+              {isBranchMode && branchCompare
+                ? translate(
+                    'auto.components.editor.CombinedDiffViewer.6094135eec',
+                    ' vs {{value0}}',
+                    { value0: branchCompare.baseRef }
+                  )
+                : ''}
+              {isCommitMode && commitCompare
+                ? translate(
+                    'auto.components.editor.CombinedDiffViewer.724a13568d',
+                    ' in {{value0}}',
+                    { value0: commitCompare.compareRef }
+                  )
+                : ''}
             </span>
             {diffCommentCount > 0 && (
               <div className="ml-1 flex shrink-0 items-center overflow-hidden rounded-full border border-border/70 bg-muted/40">
@@ -1373,10 +1468,22 @@ export default function CombinedDiffViewer({
                     <button
                       type="button"
                       className="inline-flex h-6 items-center gap-1 pl-2 pr-1.5 text-[11px] font-medium leading-none text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
-                      aria-label={translate("auto.components.editor.CombinedDiffViewer.8f68ad9ca9", "Show {{value0}} AI {{value1}}", { value0: diffCommentCount, value1: diffCommentCount === 1 ? 'note' : 'notes' })}
+                      aria-label={translate(
+                        'auto.components.editor.CombinedDiffViewer.8f68ad9ca9',
+                        'Show {{value0}} AI {{value1}}',
+                        {
+                          value0: diffCommentCount,
+                          value1: diffCommentCount === 1 ? 'note' : 'notes'
+                        }
+                      )}
                     >
                       <Sparkles className="size-3 text-violet-500 dark:text-violet-400" />
-                      <span>{translate("auto.components.editor.CombinedDiffViewer.bb84b4c374", "AI notes")}</span>
+                      <span>
+                        {translate(
+                          'auto.components.editor.CombinedDiffViewer.bb84b4c374',
+                          'AI notes'
+                        )}
+                      </span>
                       <span className="rounded-full bg-background/80 px-1 text-[10px] tabular-nums text-muted-foreground">
                         {diffCommentCount}
                       </span>
@@ -1409,22 +1516,32 @@ export default function CombinedDiffViewer({
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                 onClick={openAlternateDiff}
               >
-                {file.combinedAlternate.source === "combined-branch"
-                  ? translate("auto.components.editor.CombinedDiffViewer.3d909843bb", "Open Branch Diff")
-                  : translate("auto.components.editor.CombinedDiffViewer.982d14bfa5", "Open Uncommitted Diff")}
+                {file.combinedAlternate.source === 'combined-branch'
+                  ? translate(
+                      'auto.components.editor.CombinedDiffViewer.3d909843bb',
+                      'Open Branch Diff'
+                    )
+                  : translate(
+                      'auto.components.editor.CombinedDiffViewer.982d14bfa5',
+                      'Open Uncommitted Diff'
+                    )}
               </button>
             )}
             <button
               className="w-20 text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => setAllSectionsCollapsed(!allSectionsCollapsed)}
             >
-              {allSectionsCollapsed ? translate("auto.components.editor.CombinedDiffViewer.19c45cfdc0", "Expand All") : translate("auto.components.editor.CombinedDiffViewer.ea08dae15b", "Collapse All")}
+              {allSectionsCollapsed
+                ? translate('auto.components.editor.CombinedDiffViewer.19c45cfdc0', 'Expand All')
+                : translate('auto.components.editor.CombinedDiffViewer.ea08dae15b', 'Collapse All')}
             </button>
             <button
               className="w-24 px-2 py-0.5 text-center text-xs rounded border border-border text-muted-foreground hover:text-foreground transition-colors"
               onClick={toggleSideBySide}
             >
-              {sideBySide ? translate("auto.components.editor.CombinedDiffViewer.f786fd54e1", "Inline") : translate("auto.components.editor.CombinedDiffViewer.ec5053c7f5", "Side by Side")}
+              {sideBySide
+                ? translate('auto.components.editor.CombinedDiffViewer.f786fd54e1', 'Inline')
+                : translate('auto.components.editor.CombinedDiffViewer.ec5053c7f5', 'Side by Side')}
             </button>
           </div>
         </div>
@@ -1538,9 +1655,20 @@ export default function CombinedDiffViewer({
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-sm">{translate("auto.components.editor.CombinedDiffViewer.948a5fd6c8", "Clear Notes")}</DialogTitle>
+            <DialogTitle className="text-sm">
+              {translate('auto.components.editor.CombinedDiffViewer.948a5fd6c8', 'Clear Notes')}
+            </DialogTitle>
             <DialogDescription className="text-xs">
-              {translate("auto.components.editor.CombinedDiffViewer.84898c548d", "Clear")}{diffCommentCount} {diffCommentCount === 1 ? translate("auto.components.editor.CombinedDiffViewer.8ab3248fd8", "note") : translate("auto.components.editor.CombinedDiffViewer.0fb870a0fe", "notes")} {translate("auto.components.editor.CombinedDiffViewer.80a286d8f5", "from this worktree?")}</DialogDescription>
+              {translate('auto.components.editor.CombinedDiffViewer.84898c548d', 'Clear')}
+              {diffCommentCount}{' '}
+              {diffCommentCount === 1
+                ? translate('auto.components.editor.CombinedDiffViewer.8ab3248fd8', 'note')
+                : translate('auto.components.editor.CombinedDiffViewer.0fb870a0fe', 'notes')}{' '}
+              {translate(
+                'auto.components.editor.CombinedDiffViewer.80a286d8f5',
+                'from this worktree?'
+              )}
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
@@ -1549,7 +1677,8 @@ export default function CombinedDiffViewer({
               onClick={() => setClearNotesDialogOpen(false)}
               disabled={isClearingNotes}
             >
-              {translate("auto.components.editor.CombinedDiffViewer.0f806a2ab1", "Cancel")}</Button>
+              {translate('auto.components.editor.CombinedDiffViewer.0f806a2ab1', 'Cancel')}
+            </Button>
             <Button
               type="button"
               variant="destructive"
@@ -1557,7 +1686,8 @@ export default function CombinedDiffViewer({
               disabled={isClearingNotes || diffCommentCount === 0}
             >
               <Trash2 className="size-4" />
-              {translate("auto.components.editor.CombinedDiffViewer.948a5fd6c8", "Clear Notes")}</Button>
+              {translate('auto.components.editor.CombinedDiffViewer.948a5fd6c8', 'Clear Notes')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1585,7 +1715,9 @@ function DiffNotesPreviewPopover({
       <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
         <div className="flex min-w-0 items-center gap-1.5 font-medium text-foreground">
           <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" />
-          <span>{translate("auto.components.editor.CombinedDiffViewer.bb84b4c374", "AI notes")}</span>
+          <span>
+            {translate('auto.components.editor.CombinedDiffViewer.bb84b4c374', 'AI notes')}
+          </span>
           <span className="text-[11px] font-normal tabular-nums text-muted-foreground">
             {totalCount}
           </span>
@@ -1600,7 +1732,8 @@ function DiffNotesPreviewPopover({
             disabled={totalCount === 0}
           >
             {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-            {translate("auto.components.editor.CombinedDiffViewer.88b70d0ef5", "Copy")}</Button>
+            {translate('auto.components.editor.CombinedDiffViewer.88b70d0ef5', 'Copy')}
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -1610,7 +1743,8 @@ function DiffNotesPreviewPopover({
             disabled={totalCount === 0}
           >
             <Trash2 className="size-3" />
-            {translate("auto.components.editor.CombinedDiffViewer.84898c548d", "Clear")}</Button>
+            {translate('auto.components.editor.CombinedDiffViewer.84898c548d', 'Clear')}
+          </Button>
         </div>
       </div>
       <div className="max-h-72 overflow-y-auto p-2 scrollbar-sleek">
@@ -1620,7 +1754,8 @@ function DiffNotesPreviewPopover({
               <span className="min-w-0 flex-1 truncate font-mono">{comment.filePath}</span>
               {comment.sentAt ? (
                 <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] leading-none">
-                  {translate("auto.components.editor.CombinedDiffViewer.1da745c551", "Sent")}</span>
+                  {translate('auto.components.editor.CombinedDiffViewer.1da745c551', 'Sent')}
+                </span>
               ) : null}
               <span className="shrink-0 tabular-nums">
                 {getDiffCommentLineLabel(comment, true)}
@@ -1633,7 +1768,13 @@ function DiffNotesPreviewPopover({
         ))}
         {remainingCount > 0 && (
           <div className="px-2 py-1 text-[11px] text-muted-foreground">
-            {remainingCount} {translate("auto.components.editor.CombinedDiffViewer.e3b9a6ce02", "more")}{remainingCount === 1 ? translate("auto.components.editor.CombinedDiffViewer.8ab3248fd8", "note") : translate("auto.components.editor.CombinedDiffViewer.0fb870a0fe", "notes")} {translate("auto.components.editor.CombinedDiffViewer.35cc27aeb2", "in Source Control")}</div>
+            {remainingCount}{' '}
+            {translate('auto.components.editor.CombinedDiffViewer.e3b9a6ce02', 'more')}
+            {remainingCount === 1
+              ? translate('auto.components.editor.CombinedDiffViewer.8ab3248fd8', 'note')
+              : translate('auto.components.editor.CombinedDiffViewer.0fb870a0fe', 'notes')}{' '}
+            {translate('auto.components.editor.CombinedDiffViewer.35cc27aeb2', 'in Source Control')}
+          </div>
         )}
       </div>
     </div>

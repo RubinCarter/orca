@@ -27,6 +27,7 @@ import {
   getAppearancePaneSearchEntries,
   getLanguageEntries,
   getLayoutEntries,
+  getLeftSidebarAppearanceEntry,
   getSidebarEntries,
   getStatusBarEntries,
   getStatusBarToggles,
@@ -38,7 +39,9 @@ import {
 import { getTerminalAppearanceSearchEntries } from './terminal-search'
 import { TerminalAppearanceSection } from './TerminalAppearanceSection'
 import type { UseGhosttyImportReturn } from './useGhosttyImport'
+import type { UseWarpThemeImportReturn } from './useWarpThemeImport'
 import { AppIconSelector } from './AppIconSelector'
+import { isWebClientLocation } from '@/hooks/useSettingsNavigationMetadata'
 import {
   getUiLanguageChoiceLabel,
   SHOW_UI_LANGUAGE_SETTING,
@@ -46,6 +49,8 @@ import {
 } from '@/i18n/supported-languages'
 import { translate } from '@/i18n/i18n'
 import type { UiLanguage } from '../../../../shared/ui-language'
+import { LeftSidebarAppearanceSetting } from './LeftSidebarAppearanceSetting'
+import { getWorkspaceCardLayoutEntry } from './appearance-sidebar-search'
 export { getAppearancePaneSearchEntries }
 
 type AppearancePaneProps = {
@@ -56,6 +61,7 @@ type AppearancePaneProps = {
   terminalFontSuggestions: string[]
   systemPrefersDark: boolean
   ghostty: UseGhosttyImportReturn
+  warpThemes: UseWarpThemeImportReturn
 }
 
 function ShortcutHintList({ combos }: { combos: string[][] }): React.JSX.Element {
@@ -88,7 +94,8 @@ export function AppearancePane({
   fontSuggestions,
   terminalFontSuggestions,
   systemPrefersDark,
-  ghostty
+  ghostty,
+  warpThemes
 }: AppearancePaneProps): React.JSX.Element {
   const searchQuery = useAppStore((state) => state.settingsSearchQuery)
   const zoomInKeyCombos = useShortcutKeyCombos('zoom.in')
@@ -97,6 +104,11 @@ export function AppearancePane({
   const toggleStatusBarItem = useAppStore((state) => state.toggleStatusBarItem)
   const recordFeatureInteraction = useAppStore((state) => state.recordFeatureInteraction)
   const visibleStatusBarToggles = useAvailableStatusBarToggles(getStatusBarToggles())
+  const terminalAppearanceSearchEntries = getTerminalAppearanceSearchEntries({
+    showWarpImport: !isWebClientLocation()
+  })
+  const leftSidebarAppearanceEntry = getLeftSidebarAppearanceEntry()
+  const workspaceCardLayoutEntry = getWorkspaceCardLayoutEntry()
   const visibleSections = [
     matchesSettingsSearch(searchQuery, getThemeEntries()) ||
     (SHOW_UI_LANGUAGE_SETTING && matchesSettingsSearch(searchQuery, getLanguageEntries())) ||
@@ -256,7 +268,7 @@ export function AppearancePane({
         ) : null}
       </section>
     ) : null,
-    matchesSettingsSearch(searchQuery, getTerminalAppearanceSearchEntries()) ? (
+    matchesSettingsSearch(searchQuery, terminalAppearanceSearchEntries) ? (
       <TerminalAppearanceSection
         key="terminal-appearance"
         settings={settings}
@@ -264,6 +276,7 @@ export function AppearancePane({
         systemPrefersDark={systemPrefersDark}
         terminalFontSuggestions={terminalFontSuggestions}
         ghostty={ghostty}
+        warpThemes={warpThemes}
       />
     ) : null,
     matchesSettingsSearch(searchQuery, getLayoutEntries()) ? (
@@ -404,6 +417,32 @@ export function AppearancePane({
         />
 
         <div className="divide-y divide-border/40">
+          <SearchableSetting
+            title={leftSidebarAppearanceEntry.title}
+            description={leftSidebarAppearanceEntry.description}
+            keywords={leftSidebarAppearanceEntry.keywords}
+            className="space-y-2"
+          >
+            <LeftSidebarAppearanceSetting settings={settings} updateSettings={updateSettings} />
+          </SearchableSetting>
+
+          {/* Why: this setting lives with the sidebar layout controls; Settings only
+              points people to it so we do not create a second stateful control. */}
+          <SearchableSetting
+            title={workspaceCardLayoutEntry.title}
+            description={workspaceCardLayoutEntry.description}
+            keywords={workspaceCardLayoutEntry.keywords}
+          >
+            <SettingsRow
+              label={workspaceCardLayoutEntry.title}
+              description={translate(
+                'auto.components.settings.AppearancePane.workspaceCardLayoutGuidance',
+                'Use the workspace sidebar options menu > Card layout > Compact.'
+              )}
+              control={null}
+            />
+          </SearchableSetting>
+
           <SearchableSetting
             title={translate(
               'auto.components.settings.AppearancePane.cf81907069',

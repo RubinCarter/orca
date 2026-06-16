@@ -8,6 +8,7 @@ import {
   sanitizeWorktreeDisplayName,
   ensurePathWithinWorkspace,
   computeBranchName,
+  getConfiguredBranchPrefix,
   computeWorktreePath,
   computeRemoteWorktreePath,
   computeWorkspaceRoot,
@@ -148,6 +149,32 @@ describe('computeBranchName', () => {
 
   it('returns bare name when branchPrefix is none', () => {
     expect(computeBranchName('feature', { branchPrefix: 'none' }, 'jdoe')).toBe('feature')
+  })
+})
+
+describe('getConfiguredBranchPrefix', () => {
+  it('returns the git username for the git-username strategy', () => {
+    expect(getConfiguredBranchPrefix({ branchPrefix: 'git-username' }, 'jdoe')).toBe('jdoe')
+  })
+
+  it('returns null for git-username when no username is available', () => {
+    expect(getConfiguredBranchPrefix({ branchPrefix: 'git-username' }, null)).toBeNull()
+  })
+
+  it('returns the custom value for the custom strategy', () => {
+    expect(
+      getConfiguredBranchPrefix({ branchPrefix: 'custom', branchPrefixCustom: 'team' }, null)
+    ).toBe('team')
+  })
+
+  it('returns null for custom strategy with an empty value', () => {
+    expect(
+      getConfiguredBranchPrefix({ branchPrefix: 'custom', branchPrefixCustom: '' }, null)
+    ).toBeNull()
+  })
+
+  it('returns null when no prefix strategy applies', () => {
+    expect(getConfiguredBranchPrefix({ branchPrefix: 'none' }, 'jdoe')).toBeNull()
   })
 })
 
@@ -308,6 +335,9 @@ describe('mergeWorktree', () => {
       linkedIssue: 42,
       linkedPR: 10,
       linkedLinearIssue: null,
+      projectId: 'github:stablyai/orca',
+      hostId: 'ssh:openclaw-2' as const,
+      projectHostSetupId: 'remote-repo',
       linkedGitLabMR: null,
       linkedGitLabIssue: null,
       isArchived: true,
@@ -332,8 +362,17 @@ describe('mergeWorktree', () => {
       linkedIssue: 42,
       linkedPR: 10,
       linkedLinearIssue: null,
+      linkedLinearIssueWorkspaceId: null,
+      linkedLinearIssueOrganizationUrlKey: null,
       linkedGitLabMR: null,
       linkedGitLabIssue: null,
+      linkedBitbucketPR: null,
+      linkedAzureDevOpsPR: null,
+      linkedGiteaPR: null,
+      mobileDiffReview: undefined,
+      projectId: 'github:stablyai/orca',
+      hostId: 'ssh:openclaw-2',
+      projectHostSetupId: 'remote-repo',
       isArchived: true,
       isUnread: true,
       isPinned: true,

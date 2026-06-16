@@ -65,10 +65,10 @@ test.describe('Create Workspace', () => {
       await expect(dialog).toBeVisible()
 
       // Wait for the composer to settle. The card fires several async effects
-      // on mount (detected-agent probe, repo combobox autofocus + hydration,
+      // on mount (detected-agent probe, name-field autofocus + hydration,
       // setup-hooks fetch). Clicking before those settle can race Radix's
       // FocusScope reparenting.
-      await expect(dialog.getByRole('combobox').first()).toBeVisible()
+      await expect(dialog.locator('[data-workspace-name-input="true"]')).toBeVisible()
 
       // Force the `getBaseRefDefault` IPC to round-trip so any consumer that
       // renders the envelope (e.g. SourceControl) has a chance to crash
@@ -152,9 +152,7 @@ test.describe('Create Workspace', () => {
     }
   })
 
-  test('keeps the composer open and preserves inputs when worktree creation fails', async ({
-    orcaPage
-  }) => {
+  test('shows a failed workspace entry when worktree creation fails', async ({ orcaPage }) => {
     await orcaPage.evaluate(() => {
       const store = window.__store
       if (!store) {
@@ -182,7 +180,7 @@ test.describe('Create Workspace', () => {
 
       const dialog = orcaPage.getByRole('dialog', { name: /Create (Workspace|Worktree)/i })
       await expect(dialog).toBeVisible()
-      await expect(dialog.getByRole('combobox').first()).toBeVisible()
+      await expect(dialog.locator('[data-workspace-name-input="true"]')).toBeVisible()
 
       const nameInput = dialog.getByPlaceholder(/Type a name/i)
       await expect(nameInput).toBeVisible()
@@ -192,13 +190,14 @@ test.describe('Create Workspace', () => {
       await expect(createButton).toBeEnabled()
       await createButton.click()
 
-      const alert = dialog.getByRole('alert')
-      await expect(alert).toContainText('No base branch found')
-      await expect(alert).toContainText('Orca could not resolve a usable base ref')
-      await expect(alert).toContainText('Create an initial commit')
-      await expect(dialog).toBeVisible()
-      await expect(nameInput).toHaveValue(workspaceName)
-      await expect(createButton).toBeEnabled()
+      await expect(dialog).toBeHidden()
+      const failedWorkspace = orcaPage.getByRole('button', {
+        name: new RegExp(`${workspaceName} No base branch found`)
+      })
+      await expect(failedWorkspace).toBeVisible()
+      await expect(orcaPage.getByText('Couldn’t create worktree')).toBeVisible()
+      await expect(failedWorkspace).toContainText('No base branch found')
+      await expect(orcaPage.getByRole('button', { name: 'Retry' })).toBeVisible()
     } finally {
       await orcaPage
         .evaluate(() => {
@@ -228,7 +227,7 @@ test.describe('Create Workspace', () => {
 
       const dialog = orcaPage.getByRole('dialog', { name: /Create (Workspace|Worktree)/i })
       await expect(dialog).toBeVisible()
-      await expect(dialog.getByRole('combobox').first()).toBeVisible()
+      await expect(dialog.locator('[data-workspace-name-input="true"]')).toBeVisible()
 
       await electronApp.evaluate(
         ({ ipcMain }, { title, url }) => {
@@ -338,7 +337,7 @@ test.describe('Create Workspace', () => {
 
       const dialog = orcaPage.getByRole('dialog', { name: /Create (Workspace|Worktree)/i })
       await expect(dialog).toBeVisible()
-      await expect(dialog.getByRole('combobox').first()).toBeVisible()
+      await expect(dialog.locator('[data-workspace-name-input="true"]')).toBeVisible()
 
       await electronApp.evaluate(
         ({ ipcMain }, { title, url }) => {
