@@ -437,8 +437,6 @@ export function setupGuestShortcutForwarding(args: {
       renderer.send('ui:openTasks')
     } else if (action?.type === 'openSettings') {
       renderer.send('ui:openSettings')
-    } else if (action?.type === 'exportPdf') {
-      renderer.send('export:requestPdf')
     } else if (action?.type === 'forceReload') {
       renderer.reloadIgnoringCache()
     } else if (action?.type === 'jumpToWorktreeIndex') {

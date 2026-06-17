@@ -400,11 +400,7 @@ describe('keybindings', () => {
 
     expect(conflicts).toContainEqual({
       binding: 'Mod+Shift+E',
-      actionIds: expect.arrayContaining([
-        'file.exportPdf',
-        'sidebar.explorer.toggle',
-        'worktree.palette'
-      ])
+      actionIds: expect.arrayContaining(['sidebar.explorer.toggle', 'worktree.palette'])
     })
   })
 

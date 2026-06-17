@@ -34,7 +34,6 @@ export type KeybindingActionId =
   | 'worktree.navigateDown'
   | 'app.settings'
   | 'app.forceReload'
-  | 'file.exportPdf'
   | 'workspace.create'
   | 'workspace.rename'
   | 'workspace.delete'
@@ -198,15 +197,6 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
     scope: 'global',
     searchKeywords: ['shortcut', 'reload', 'refresh', 'force'],
     defaultBindings: platformBindings(['Mod+Shift+R']),
-    conflictGroup: 'menu'
-  },
-  {
-    id: 'file.exportPdf',
-    title: 'Export as PDF',
-    group: 'Global',
-    scope: 'global',
-    searchKeywords: ['shortcut', 'export', 'pdf', 'markdown'],
-    defaultBindings: platformBindings(['Mod+Shift+E']),
     conflictGroup: 'menu'
   },
   {

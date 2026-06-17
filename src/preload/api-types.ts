@@ -2335,7 +2335,6 @@ export type PreloadApi = {
     onCtrlTabKeyUp: (callback: () => void) => () => void
     onToggleStatusBar: (callback: () => void) => () => void
     onDictationKeyDown: (callback: () => void) => () => void
-    onExportPdfRequested: (callback: () => void) => () => void
     onActivateWorktree: (
       callback: (data: {
         repoId: string
