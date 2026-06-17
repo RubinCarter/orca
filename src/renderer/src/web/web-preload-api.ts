@@ -486,20 +486,15 @@ function createWebPreloadApi(): Partial<PreloadApi> {
       getStatus: () =>
         Promise.resolve({
           localFileEnabled: false,
-          otlpEnabled: false,
           bundleEnabled: false,
-          otlpStatus: 'Unavailable on web',
           traceFilePath: '',
           traceFamilySize: 0
         }),
-      openTraceFolder: () => Promise.resolve(),
-      clearTraces: () => Promise.resolve(),
-      collectBundle: () => Promise.reject(new Error('Diagnostic bundles are unavailable on web.')),
-      openBundlePreview: () =>
-        Promise.reject(new Error('Diagnostic bundles are unavailable on web.')),
+      collectBundle: () => Promise.reject(new Error('Review files are unavailable on web.')),
+      openBundlePreview: () => Promise.reject(new Error('Review files are unavailable on web.')),
       discardBundlePreview: () => Promise.resolve(),
-      uploadBundle: () => Promise.reject(new Error('Diagnostic bundles are unavailable on web.')),
-      deleteBundle: () => Promise.reject(new Error('Diagnostic bundles are unavailable on web.'))
+      uploadBundle: () => Promise.reject(new Error('Sending diagnostics is unavailable on web.')),
+      deleteBundle: () => Promise.reject(new Error('Sent diagnostics are unavailable on web.'))
     },
     session: {
       // hostId mirrors the desktop bridge: omitted/'local' targets the existing
@@ -2009,6 +2004,7 @@ function createWebUiApi(): NonNullable<Partial<PreloadApi>['ui']> {
     onFocusBrowserAddressBar: () => noopUnsubscribe,
     onFindInBrowserPage: () => noopUnsubscribe,
     onReloadBrowserPage: () => noopUnsubscribe,
+    onBrowserHistoryNavigate: () => noopUnsubscribe,
     onZoomBrowserPage: () => noopUnsubscribe,
     onHardReloadBrowserPage: () => noopUnsubscribe,
     onCloseActiveTab: () => noopUnsubscribe,
@@ -2020,7 +2016,6 @@ function createWebUiApi(): NonNullable<Partial<PreloadApi>['ui']> {
     onCtrlTabKeyUp: () => noopUnsubscribe,
     onToggleStatusBar: () => noopUnsubscribe,
     onDictationKeyDown: () => noopUnsubscribe,
-    onExportPdfRequested: () => noopUnsubscribe,
     onActivateWorktree: () => noopUnsubscribe,
     onCreateTerminal: () => noopUnsubscribe,
     onRequestTerminalCreate: () => noopUnsubscribe,

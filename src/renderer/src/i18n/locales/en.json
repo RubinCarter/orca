@@ -37,7 +37,6 @@
     "exploreOrca": "Explore Orca",
     "gettingStarted": "Getting Started with Orca",
     "reportCrash": "Report Crash...",
-    "exportPdf": "Export as PDF...",
     "file": "File",
     "exit": "Exit",
     "edit": "Edit",
@@ -277,7 +276,8 @@
           "a5fc0cb622": "OpenClaude",
           "bf53f09bf8": "Claude Agent Teams",
           "0708ed89f1": "Claude",
-          "fc80296033": "Devin"
+          "fc80296033": "Devin",
+          "da41abbdd4": "Ante"
         },
         "skill": {
           "cli": {
@@ -5247,34 +5247,28 @@
           "239bf9132b": "Copied install command."
         },
         "PrivacyDiagnosticBundleControls": {
-          "dc8404a930": "Create preview",
+          "dc8404a930": "Create diagnostic file",
           "a5acaffdb6": "Discard",
-          "aca2c8a367": "Upload",
-          "798b6f0be5": "Open preview",
+          "aca2c8a367": "Send to support",
+          "798b6f0be5": "Open review file",
           "2ae9a6b63e": "Done",
-          "7f14a1733c": "Delete bundle",
-          "2801d4ce22": "Copy ticket"
+          "7f14a1733c": "Delete sent file",
+          "2801d4ce22": "Copy reference ID",
+          "d8be621237": "Open the review file first.",
+          "61676df223": "Diagnostics sent. Share this reference ID with support: {{value0}}.",
+          "fd7b3891af": "You opened the review file ({{value0}}). Send that file to support, or discard it.",
+          "62340d4439": "Your review file is ready ({{value0}}). Open it to see what would be sent, then choose whether to send it to support.",
+          "19ec5e29b3": "Collects recent app activity and errors into a redacted file you can review before sending. Nothing is uploaded until you choose to send it."
         },
         "PrivacyDiagnosticsSection": {
-          "acc7c66e6e": "OTLP export",
-          "4ff08ff3a7": "Clear local traces",
-          "9ca08a9f8f": "Deletes every rotated trace file on this machine.",
-          "fe81a52cb2": "Open trace folder",
-          "5ff57fc986": "Reveals {{value0}} in your file manager.",
-          "af2fc82cde": "Diagnostic bundle",
-          "c18cbe45df": "Uploaded diagnostic bundle deleted",
-          "7a4944595b": "Could not copy diagnostic ticket",
-          "13eb2c65a1": "Diagnostic ticket copied",
-          "860bca9ec9": "Diagnostic bundle preview discarded",
-          "49fc6c80e8": "Diagnostic bundle uploaded",
-          "db3228e01a": "Diagnostic bundle preview opened",
-          "a2b3505c77": "Diagnostic bundle preview created",
-          "9666a05580": "Could not clear trace files",
-          "32d767f84d": "Local trace files cleared",
-          "b85fe972cd": "Could not open trace folder",
-          "1fb00a8995": "Disabled",
-          "46ea3fb2d0": "Enabled",
-          "7c9d9820b6": "Set ORCA_OTLP_TRACES_URL to point Orca at your own OpenTelemetry collector."
+          "af2fc82cde": "Send app diagnostics to support",
+          "c18cbe45df": "Sent diagnostics deleted",
+          "7a4944595b": "Could not copy reference ID",
+          "13eb2c65a1": "Reference ID copied",
+          "860bca9ec9": "Review file discarded",
+          "49fc6c80e8": "Diagnostics sent",
+          "db3228e01a": "Review file opened",
+          "a2b3505c77": "Review file created"
         },
         "PrivacyPane": {
           "36e0e2e63b": "environment variable. Unset it and restart to re-enable.",
@@ -7260,12 +7254,8 @@
             "f7a2d9f137": "Environment variables that disable telemetry transmission.",
             "e058a3c98d": "Telemetry environment variables",
             "1686c07fee": "support",
-            "4a583f3a2f": "opentelemetry",
-            "9ea93ce3d6": "otlp",
-            "685c68a81f": "logs",
-            "40de3c2f19": "trace",
             "c0494ff48a": "diagnostics",
-            "8b08f32366": "Trace files and OTLP export controls.",
+            "8b08f32366": "App diagnostics and support sharing controls.",
             "6d258d2ed6": "Diagnostics",
             "ead1deded2": "share",
             "27a27b2f63": "opt out",
@@ -7975,6 +7965,13 @@
           "ask": "Ask",
           "safeAuto": "Safe Auto",
           "off": "Off"
+        },
+        "PrivacyDiagnosticsRows": {
+          "5a7cbe069a": "DO_NOT_TRACK=1 is set — creating and sending diagnostic files is disabled.",
+          "63d03261d1": "ORCA_TELEMETRY_DISABLED=1 is set — creating and sending diagnostic files is disabled.",
+          "d37e92a06b": "ORCA_DIAGNOSTICS_DISABLED=1 is set — app diagnostics are off.",
+          "5ebb31e1fb": "Running in CI — diagnostics are off.",
+          "e27c8d45bf": "Diagnostics are disabled by an environment variable."
         }
       },
       "right": {
@@ -8350,6 +8347,7 @@
             "834cb3f23d": "Fix with AI",
             "60bd988f0b": "AI Fix",
             "461575b9bc": "Generate commit message with AI",
+            "b16b8f0e4b": "ai commit msg",
             "ddc1fbd690": "Stop generating commit message",
             "5acbcedc1a": "Create {{value0}}",
             "aaf1451654": "Create draft {{value0}}",
@@ -8421,7 +8419,19 @@
             "createPrIntentRemoteFailed": "Could not update the remote branch. Retry Create PR.",
             "createPrIntentGeneratingDetails": "Generating review details…",
             "createPrIntentBranchChangedDuringDetails": "Branch changed while generating review details. Retry Create PR.",
-            "createPrIntentCreatingReview": "Creating review…"
+            "createPrIntentCreatingReview": "Creating review…",
+            "a91f8e2b01": "View as list",
+            "b82e9f3c12": "View as tree",
+            "f71c4a8d90": "More source control actions",
+            "c8e4a1f902": "Filter: {{value0}}",
+            "b3c8f1a902": "Filter files by name",
+            "d4f8c2a901": "Clear and close filter",
+            "e8a1c4b203": "vs",
+            "f9b2441bb6": "1 commit ahead of {{value0}}",
+            "b715ef615b": "{{value0}} commits ahead of {{value1}}",
+            "c1a8f3e204": "1 commit behind {{value0}}",
+            "d2b9g4f315": "{{value0}} commits behind {{value1}}",
+            "e9c2a5d416": "Even with {{value0}}"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "Could not start the selected agent.",
@@ -8733,7 +8743,9 @@
             "74727df633": "'{{value0}}' deleted",
             "d979a4fbb5": "Permanently delete '{{value0}}'?",
             "a76c74f105": "destructive",
-            "92276aceb7": "Delete"
+            "92276aceb7": "Delete",
+            "7fb9435c86": "This permanently deletes the directory and its contents on the remote host. This cannot be undone.",
+            "23e98f192f": "This permanently deletes the file on the remote host. This cannot be undone."
           },
           "useFileExplorerHandlers": {
             "32cd9fd991": "Cannot open symlink target"

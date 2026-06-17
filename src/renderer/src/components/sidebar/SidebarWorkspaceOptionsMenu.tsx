@@ -14,7 +14,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DEFAULT_SHOW_SLEEPING_WORKSPACES } from '../../../../shared/constants'
 import SidebarRepositoryFilterSection from './SidebarRepositoryFilterSection'
@@ -22,13 +21,10 @@ import SidebarWorkspaceFilterSection from './SidebarWorkspaceFilterSection'
 import { getSidebarHostVisibilityLabel, shouldShowHostScopeControls } from './sidebar-host-options'
 import { useSidebarHostScopeOptions } from './use-sidebar-host-scope-options'
 import { SidebarHostScopeMenuSection } from './SidebarHostScopeMenuSection'
-import {
-  GROUP_BY_OPTIONS,
-  PROJECT_ORDER_OPTIONS,
-  SORT_OPTIONS
-} from './sidebar-workspace-option-items'
+import { PROJECT_ORDER_OPTIONS, SORT_OPTIONS } from './sidebar-workspace-option-items'
 import { WorktreeCardDisplayMenuSection } from './WorktreeCardDisplayMenuSection'
 import { translate } from '@/i18n/i18n'
+import { SidebarGroupByToggle } from './SidebarGroupByToggle'
 
 type SidebarWorkspaceOptionsMenuProps = {
   preserveWorkspaceBoardOpen?: boolean
@@ -166,28 +162,7 @@ const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsM
           {translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.dc0bb670bc', 'Group by')}
         </DropdownMenuLabel>
         <div className="px-2 pt-0.5 pb-1">
-          <ToggleGroup
-            type="single"
-            value={groupBy}
-            onValueChange={(v) => {
-              if (v) {
-                setGroupBy(v as typeof groupBy)
-              }
-            }}
-            variant="outline"
-            size="sm"
-            className="h-6 w-full justify-stretch"
-          >
-            {GROUP_BY_OPTIONS.map((opt) => (
-              <ToggleGroupItem
-                key={opt.id}
-                value={opt.id}
-                className="h-6 grow basis-0 px-1 text-[10px] data-[state=on]:bg-foreground/10 data-[state=on]:font-semibold data-[state=on]:text-foreground"
-              >
-                {opt.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          <SidebarGroupByToggle groupBy={groupBy} setGroupBy={setGroupBy} />
         </div>
 
         <DropdownMenuSeparator />

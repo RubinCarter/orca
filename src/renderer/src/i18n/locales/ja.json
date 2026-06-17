@@ -37,7 +37,6 @@
     "exploreOrca": "Orca を探索",
     "gettingStarted": "Orca を使い始める",
     "reportCrash": "クラッシュを報告...",
-    "exportPdf": "PDF としてエクスポート...",
     "file": "ファイル",
     "exit": "終了",
     "edit": "編集",
@@ -277,7 +276,8 @@
           "a5fc0cb622": "OpenClaude",
           "bf53f09bf8": "Claude Agent Teams",
           "0708ed89f1": "Claude",
-          "fc80296033": "Devin"
+          "fc80296033": "Devin",
+          "da41abbdd4": "Ante"
         },
         "skill": {
           "cli": {
@@ -5232,34 +5232,28 @@
           "239bf9132b": "インストールコマンドをコピーしました。"
         },
         "PrivacyDiagnosticBundleControls": {
-          "dc8404a930": "プレビューの作成",
+          "dc8404a930": "診断ファイルを作成",
           "a5acaffdb6": "破棄",
-          "aca2c8a367": "アップロード",
-          "798b6f0be5": "プレビューを開く",
+          "aca2c8a367": "サポートに送信",
+          "798b6f0be5": "確認用ファイルを開く",
           "2ae9a6b63e": "完了",
-          "7f14a1733c": "バンドルの削除",
-          "2801d4ce22": "チケットをコピー"
+          "7f14a1733c": "送信済みファイルを削除",
+          "2801d4ce22": "参照 ID をコピー",
+          "d8be621237": "先に確認用ファイルを開いてください。",
+          "61676df223": "診断情報を送信しました。サポートにこの参照 ID を共有してください: {{value0}}。",
+          "fd7b3891af": "確認用ファイル（{{value0}}）を開きました。このファイルをサポートに送信するか、破棄できます。",
+          "62340d4439": "確認用ファイル（{{value0}}）の準備ができました。開いて送信内容を確認してから、サポートに送信するか選択してください。",
+          "19ec5e29b3": "最近のアプリ操作とエラーを、送信前に確認できる編集済みファイルにまとめます。送信を選ぶまで何もアップロードされません。"
         },
         "PrivacyDiagnosticsSection": {
-          "acc7c66e6e": "OTLP エクスポート",
-          "4ff08ff3a7": "ローカルトレースをクリアする",
-          "9ca08a9f8f": "このマシン上のローテーションされたすべてのトレース ファイルを削除します。",
-          "fe81a52cb2": "トレースフォルダーを開く",
-          "5ff57fc986": "ファイル マネージャーに {{value0}} が表示されます。",
-          "af2fc82cde": "診断バンドル",
-          "c18cbe45df": "アップロードされた診断バンドルが削除されました",
-          "7a4944595b": "診断チケットをコピーできませんでした",
-          "13eb2c65a1": "診断チケットがコピーされました",
-          "860bca9ec9": "診断バンドルのプレビューが破棄されました",
-          "49fc6c80e8": "診断バンドルがアップロードされました",
-          "db3228e01a": "診断バンドルのプレビューが開きました",
-          "a2b3505c77": "診断バンドルのプレビューが作成されました",
-          "9666a05580": "トレースファイルをクリアできませんでした",
-          "32d767f84d": "ローカル トレース ファイルがクリアされました",
-          "b85fe972cd": "トレースフォルダーを開けませんでした",
-          "1fb00a8995": "無効",
-          "46ea3fb2d0": "有効",
-          "7c9d9820b6": "Orca が独自の OpenTelemetry コレクターを指すように ORCA_OTLP_TRACES_URL を設定します。"
+          "af2fc82cde": "アプリ診断情報をサポートに送信",
+          "c18cbe45df": "送信済みの診断情報を削除しました",
+          "7a4944595b": "参照 ID をコピーできませんでした",
+          "13eb2c65a1": "参照 ID をコピーしました",
+          "860bca9ec9": "確認用ファイルを破棄しました",
+          "49fc6c80e8": "診断情報を送信しました",
+          "db3228e01a": "確認用ファイルを開きました",
+          "a2b3505c77": "確認用ファイルを作成しました"
         },
         "PrivacyPane": {
           "36e0e2e63b": "環境変数。設定を解除し、再起動して再度有効にします。",
@@ -7245,12 +7239,8 @@
             "f7a2d9f137": "テレメトリ送信を無効にする環境変数。",
             "e058a3c98d": "テレメトリ環境変数",
             "1686c07fee": "サポート",
-            "4a583f3a2f": "オープンテレメトリー",
-            "9ea93ce3d6": "otlp",
-            "685c68a81f": "ログ",
-            "40de3c2f19": "トレース",
             "c0494ff48a": "診断",
-            "8b08f32366": "トレース ファイルと OTLP エクスポート コントロール。",
+            "8b08f32366": "アプリ診断とサポート共有のコントロール。",
             "6d258d2ed6": "診断",
             "ead1deded2": "共有",
             "27a27b2f63": "身を引く",
@@ -7975,6 +7965,13 @@
           "ask": "確認する",
           "safeAuto": "安全に自動",
           "off": "オフ"
+        },
+        "PrivacyDiagnosticsRows": {
+          "5a7cbe069a": "DO_NOT_TRACK=1 が設定されています — 診断ファイルの作成と送信は無効です。",
+          "63d03261d1": "ORCA_TELEMETRY_DISABLED=1 が設定されています — 診断ファイルの作成と送信は無効です。",
+          "d37e92a06b": "ORCA_DIAGNOSTICS_DISABLED=1 が設定されています — アプリ診断はオフです。",
+          "5ebb31e1fb": "CI で実行中です — 診断はオフです。",
+          "e27c8d45bf": "環境変数により診断は無効になっています。"
         }
       },
       "right": {
@@ -8350,6 +8347,7 @@
             "834cb3f23d": "AIで修正する",
             "60bd988f0b": "AIの修正",
             "461575b9bc": "AIで commit メッセージを生成",
+            "b16b8f0e4b": "AI commit メッセージ",
             "ddc1fbd690": "commit メッセージの生成を停止する",
             "5acbcedc1a": "{{value0}} を作成する",
             "aaf1451654": "ドラフト {{value0}} を作成する",
@@ -8419,9 +8417,21 @@
             "createPrIntentForcePushing": "lease 付きで強制プッシュ中…",
             "createPrIntentPushing": "コミットをプッシュ中…",
             "createPrIntentRemoteFailed": "リモートブランチを更新できませんでした。Create PR を再試行してください。",
-            "createPrIntentGeneratingDetails": "Generating review details…",
-            "createPrIntentBranchChangedDuringDetails": "Branch changed while generating review details. Retry Create PR.",
-            "createPrIntentCreatingReview": "Creating review…"
+            "createPrIntentGeneratingDetails": "レビューの詳細を生成中…",
+            "createPrIntentBranchChangedDuringDetails": "レビューの詳細を生成中にブランチが変更されました。Create PR を再試行してください。",
+            "createPrIntentCreatingReview": "レビューを作成中…",
+            "a91f8e2b01": "リスト表示",
+            "b82e9f3c12": "ツリー表示",
+            "f71c4a8d90": "その他のソース管理アクション",
+            "c8e4a1f902": "フィルター: {{value0}}",
+            "b3c8f1a902": "ファイル名でフィルター",
+            "d4f8c2a901": "フィルターをクリアして閉じる",
+            "e8a1c4b203": "vs",
+            "f9b2441bb6": "{{value0}}より1コミット進んでいます",
+            "b715ef615b": "{{value1}}より{{value0}}コミット進んでいます",
+            "c1a8f3e204": "{{value0}}より1コミット遅れています",
+            "d2b9g4f315": "{{value1}}より{{value0}}コミット遅れています",
+            "e9c2a5d416": "{{value0}}と同じ状態"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "選択した agent を開始できませんでした。",
@@ -8733,7 +8743,9 @@
             "74727df633": "「{{value0}}」が削除されました",
             "d979a4fbb5": "「{{value0}}」を完全に削除しますか?",
             "a76c74f105": "破壊的な",
-            "92276aceb7": "削除"
+            "92276aceb7": "削除",
+            "7fb9435c86": "This permanently deletes the directory and its contents on the remote host. This cannot be undone.",
+            "23e98f192f": "This permanently deletes the file on the remote host. This cannot be undone."
           },
           "useFileExplorerHandlers": {
             "32cd9fd991": "シンボリックリンクターゲットを開けません"
