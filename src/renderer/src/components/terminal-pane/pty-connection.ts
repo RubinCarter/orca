@@ -446,6 +446,39 @@ function containsStatefulRendererQuery(data: string): boolean {
   return false
 }
 
+function isWidthStableLatinCodePoint(codePoint: number): boolean {
+  if (codePoint >= 0x00a0 && codePoint <= 0x024f) {
+    return true
+  }
+  // Why: hidden restore can replay ordinary single-cell Latin text; wide,
+  // combining, and table glyph classes stay on the live renderer path.
+  return codePoint >= 0x1e00 && codePoint <= 0x1eff
+}
+
+function containsOnlyWidthStableLatinText(data: string): boolean {
+  let hasLatinCodePoint = false
+  for (let index = 0; index < data.length; ) {
+    const codePoint = data.codePointAt(index)
+    if (typeof codePoint !== 'number') {
+      return false
+    }
+    if (codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d) {
+      index += 1
+      continue
+    }
+    if (codePoint >= 0x20 && codePoint <= 0x7e) {
+      index += 1
+      continue
+    }
+    if (!isWidthStableLatinCodePoint(codePoint)) {
+      return false
+    }
+    hasLatinCodePoint = true
+    index += codePoint > 0xffff ? 2 : 1
+  }
+  return hasLatinCodePoint
+}
+
 function findCsiFinalByteIndex(data: string, offset: number): number {
   for (let index = offset; index < data.length; index++) {
     const code = data.charCodeAt(index)
@@ -2434,13 +2467,20 @@ export function connectPanePty(
       }
     }
 
-    function shouldSkipHiddenRendererOutput(foreground: boolean, data: string): boolean {
+    function shouldSkipHiddenRendererOutput(
+      foreground: boolean,
+      data: string,
+      synchronizedOutputActive: boolean
+    ): boolean {
       if (
         foreground ||
-        !shouldSnapshotHiddenCodexOutput ||
+        synchronizedOutputActive ||
         !canUseHiddenOutputSnapshot(transport.getPtyId())
       ) {
         return false
+      }
+      if (!shouldSnapshotHiddenCodexOutput) {
+        return containsOnlyWidthStableLatinText(data)
       }
       // Why: CPR/DECRQM replies depend on ordered terminal state. Keep the rare
       // clean stateful-query chunk live; after skipped bytes, avoid stale replies.
@@ -2985,13 +3025,17 @@ export function connectPanePty(
       }
       const restoreAppliesToCurrentPty =
         hiddenOutputRestorePtyId !== null && transport.getPtyId() === hiddenOutputRestorePtyId
-      const synchronizedOutputStarted = containsSynchronizedOutputStart(data)
+      const synchronizedOutputStarted = data.startsWith('\x1b[?2026h')
       const synchronizedHiddenOutput =
         !foreground &&
         (synchronizedHiddenOutputActive ||
           synchronizedOutputStarted ||
-          containsSynchronizedOutputEnd(data))
-      const shouldSkipHiddenOutput = shouldSkipHiddenRendererOutput(foreground, data)
+          (synchronizedHiddenOutputActive && containsSynchronizedOutputEnd(data)))
+      const shouldSkipHiddenOutput = shouldSkipHiddenRendererOutput(
+        foreground,
+        data,
+        synchronizedHiddenOutput
+      )
       if (shouldSkipHiddenOutput) {
         skipHiddenRendererOutput(data)
       } else if (synchronizedHiddenOutput) {
