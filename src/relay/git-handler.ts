@@ -84,6 +84,9 @@ export class GitHandler {
     this.dispatcher.onRequest('git.fetch', (p) => this.fetch(p))
     this.dispatcher.onRequest('git.forkSync', (p, context) => this.forkSync(p, context))
     this.dispatcher.onRequest('git.fetchRemoteTrackingRef', (p) => this.fetchRemoteTrackingRef(p))
+    this.dispatcher.onRequest('git.fetchGitLabMergeRequestHead', (p) =>
+      this.fetchGitLabMergeRequestHead(p)
+    )
     this.dispatcher.onRequest('git.push', (p) => this.push(p))
     this.dispatcher.onRequest('git.pull', (p) => this.pull(p))
     this.dispatcher.onRequest('git.fastForward', (p) => this.fastForward(p))
@@ -559,6 +562,41 @@ export class GitHandler {
       // Why: create-worktree needs a write-capable fetch, but generic git.exec
       // intentionally rejects fetch. This narrow RPC keeps the relay allowlist
       // tight while preserving the same safe error normalization as git.fetch.
+      throw new Error(normalizeGitErrorMessage(error, 'fetch'))
+    }
+  }
+
+  private async fetchGitLabMergeRequestHead(params: Record<string, unknown>) {
+    const worktreePath = params.worktreePath as string
+    const remote = params.remote
+    const mrIid = params.mrIid
+    if (typeof remote !== 'string') {
+      throw new Error('Invalid GitLab merge request fetch request.')
+    }
+    if (typeof mrIid !== 'number' || !Number.isSafeInteger(mrIid) || mrIid <= 0) {
+      throw new Error('Invalid GitLab merge request fetch request.')
+    }
+    const mergeRequestIid = mrIid
+    if (remote.startsWith('-')) {
+      throw new Error('GitLab merge request fetch remote must not start with "-".')
+    }
+
+    try {
+      const { stdout } = await this.git(['remote'], worktreePath)
+      const remotes = stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+      if (!remotes.includes(remote)) {
+        throw new Error(`Remote "${remote}" is not configured.`)
+      }
+      // Why: GitLab MR heads are not refs/heads/*, so the remote-tracking
+      // fetch RPC cannot represent fork MRs. Keep this write path MR-only.
+      await this.git(
+        ['fetch', '--no-tags', remote, `refs/merge-requests/${mergeRequestIid}/head`],
+        worktreePath
+      )
+    } catch (error) {
       throw new Error(normalizeGitErrorMessage(error, 'fetch'))
     }
   }

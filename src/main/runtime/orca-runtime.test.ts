@@ -15445,14 +15445,12 @@ describe('OrcaRuntimeService', () => {
     }
     const provider = {
       exec: vi.fn(async (args: string[]) => {
-        if (args[0] === 'fetch') {
-          return { stdout: '', stderr: '' }
-        }
         if (args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === 'FETCH_HEAD') {
           return { stdout: 'remote-fork-mr-sha\n', stderr: '' }
         }
         throw new Error(`unexpected git call: ${args.join(' ')}`)
       }),
+      fetchGitLabMergeRequestHead: vi.fn().mockResolvedValue(undefined),
       fetchRemoteTrackingRef: vi.fn().mockResolvedValue(undefined)
     }
     registerSshGitProvider('ssh-1', provider as never)
@@ -15471,10 +15469,7 @@ describe('OrcaRuntimeService', () => {
       baseBranch: 'remote-fork-mr-sha',
       compareBaseRef: 'refs/remotes/origin/main'
     })
-    expect(provider.exec).toHaveBeenCalledWith(
-      ['fetch', 'origin', 'refs/merge-requests/77/head'],
-      '/remote/repo'
-    )
+    expect(provider.fetchGitLabMergeRequestHead).toHaveBeenCalledWith('/remote/repo', 'origin', 77)
     expect(provider.fetchRemoteTrackingRef).toHaveBeenCalledWith(
       '/remote/repo',
       'origin',
@@ -15490,6 +15485,70 @@ describe('OrcaRuntimeService', () => {
       'origin',
       ['gitlab.com', 'git.internal'],
       'ssh-1'
+    )
+  })
+
+  it('resolves SSH GitLab same-repo MR bases through remote-tracking fetches', async () => {
+    const remoteRepo = {
+      id: TEST_REPO_ID,
+      path: '/remote/repo',
+      displayName: 'repo',
+      badgeColor: 'blue',
+      addedAt: 1,
+      connectionId: 'ssh-1',
+      issueSourcePreference: 'origin' as const
+    }
+    const runtimeStore = {
+      ...store,
+      getRepos: () => [remoteRepo],
+      getRepo: (id: string) => (id === remoteRepo.id ? remoteRepo : undefined)
+    }
+    const provider = {
+      exec: vi.fn(async (args: string[]) => {
+        if (args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === 'origin/feature/fix') {
+          return { stdout: 'same-repo-mr-sha\n', stderr: '' }
+        }
+        throw new Error(`unexpected git call: ${args.join(' ')}`)
+      }),
+      fetchGitLabMergeRequestHead: vi.fn().mockResolvedValue(undefined),
+      fetchRemoteTrackingRef: vi.fn().mockResolvedValue(undefined)
+    }
+    registerSshGitProvider('ssh-1', provider as never)
+    getGlabKnownHostsMock.mockResolvedValue(['gitlab.com', 'git.internal'])
+    getGitLabProjectRefForRemoteMock.mockResolvedValue({
+      host: 'gitlab.example',
+      path: 'group/repo'
+    })
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+
+    const result = await runtime.resolveManagedMrBase({
+      repoSelector: 'id:repo-1',
+      mrIid: 78,
+      sourceBranch: 'feature/fix',
+      targetBranch: 'main'
+    })
+
+    expect(result).toEqual({
+      baseBranch: 'origin/feature/fix',
+      compareBaseRef: 'refs/remotes/origin/main',
+      pushTarget: { remoteName: 'origin', branchName: 'feature/fix' }
+    })
+    expect(provider.fetchRemoteTrackingRef).toHaveBeenCalledWith(
+      '/remote/repo',
+      'origin',
+      'feature/fix',
+      'refs/remotes/origin/feature/fix'
+    )
+    expect(provider.fetchRemoteTrackingRef).toHaveBeenCalledWith(
+      '/remote/repo',
+      'origin',
+      'main',
+      'refs/remotes/origin/main'
+    )
+    expect(provider.fetchGitLabMergeRequestHead).not.toHaveBeenCalled()
+    expect(provider.exec).toHaveBeenCalledWith(
+      ['rev-parse', '--verify', 'origin/feature/fix'],
+      '/remote/repo'
     )
   })
 
