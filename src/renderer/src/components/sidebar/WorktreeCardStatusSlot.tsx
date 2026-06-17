@@ -71,7 +71,7 @@ export function WorktreeCardStatusSlot({
               className
             )}
           >
-            <ReviewIcon review={prDisplay} className="size-3" />
+            <ReviewIcon review={prDisplay} className="size-3.5" />
             <span className="sr-only">{passiveStatusLabel}</span>
           </span>
         </TooltipTrigger>
@@ -120,7 +120,7 @@ export function WorktreeCardStatusSlot({
             ) : showStatus && canShowReviewStatus && prDisplay ? (
               <>
                 <span className="inline-flex size-4 -translate-y-0.5 items-center justify-center p-0.5 transition-opacity group-hover/unread:opacity-0 group-focus-within/unread:opacity-0">
-                  <ReviewIcon review={prDisplay} className="size-3" />
+                  <ReviewIcon review={prDisplay} className="size-3.5" />
                 </span>
                 <Bell className="absolute size-3 text-muted-foreground/40 opacity-0 transition-opacity group-hover/unread:opacity-100 group-focus-within/unread:opacity-100" />
               </>
