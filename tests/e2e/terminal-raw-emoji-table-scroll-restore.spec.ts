@@ -499,6 +499,9 @@ test.describe('Terminal raw emoji table scroll restore repro', () => {
       await switchToWorktree(orcaPage, secondWorktreeId)
       await waitForActiveTerminalManager(orcaPage, 30_000)
       await orcaPage.waitForTimeout(1_000)
+      // Why: switching back can replay hidden terminal contents immediately;
+      // make the viewport wide before restore so the table cannot wrap first.
+      await setWideRenderedTableViewport(orcaPage)
       await switchToWorktree(orcaPage, firstWorktreeId)
       // Why: activating another worktree can restore the right sidebar. This
       // golden is about terminal renderer restore at a deliberately wide width.
