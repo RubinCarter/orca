@@ -618,6 +618,13 @@ export function createAgentCompletionCoordinator(
       workingStatusObserved = true
       requiresFreshWorking = false
       lastCompletionIdentity = null
+      // Why: a fresh working hook starts a new turn. A prior *process-exit*
+      // identity in the shared pane map would otherwise survive and, via the
+      // cross-source agent compare, suppress this turn's hook 'done'. Clear only
+      // that source so hook->title replay suppression (same-source/agent) stays.
+      if (lastCompletionIdentityByPaneKey.get(options.paneKey)?.source === 'process-exit') {
+        lastCompletionIdentityByPaneKey.delete(options.paneKey)
+      }
       currentTurn += 1
       dropPendingTitle()
       return

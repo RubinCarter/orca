@@ -536,6 +536,51 @@ describe('agent completion coordinator', () => {
     expect(dispatchCompletion).toHaveBeenCalledTimes(1)
   })
 
+  it('notifies a fresh hook-done turn after the previous turn finished via process-exit', async () => {
+    const paneKey = 'tab-1:leaf-1'
+    const dispatchCompletion = vi.fn()
+    let result = processResult('codex')
+    const coordinator = createAgentCompletionCoordinator({
+      paneKey,
+      getPtyId: () => 'pty-1',
+      getSettings: () => null,
+      inspectProcess: vi.fn(async () => result),
+      dispatchCompletion,
+      isLive: () => true
+    })
+
+    // Turn N: agent runs then finishes via the process-exit backstop.
+    coordinator.startProcessTracking()
+    vi.advanceTimersByTime(2_000)
+    await flushAsyncTicks()
+    result = processResult('zsh', false)
+    vi.advanceTimersByTime(750)
+    await flushAsyncTicks()
+    vi.advanceTimersByTime(750)
+    await flushAsyncTicks()
+
+    expect(dispatchCompletion).toHaveBeenCalledTimes(1)
+    expect(dispatchCompletion).toHaveBeenCalledWith('codex')
+
+    // Turn N+1: a fresh hook working->done on the same pane with no intervening
+    // working *title*. The genuinely-finished turn must still notify.
+    coordinator.observeHookStatus({
+      state: 'working',
+      prompt: 'next task',
+      agentType: 'codex',
+      stateStartedAt: 1_700_000_010_000
+    })
+    coordinator.observeHookStatus({
+      state: 'done',
+      prompt: 'next task',
+      agentType: 'codex',
+      stateStartedAt: 1_700_000_020_000
+    })
+    vi.advanceTimersByTime(HOOK_DONE_QUIET_MS)
+
+    expect(dispatchCompletion).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps duplicate done-only hooks inside replay guard suppressed after process inspection', async () => {
     const inspection = createDeferred<RuntimeTerminalProcessInspection>()
     const dispatchCompletion = vi.fn()
