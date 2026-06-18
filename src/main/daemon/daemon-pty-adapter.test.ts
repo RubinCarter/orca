@@ -810,6 +810,49 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       })
     })
 
+    it('returns cold restore OSC link ranges from checkpoint history', async () => {
+      const sessionId = 'cold-restore-osc-links'
+      const sessionDir = join(historyDir, getHistorySessionDirName(sessionId))
+      const oscLinks = [{ row: 0, startCol: 0, endCol: 5, uri: 'https://example.com/issue/1234' }]
+      mkdirSync(sessionDir, { recursive: true })
+      writeFileSync(
+        join(sessionDir, 'meta.json'),
+        JSON.stringify({
+          cwd: '/projects/myapp',
+          cols: 80,
+          rows: 24,
+          startedAt: '2026-04-15T10:00:00Z',
+          endedAt: null,
+          exitCode: null
+        })
+      )
+      writeFileSync(
+        join(sessionDir, 'checkpoint.json'),
+        JSON.stringify({
+          snapshotAnsi: '#1234\r\n',
+          scrollbackAnsi: '',
+          oscLinks,
+          rehydrateSequences: '',
+          cwd: '/projects/myapp',
+          cols: 80,
+          rows: 24,
+          modes: {
+            bracketedPaste: false,
+            mouseTracking: false,
+            applicationCursor: false,
+            alternateScreen: false
+          },
+          scrollbackLines: 0,
+          checkpointedAt: '2026-04-15T11:00:00Z'
+        })
+      )
+
+      historyAdapter = new DaemonPtyAdapter({ socketPath, tokenPath, historyPath: historyDir })
+
+      const result = await historyAdapter.spawn({ cols: 80, rows: 24, sessionId })
+      expect(result.coldRestore?.oscLinks).toEqual(oscLinks)
+    })
+
     it('re-anchors a cold-restored session with a full checkpoint on the first tick', async () => {
       const adapterClass = DaemonPtyAdapter as unknown as { CHECKPOINT_INTERVAL_MS: number }
       const previousInterval = adapterClass.CHECKPOINT_INTERVAL_MS
@@ -914,7 +957,7 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
 
       historyAdapter = new DaemonPtyAdapter({ socketPath, tokenPath, historyPath: historyDir })
       const internals = historyAdapter as unknown as {
-        coldRestoreCache: Map<string, { scrollback: string; cwd: string }>
+        coldRestoreCache: Map<string, { scrollback: string; cwd: string; oscLinks?: unknown[] }>
       }
 
       await historyAdapter.spawn({ cols: 80, rows: 24, sessionId })
@@ -944,7 +987,7 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
 
       historyAdapter = new DaemonPtyAdapter({ socketPath, tokenPath, historyPath: historyDir })
       const internals = historyAdapter as unknown as {
-        coldRestoreCache: Map<string, { scrollback: string; cwd: string }>
+        coldRestoreCache: Map<string, { scrollback: string; cwd: string; oscLinks?: unknown[] }>
       }
 
       await historyAdapter.spawn({ cols: 80, rows: 24, sessionId })

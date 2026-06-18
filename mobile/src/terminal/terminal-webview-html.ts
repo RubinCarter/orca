@@ -274,6 +274,8 @@ export const XTERM_HTML = `<!DOCTYPE html>
   var trackedMouseTrackingMode = 'none';
   var sgrMouseMode = false;
   var sgrMousePixelsMode = false;
+  var initialOscLinks = [], initialOscLinkRowOffset = 0;
+  var initialOscLinkEvictionReady = false;
   var mouseModeScanTail = '';
   var handledMessageIds = [];
   // Why: after init() the initial scrollback applyFitScale may have run
@@ -654,7 +656,7 @@ export const XTERM_HTML = `<!DOCTYPE html>
     pumpWrites(terminalGeneration);
   }
 
-  function init(cols, rows, initialData, nextTheme, nextFontScale, preserveScroll) {
+  function init(cols, rows, initialData, nextTheme, nextFontScale, preserveScroll, nextOscLinks) {
     if (typeof nextFontScale === 'number' && nextFontScale > 0) currentTextScale = nextFontScale;
     // Why: a width-reflow re-stream rewraps the same content at new cols.
     // Distance-from-bottom (rows) is the only stable anchor across reflow,
@@ -687,6 +689,9 @@ export const XTERM_HTML = `<!DOCTYPE html>
     // mirrored modes aligned with exactly what this mobile xterm replays.
     updateMouseModeFromData(replayData);
     activeAltScreenSnapshot = isAltScreenActive(replayData);
+    initialOscLinks = Array.isArray(nextOscLinks) ? nextOscLinks : [];
+    initialOscLinkRowOffset = 0;
+    initialOscLinkEvictionReady = false;
     var oldTerm = term;
     var oldSurface = surface;
     var nextSurface = null;
@@ -753,6 +758,9 @@ export const XTERM_HTML = `<!DOCTYPE html>
         if (scrollAnchorRows > 0 && term && term.buffer && term.buffer.active) {
           try { term.scrollToLine(Math.max(0, (term.buffer.active.baseY || 0) - scrollAnchorRows)); } catch (e) {}
         }
+        captureInitialOscLinkTexts();
+        initialOscLinkRowOffset = 0;
+        initialOscLinkEvictionReady = true;
         applyFitScale('init-replay');
         notify({ type: 'ready', cols: cols, rows: rows });
       });
@@ -855,7 +863,7 @@ export const XTERM_HTML = `<!DOCTYPE html>
       if (handledMessageIds.length > 256) handledMessageIds.shift();
     }
     if (msg.type === 'init') {
-      init(msg.cols, msg.rows, msg.initialData, msg.terminalTheme, msg.fontScale, msg.preserveScroll);
+      init(msg.cols, msg.rows, msg.initialData, msg.terminalTheme, msg.fontScale, msg.preserveScroll, msg.oscLinks);
     } else if (msg.type === 'set-font-scale') {
       // Why: ignore RN echoing back the value a pinch just set (msg.fontScale ===
       // currentTextScale) so the post-pinch state isn't reset; only apply changes.
@@ -880,6 +888,9 @@ export const XTERM_HTML = `<!DOCTYPE html>
       trackedMouseTrackingMode = 'none';
       sgrMouseMode = false;
       sgrMousePixelsMode = false;
+      initialOscLinks = [];
+      initialOscLinkRowOffset = 0;
+      initialOscLinkEvictionReady = false;
       if (term) { term.clear(); term.reset(); }
       emitModesIfChanged();
       resetEvictionCounter();
@@ -977,6 +988,7 @@ export const XTERM_HTML = `<!DOCTYPE html>
 
   function logFeedAndEvict() {
     linesEverWritten++;
+    if (initialOscLinkEvictionReady && isBufferFull()) initialOscLinkRowOffset += 1;
     if (selMode === 'select' && sel && isBufferFull()) {
       sel.anchor.row -= 1;
       sel.focus.row -= 1;

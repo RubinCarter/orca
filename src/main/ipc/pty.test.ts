@@ -5690,7 +5690,12 @@ describe('registerPtyHandlers', () => {
   })
 
   it('seeds headless terminal state with cold-restore cwd metadata', async () => {
-    const coldRestore = { scrollback: 'restored history\r\n', cwd: '/projects/restored' }
+    const oscLinks = [{ row: 0, startCol: 0, endCol: 8, uri: 'https://example.com/restored' }]
+    const coldRestore = {
+      scrollback: 'restored history\r\n',
+      cwd: '/projects/restored',
+      oscLinks
+    }
     setLocalPtyProvider({
       spawn: vi.fn(async () => ({ id: 'pty-cold-restore', coldRestore })),
       write: vi.fn(),
@@ -5720,7 +5725,7 @@ describe('registerPtyHandlers', () => {
       'pty-cold-restore',
       'restored history\r\n',
       undefined,
-      { cwd: '/projects/restored' }
+      { cwd: '/projects/restored', oscLinks }
     )
   })
 

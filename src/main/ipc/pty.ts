@@ -2554,7 +2554,8 @@ export function registerPtyHandlers(
           result.coldRestore.scrollback.length > 0
         ) {
           runtime.seedHeadlessTerminal(result.id, result.coldRestore.scrollback, seedSize, {
-            cwd: result.coldRestore.cwd
+            cwd: result.coldRestore.cwd,
+            oscLinks: result.coldRestore.oscLinks
           })
         }
       }

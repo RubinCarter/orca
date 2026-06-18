@@ -9,6 +9,7 @@ import {
 } from '../../shared/agent-detection'
 import { extractOscTitleScanTail } from '../../shared/osc-title-scan-tail'
 import type { AgentStatus } from '../../shared/agent-detection'
+import type { TerminalOscLinkRange } from '../../shared/terminal-osc-link-ranges'
 import {
   AGENT_STATUS_STALE_AFTER_MS,
   type AgentStatusIpcPayload,
@@ -897,6 +898,7 @@ type RuntimeHeadlessTerminal = {
 
 type HeadlessSeedMetadata = {
   cwd?: string | null
+  oscLinks?: TerminalOscLinkRange[]
 }
 
 type RuntimePtyController = {
@@ -4144,6 +4146,7 @@ export class OrcaRuntimeService {
     lastTitle?: string
     seq?: number
     source?: 'headless' | 'renderer'
+    oscLinks?: TerminalOscLinkRange[]
   } | null> {
     return this.serializeTerminalBufferFromAvailableState(ptyId, opts)
   }
@@ -4159,6 +4162,7 @@ export class OrcaRuntimeService {
     lastTitle?: string
     seq?: number
     source?: 'headless' | 'renderer'
+    oscLinks?: TerminalOscLinkRange[]
   } | null> {
     return this.serializeHeadlessTerminalBuffer(ptyId, { ...opts, includeEmpty: true })
   }
@@ -4226,6 +4230,9 @@ export class OrcaRuntimeService {
         await state.emulator.write(data)
         if (metadata.cwd !== undefined) {
           state.emulator.setCwd(metadata.cwd)
+        }
+        if (metadata.oscLinks !== undefined) {
+          state.emulator.setRestoredOscLinks(metadata.oscLinks)
         }
       })
       .catch(() => {
@@ -4391,6 +4398,7 @@ export class OrcaRuntimeService {
     lastTitle?: string
     seq?: number
     source?: 'headless' | 'renderer'
+    oscLinks?: TerminalOscLinkRange[]
   } | null> {
     const headlessSnapshot = await this.serializeHeadlessTerminalBuffer(ptyId, opts)
     if (headlessSnapshot) {
@@ -4403,6 +4411,7 @@ export class OrcaRuntimeService {
       rows: number
       cwd?: string | null
       lastTitle?: string
+      oscLinks?: TerminalOscLinkRange[]
     } | null = null
     try {
       // Why: read-fallback wants visible alt-screen content (e.g. an active
@@ -4485,6 +4494,7 @@ export class OrcaRuntimeService {
     lastTitle?: string
     seq?: number
     source?: 'headless'
+    oscLinks?: TerminalOscLinkRange[]
   } | null> {
     const state = this.headlessTerminals.get(ptyId)
     if (!state) {
@@ -4510,7 +4520,8 @@ export class OrcaRuntimeService {
           cwd: snapshot.cwd,
           lastTitle: snapshot.lastTitle,
           seq: state.outputSequence,
-          source: 'headless'
+          source: 'headless',
+          oscLinks: snapshot.oscLinks
         }
       : null
   }
