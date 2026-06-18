@@ -5119,6 +5119,7 @@ describe('Store', () => {
       'issue',
       'linear-issue',
       'pr',
+      'automation',
       'comment',
       'ports',
       'inline-agents'
@@ -5263,6 +5264,7 @@ describe('Store', () => {
       'issue',
       'linear-issue',
       'pr',
+      'automation',
       'comment',
       'ports',
       'inline-agents'

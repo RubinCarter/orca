@@ -445,6 +445,7 @@ export function getDefaultUIState(): PersistedUIState {
     workspaceHostOrder: [],
     showSleepingWorkspaces: DEFAULT_SHOW_SLEEPING_WORKSPACES,
     hideDefaultBranchWorkspace: false,
+    hideAutomationGeneratedWorkspaces: false,
     showDotfilesByWorktree: {},
     filterRepoIds: [],
     collapsedGroups: [],

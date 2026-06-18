@@ -10,6 +10,7 @@ import type { CliInstallStatus } from '../shared/cli-install-types'
 import type { AgentHookInstallStatus } from '../shared/agent-hook-types'
 import type { TerminalPaneSplitSource } from '../shared/feature-education-telemetry'
 import type { ProjectExecutionRuntimeResolution } from '../shared/project-execution-runtime'
+import type { StartupCommandDelivery } from '../shared/codex-startup-delivery'
 import type {
   BaseRefSearchResult,
   BaseRefDefaultResult,
@@ -695,6 +696,7 @@ const api = {
       cwd?: string
       env?: Record<string, string>
       command?: string
+      startupCommandDelivery?: StartupCommandDelivery
       connectionId?: string | null
       worktreeId?: string
       sessionId?: string
@@ -3003,6 +3005,7 @@ const api = {
         afterTabId?: string
         targetGroupId?: string
         command?: string
+        startupCommandDelivery?: StartupCommandDelivery
         title?: string
         launchAgent?: TuiAgent
         activate?: boolean
@@ -3016,6 +3019,7 @@ const api = {
           afterTabId?: string
           targetGroupId?: string
           command?: string
+          startupCommandDelivery?: StartupCommandDelivery
           title?: string
           launchAgent?: TuiAgent
           activate?: boolean

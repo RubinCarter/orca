@@ -187,6 +187,9 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
         launchCommand: draftLaunchPlan.launchCommand,
         expectedProcess: draftLaunchPlan.expectedProcess,
         followupPrompt: null,
+        ...(draftLaunchPlan.startupCommandDelivery
+          ? { startupCommandDelivery: draftLaunchPlan.startupCommandDelivery }
+          : {}),
         ...(draftLaunchPlan.env ? { env: draftLaunchPlan.env } : {})
       }
     } else {
@@ -239,8 +242,14 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       environmentId: runtimeEnvironmentId,
       targetGroupId: groupId,
       activate: true,
-      ...(hasPrompt || profileId?.trim()
-        ? { command: startupPlan.launchCommand, agent }
+      ...(hasPrompt || profileId?.trim() || agentArgs !== undefined
+        ? {
+            command: startupPlan.launchCommand,
+            agent,
+            ...(startupPlan.startupCommandDelivery
+              ? { startupCommandDelivery: startupPlan.startupCommandDelivery }
+              : {})
+          }
         : { agent })
     }).then((created) => {
       // Why: created means the host accepted the launch, not that a local tab
@@ -284,6 +293,9 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
   store.queueTabStartupCommand(tab.id, {
     command: startupPlan.launchCommand,
     ...(startupPlan.env ? { env: startupPlan.env } : {}),
+    ...(startupPlan.startupCommandDelivery
+      ? { startupCommandDelivery: startupPlan.startupCommandDelivery }
+      : {}),
     ...(agent === 'command-code' && hasPrompt && promptDelivery === 'auto-submit'
       ? { initialAgentStatus: { agent, prompt: trimmedPrompt } }
       : {}),

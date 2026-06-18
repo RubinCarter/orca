@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { getDefaultSettings } from '../../../../shared/constants'
@@ -90,7 +92,7 @@ describe('AgentLaunchProfilesSection', () => {
     const markup = renderToStaticMarkup(
       <AgentLaunchProfilesSection
         settings={{
-          ...getDefaultSettings('/tmp'),
+          ...getDefaultSettings(join(tmpdir(), 'orca-agent-launch-profiles-test')),
           agentLaunchProfiles: [
             {
               id: 'codex:work',

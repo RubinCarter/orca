@@ -204,6 +204,21 @@ describe('shouldShowLaunchWatchdogTimeout', () => {
 
     const subTriggers = findAllByType(tree, 'DropdownMenuSubTrigger')
     expect(subTriggers.map((trigger) => collectText(trigger.props.children))).toEqual(['Codex2'])
+    const triggerClick = subTriggers[0]?.props.onClick
+    if (typeof triggerClick !== 'function') {
+      throw new Error('Codex launch-options trigger did not expose click launch')
+    }
+    triggerClick({
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn()
+    })
+    expect(mocks.launchAgentInNewTab).toHaveBeenCalledWith({
+      agent: 'codex',
+      worktreeId: 'wt-1',
+      groupId: 'group-1'
+    })
+    mocks.launchAgentInNewTab.mockClear()
+    mocks.onFocusTerminal.mockClear()
 
     const visibleMenuLabels = findAllByType(tree, 'DropdownMenuItem').map((item) =>
       collectText(item.props.children)

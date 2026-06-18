@@ -77,7 +77,20 @@ function AgentLaunchProfileEditor({
             <Check className="size-3.5" />
             {translate('auto.components.settings.AgentLaunchProfilesSection.save', 'Save')}
           </Button>
-          <Button type="button" variant="ghost" size="icon-xs" onClick={onDelete}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={onDelete}
+            aria-label={translate(
+              'auto.components.settings.AgentLaunchProfilesSection.deleteProfile',
+              'Delete profile'
+            )}
+            title={translate(
+              'auto.components.settings.AgentLaunchProfilesSection.deleteProfile',
+              'Delete profile'
+            )}
+          >
             <Trash2 className="size-3.5 text-destructive" />
           </Button>
         </div>
