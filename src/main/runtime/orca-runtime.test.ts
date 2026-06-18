@@ -12278,6 +12278,159 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('does not count controller-missing renderer leaves in worktree summaries', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => []
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Stale Terminal',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'missing-pty'
+        }
+      ]
+    })
+
+    const { worktrees } = await runtime.getWorktreePs()
+    const summary = worktrees.find((worktree) => worktree.worktreeId === TEST_WORKTREE_ID)
+
+    expect(summary).toMatchObject({
+      status: 'inactive',
+      liveTerminalCount: 0,
+      hasAttachedPty: false
+    })
+  })
+
+  it('does not count controller-missing persisted terminal tabs in worktree summaries', async () => {
+    const { runtimeStore } = makeRuntimeStoreWithWorkspaceSession(
+      makeWorkspaceSessionWithHeadlessTerminal()
+    )
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => []
+    })
+    runtime.registerPty('persisted-pty', TEST_WORKTREE_ID)
+
+    const { worktrees } = await runtime.getWorktreePs()
+    const summary = worktrees.find((worktree) => worktree.worktreeId === TEST_WORKTREE_ID)
+
+    expect(summary).toMatchObject({
+      status: 'inactive',
+      liveTerminalCount: 0,
+      hasAttachedPty: false
+    })
+  })
+
+  it('does not count controller-missing persisted split panes in worktree summaries', async () => {
+    const splitLayout = makeHeadlessTerminalLayout({
+      [HEADLESS_LEAF_ID]: 'missing-left-pty',
+      [HEADLESS_SECOND_LEAF_ID]: 'missing-right-pty'
+    })
+    const { runtimeStore } = makeRuntimeStoreWithWorkspaceSession(
+      makeWorkspaceSessionWithHeadlessTerminal({
+        tabsByWorktree: {
+          [TEST_WORKTREE_ID]: [
+            {
+              id: 'host-tab',
+              ptyId: null,
+              worktreeId: TEST_WORKTREE_ID,
+              title: 'Persisted Split Terminal',
+              customTitle: null,
+              color: null,
+              sortOrder: 0,
+              createdAt: 1
+            }
+          ]
+        },
+        terminalLayoutsByTabId: { 'host-tab': splitLayout }
+      })
+    )
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => []
+    })
+    runtime.registerPty('missing-left-pty', TEST_WORKTREE_ID)
+    runtime.registerPty('missing-right-pty', TEST_WORKTREE_ID)
+
+    const { worktrees } = await runtime.getWorktreePs()
+    const summary = worktrees.find((worktree) => worktree.worktreeId === TEST_WORKTREE_ID)
+
+    expect(summary).toMatchObject({
+      status: 'inactive',
+      liveTerminalCount: 0,
+      hasAttachedPty: false
+    })
+  })
+
+  it('counts live persisted split pane PTYs in worktree summaries', async () => {
+    const splitLayout = makeHeadlessTerminalLayout({
+      [HEADLESS_LEAF_ID]: 'live-left-pty',
+      [HEADLESS_SECOND_LEAF_ID]: 'missing-right-pty'
+    })
+    const { runtimeStore } = makeRuntimeStoreWithWorkspaceSession(
+      makeWorkspaceSessionWithHeadlessTerminal({
+        tabsByWorktree: {
+          [TEST_WORKTREE_ID]: [
+            {
+              id: 'host-tab',
+              ptyId: null,
+              worktreeId: TEST_WORKTREE_ID,
+              title: 'Persisted Split Terminal',
+              customTitle: null,
+              color: null,
+              sortOrder: 0,
+              createdAt: 1
+            }
+          ]
+        },
+        terminalLayoutsByTabId: { 'host-tab': splitLayout }
+      })
+    )
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [
+        { id: 'live-left-pty', cwd: TEST_WORKTREE_PATH, title: 'live left' }
+      ]
+    })
+    runtime.registerPty('live-left-pty', TEST_WORKTREE_ID)
+    runtime.registerPty('missing-right-pty', TEST_WORKTREE_ID)
+
+    const { worktrees } = await runtime.getWorktreePs()
+    const summary = worktrees.find((worktree) => worktree.worktreeId === TEST_WORKTREE_ID)
+
+    expect(summary).toMatchObject({
+      status: 'active',
+      liveTerminalCount: 1,
+      hasAttachedPty: true
+    })
+  })
+
   it('reads the linked-PR state from the renderer repoId-keyed GitHub cache', async () => {
     // Regression: the renderer keys the PR cache by `repoId::branch`, so reading
     // only by `path::branch` missed every entry and left mobile's badge muted.
@@ -12715,6 +12868,58 @@ describe('OrcaRuntimeService', () => {
     expect(killed).toBe(false)
   })
 
+  it('does not stop controller-missing renderer leaves for a worktree', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const kill = vi.fn(() => true)
+    runtime.setPtyController({
+      write: () => true,
+      kill,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [
+        { id: 'live-sibling-pty', cwd: TEST_WORKTREE_PATH, title: 'live sibling' }
+      ]
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Split Terminal',
+          activeLeafId: 'pane:1',
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            first: { type: 'leaf', leafId: 'pane:1' },
+            second: { type: 'leaf', leafId: 'pane:2' }
+          }
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'missing-split-pty'
+        },
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'pane:2',
+          paneRuntimeId: 2,
+          ptyId: 'live-sibling-pty'
+        }
+      ]
+    })
+
+    await expect(runtime.stopTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`)).resolves.toEqual({
+      stopped: 1
+    })
+    expect(kill).toHaveBeenCalledTimes(1)
+    expect(kill).toHaveBeenCalledWith('live-sibling-pty')
+  })
+
   it('stops exactly the expected live PTYs for a worktree', async () => {
     const runtime = new OrcaRuntimeService(store)
     const stopped: string[] = []
@@ -13073,6 +13278,733 @@ describe('OrcaRuntimeService', () => {
     })
 
     expect(terminals.terminals).toEqual([])
+  })
+
+  it('does not advertise a stale split leaf when the controller only reports its sibling PTY', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [
+        { id: 'live-sibling-pty', cwd: TEST_WORKTREE_PATH, title: 'live sibling' }
+      ]
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Split Terminal',
+          activeLeafId: 'pane:2',
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            first: { type: 'leaf', leafId: 'pane:1' },
+            second: { type: 'leaf', leafId: 'pane:2' }
+          }
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'missing-split-pty'
+        },
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:2',
+          paneRuntimeId: 2,
+          ptyId: 'live-sibling-pty'
+        }
+      ]
+    })
+
+    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+
+    expect(terminals.terminals).toHaveLength(1)
+    expect(terminals.terminals[0]).toMatchObject({
+      ptyId: 'live-sibling-pty',
+      leafId: 'pane:2',
+      connected: true,
+      writable: true
+    })
+  })
+
+  it('resolves the active terminal to a live sibling when the active split leaf is stale', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [
+        { id: 'live-sibling-pty', cwd: TEST_WORKTREE_PATH, title: 'live sibling' }
+      ]
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Split Terminal',
+          activeLeafId: 'pane:1',
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            first: { type: 'leaf', leafId: 'pane:1' },
+            second: { type: 'leaf', leafId: 'pane:2' }
+          }
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'missing-split-pty'
+        },
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:2',
+          paneRuntimeId: 2,
+          ptyId: 'live-sibling-pty'
+        }
+      ]
+    })
+
+    const handle = await runtime.resolveActiveTerminal('id:repo-1::/tmp/worktree-a')
+    const shown = await runtime.showTerminal(handle)
+
+    expect(shown).toMatchObject({
+      ptyId: 'live-sibling-pty',
+      leafId: 'pane:2',
+      connected: true,
+      writable: true
+    })
+  })
+
+  it('fails stale split leaf handles closed for show, read, and send', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const write = vi.fn(() => true)
+    const processLists = [
+      [
+        { id: 'missing-split-pty', cwd: TEST_WORKTREE_PATH, title: 'missing split' },
+        { id: 'live-sibling-pty', cwd: TEST_WORKTREE_PATH, title: 'live sibling' }
+      ],
+      [{ id: 'live-sibling-pty', cwd: TEST_WORKTREE_PATH, title: 'live sibling' }]
+    ]
+    runtime.setPtyController({
+      write,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => processLists.shift() ?? processLists[0] ?? []
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Split Terminal',
+          activeLeafId: 'pane:1',
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            first: { type: 'leaf', leafId: 'pane:1' },
+            second: { type: 'leaf', leafId: 'pane:2' }
+          }
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'missing-split-pty'
+        },
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:2',
+          paneRuntimeId: 2,
+          ptyId: 'live-sibling-pty'
+        }
+      ]
+    })
+
+    const staleHandle = (await runtime.listTerminals('id:repo-1::/tmp/worktree-a')).terminals.find(
+      (terminal) => terminal.ptyId === 'missing-split-pty'
+    )?.handle
+
+    expect(staleHandle).toBeTruthy()
+    await expect(
+      runtime.waitForTerminal(staleHandle!, { condition: 'exit', timeoutMs: 1000 })
+    ).rejects.toThrow('terminal_handle_stale')
+    await expect(runtime.showTerminal(staleHandle!)).rejects.toThrow('terminal_handle_stale')
+    await expect(runtime.readTerminal(staleHandle!)).rejects.toThrow('terminal_handle_stale')
+    await expect(runtime.sendTerminal(staleHandle!, { text: 'nope' })).rejects.toThrow(
+      'terminal_handle_stale'
+    )
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('fails stale split leaf handles closed for focus and split', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const focusTerminal = vi.fn()
+    const splitTerminal = vi.fn()
+    const processLists = [
+      [
+        { id: 'missing-split-pty', cwd: TEST_WORKTREE_PATH, title: 'missing split' },
+        { id: 'live-sibling-pty', cwd: TEST_WORKTREE_PATH, title: 'live sibling' }
+      ],
+      [{ id: 'live-sibling-pty', cwd: TEST_WORKTREE_PATH, title: 'live sibling' }]
+    ]
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => processLists.shift() ?? processLists[0] ?? []
+    })
+    runtime.setNotifier({
+      worktreesChanged: vi.fn(),
+      reposChanged: vi.fn(),
+      activateWorktree: vi.fn(),
+      createTerminal: vi.fn(),
+      revealTerminalSession: vi.fn(),
+      splitTerminal,
+      renameTerminal: vi.fn(),
+      focusTerminal,
+      closeTerminal: vi.fn(),
+      sleepWorktree: vi.fn(),
+      terminalFitOverrideChanged: vi.fn(),
+      terminalDriverChanged: vi.fn()
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Split Terminal',
+          activeLeafId: 'pane:1',
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            first: { type: 'leaf', leafId: 'pane:1' },
+            second: { type: 'leaf', leafId: 'pane:2' }
+          }
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'missing-split-pty'
+        },
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:2',
+          paneRuntimeId: 2,
+          ptyId: 'live-sibling-pty'
+        }
+      ]
+    })
+
+    const staleHandle = (await runtime.listTerminals('id:repo-1::/tmp/worktree-a')).terminals.find(
+      (terminal) => terminal.ptyId === 'missing-split-pty'
+    )?.handle
+
+    expect(staleHandle).toBeTruthy()
+    await expect(runtime.focusTerminal(staleHandle!)).rejects.toThrow('terminal_handle_stale')
+    await expect(runtime.splitTerminal(staleHandle!)).rejects.toThrow('terminal_handle_stale')
+    expect(focusTerminal).not.toHaveBeenCalled()
+    expect(splitTerminal).not.toHaveBeenCalled()
+  })
+
+  it('does not refresh PTY liveness on the terminal send hot path', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const listProcesses = vi.fn(async () => [
+      { id: 'live-pty', cwd: TEST_WORKTREE_PATH, title: 'live shell' }
+    ])
+    const write = vi.fn(() => true)
+    runtime.setPtyController({
+      write,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Terminal',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'live-pty'
+        }
+      ]
+    })
+    const handle = (await runtime.listTerminals('id:repo-1::/tmp/worktree-a')).terminals[0]?.handle
+    listProcesses.mockClear()
+
+    await runtime.sendTerminal(handle!, { text: 'a' })
+
+    expect(listProcesses).not.toHaveBeenCalled()
+    expect(write).toHaveBeenCalledWith('live-pty', 'a')
+  })
+
+  it('does not treat controller-missing renderer leaves as worktree terminals', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => []
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Stale Terminal',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'missing-pty'
+        }
+      ]
+    })
+
+    await expect(runtime.hasTerminalsForWorktree('id:repo-1::/tmp/worktree-a')).resolves.toBe(false)
+  })
+
+  it('does not mark remote runtime PTYs missing from the local controller', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => []
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Remote Terminal',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'remote:web-env@@terminal-1'
+        }
+      ]
+    })
+
+    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+
+    expect(terminals.terminals).toHaveLength(1)
+    expect(terminals.terminals[0]).toMatchObject({
+      ptyId: 'remote:web-env@@terminal-1',
+      connected: true,
+      writable: true
+    })
+  })
+
+  it('does not mark SSH PTYs missing when their provider did not participate in the refresh', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const ptyId = 'ssh:ssh-1@@relay-pty'
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcessProviderConnectionIds: () => [null],
+      listProcesses: async () => []
+    })
+    runtime.registerPty(ptyId, TEST_WORKTREE_ID, 'ssh-1')
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'SSH Terminal',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId
+        }
+      ]
+    })
+
+    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+
+    expect(terminals.terminals).toHaveLength(1)
+    expect(terminals.terminals[0]).toMatchObject({
+      ptyId,
+      connected: true,
+      writable: true
+    })
+  })
+
+  it('marks SSH PTYs missing when their provider participates in an empty refresh', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const ptyId = 'ssh:ssh-1@@relay-pty'
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcessProviderConnectionIds: () => [null, 'ssh-1'],
+      listProcesses: async () => []
+    })
+    runtime.registerPty(ptyId, TEST_WORKTREE_ID, 'ssh-1')
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'SSH Terminal',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId
+        }
+      ]
+    })
+
+    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+
+    expect(terminals.terminals).toEqual([])
+  })
+
+  it('lists a split leaf again when a controller-confirmed-missing PTY reappears', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const processLists = [
+      [] as { id: string; cwd: string; title: string }[],
+      [{ id: 'flaky-pty', cwd: TEST_WORKTREE_PATH, title: 'flaky' }]
+    ]
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => processLists.shift() ?? []
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Flaky Terminal',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'flaky-pty'
+        }
+      ]
+    })
+
+    await expect(runtime.listTerminals('id:repo-1::/tmp/worktree-a')).resolves.toMatchObject({
+      terminals: []
+    })
+
+    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+
+    expect(terminals.terminals).toHaveLength(1)
+    expect(terminals.terminals[0]).toMatchObject({
+      ptyId: 'flaky-pty',
+      connected: true,
+      writable: true
+    })
+  })
+
+  it('lists a controller-confirmed-missing split leaf again when PTY output arrives', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const processResults: (Error | { id: string; cwd: string; title: string }[])[] = [
+      [],
+      new Error('controller temporarily unavailable')
+    ]
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => {
+        const next = processResults.shift()
+        if (next instanceof Error) {
+          throw next
+        }
+        return next ?? []
+      }
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Output Terminal',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'flaky-output-pty'
+        }
+      ]
+    })
+
+    await expect(runtime.listTerminals('id:repo-1::/tmp/worktree-a')).resolves.toMatchObject({
+      terminals: []
+    })
+
+    runtime.onPtyData('flaky-output-pty', 'still alive\n', 123)
+    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+
+    expect(terminals.terminals).toHaveLength(1)
+    expect(terminals.terminals[0]).toMatchObject({
+      ptyId: 'flaky-output-pty',
+      connected: true,
+      writable: true,
+      preview: 'still alive'
+    })
+  })
+
+  it('does not issue agent-status terminal handles for controller-missing leaves', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => []
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Stale Terminal',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'missing-agent-pty'
+        }
+      ]
+    })
+
+    await expect(runtime.listTerminals('id:repo-1::/tmp/worktree-a')).resolves.toMatchObject({
+      terminals: []
+    })
+
+    expect(runtime.getAgentStatusTerminalHandleForPaneKey('tab-1:pane:1')).toBeUndefined()
+  })
+
+  it('skips stale mobile-session active handles while the renderer graph is reloading', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [
+        { id: 'live-sibling-pty', cwd: TEST_WORKTREE_PATH, title: 'live sibling' }
+      ]
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'Split Terminal',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'missing-split-pty'
+        },
+        {
+          tabId: 'tab-1',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:2',
+          paneRuntimeId: 2,
+          ptyId: 'live-sibling-pty'
+        }
+      ],
+      mobileSessionTabs: [
+        {
+          worktree: TEST_WORKTREE_ID,
+          publicationEpoch: 'renderer-snapshot',
+          snapshotVersion: 1,
+          activeGroupId: 'group-1',
+          activeTabId: 'tab-1::pane:1',
+          activeTabType: 'terminal',
+          tabs: [
+            {
+              type: 'terminal',
+              id: 'tab-1::pane:1',
+              parentTabId: 'tab-1',
+              leafId: 'pane:1',
+              title: 'missing split',
+              ptyId: 'missing-split-pty',
+              isActive: true
+            },
+            {
+              type: 'terminal',
+              id: 'tab-1::pane:2',
+              parentTabId: 'tab-1',
+              leafId: 'pane:2',
+              title: 'live sibling',
+              ptyId: 'live-sibling-pty',
+              isActive: false
+            }
+          ]
+        }
+      ]
+    })
+    runtime.markRendererReloading(1)
+
+    const handle = await runtime.resolveActiveTerminal('id:repo-1::/tmp/worktree-a')
+    const shown = await runtime.showTerminal(handle)
+
+    expect(shown).toMatchObject({
+      ptyId: 'live-sibling-pty',
+      connected: true
+    })
+  })
+
+  it('does not confirm a PTY missing when it is registered during an in-flight refresh', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const refreshStarted = deferred<void>()
+    const refreshSnapshot = deferred<{ id: string; cwd: string; title: string }[]>()
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => {
+        refreshStarted.resolve()
+        return await refreshSnapshot.promise
+      }
+    })
+
+    const listPromise = runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+    await refreshStarted.promise
+    runtime.registerPty('late-pty', 'repo-1::/tmp/worktree-a')
+    refreshSnapshot.resolve([])
+
+    const terminals = await listPromise
+
+    expect(terminals.terminals).toHaveLength(1)
+    expect(terminals.terminals[0]).toMatchObject({
+      ptyId: 'late-pty',
+      connected: true,
+      writable: true
+    })
+  })
+
+  it('does not confirm an existing PTY missing when the same id is re-registered during an in-flight refresh', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const refreshStarted = deferred<void>()
+    const refreshSnapshot = deferred<{ id: string; cwd: string; title: string }[]>()
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => {
+        refreshStarted.resolve()
+        return await refreshSnapshot.promise
+      }
+    })
+    runtime.registerPty('reattached-pty', 'repo-1::/tmp/worktree-a')
+
+    const listPromise = runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+    await refreshStarted.promise
+    runtime.registerPty('reattached-pty', 'repo-1::/tmp/worktree-a')
+    refreshSnapshot.resolve([])
+
+    const terminals = await listPromise
+
+    expect(terminals.terminals).toHaveLength(1)
+    expect(terminals.terminals[0]).toMatchObject({
+      ptyId: 'reattached-pty',
+      connected: true,
+      writable: true
+    })
   })
 
   it('fails terminal listing closed when fresh PTY liveness is required and unavailable', async () => {
@@ -14097,6 +15029,59 @@ describe('OrcaRuntimeService', () => {
       coordinatorHandle,
       orchestrationRunId: 'run-1'
     })
+  })
+
+  it('does not return orchestration context for controller-missing terminal leaves', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const leafId = '55555555-5555-4555-8555-555555555555'
+    const paneKey = makePaneKey('tab-worker', leafId)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => []
+    })
+    runtime.setOrchestrationDb({
+      getActiveDispatchForTerminal: vi.fn(() => ({
+        id: 'ctx-1',
+        task_id: 'task-1',
+        assignee_handle: 'stale-handle',
+        status: 'dispatched'
+      })),
+      getLatestDispatchForTerminal: vi.fn(() => undefined),
+      getTask: vi.fn(() => undefined),
+      getActiveCoordinatorRun: vi.fn(() => undefined)
+    } as never)
+    runtime.attachWindow(1)
+    const graph = {
+      tabs: [
+        {
+          tabId: 'tab-worker',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Claude Code',
+          activeLeafId: leafId,
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-worker',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId,
+          paneRuntimeId: 1,
+          ptyId: 'missing-orchestration-pty',
+          paneTitle: null
+        }
+      ]
+    }
+    runtime.syncWindowGraph(1, graph)
+
+    await expect(runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)).resolves.toMatchObject({
+      terminals: []
+    })
+    const result = runtime.syncWindowGraph(1, graph)
+
+    expect(result.agentOrchestrationByPaneKey?.[paneKey]).toBeUndefined()
   })
 
   it('returns completed orchestration context for renderer-synced terminal leaves', () => {

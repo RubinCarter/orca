@@ -921,6 +921,7 @@ type RuntimePtyController = {
   clearBuffer?(ptyId: string): Promise<void>
   resize?(ptyId: string, cols: number, rows: number): boolean
   listProcesses?(): Promise<{ id: string; cwd: string; title: string }[]>
+  listProcessProviderConnectionIds?(): readonly (string | null)[]
   serializeBuffer?(
     ptyId: string,
     opts?: { scrollbackRows?: number; altScreenForcesZeroRows?: boolean }
@@ -1757,6 +1758,9 @@ export class OrcaRuntimeService {
   // iterates them all. Listeners are cleaned up via subscriptionCleanups.
   private notificationListeners = new Set<(event: MobileNotificationEvent) => void>()
   private ptysById = new Map<string, RuntimePtyWorktreeRecord>()
+  private controllerConfirmedMissingPtyIds = new Set<string>()
+  private controllerPtyRegistrationGenerationById = new Map<string, number>()
+  private controllerPtyRegistrationGeneration = 0
   private titleObservationSequence = 0
   private headlessTerminals = new Map<string, RuntimeHeadlessTerminal>()
   private ptyOutputSequenceById = new Map<string, number>()
@@ -2484,12 +2488,16 @@ export class OrcaRuntimeService {
       const existingPty = ptyId ? this.ptysById.get(ptyId) : undefined
       const tailSource = existing?.ptyId === ptyId ? existing : existingPty
 
+      const controllerConfirmedMissing =
+        ptyId !== null && this.isControllerConfirmedMissingPtyId(ptyId)
+      const connected = ptyId !== null && !controllerConfirmedMissing
+
       nextLeaves.set(leafKey, {
         ...leaf,
         ptyId,
         ptyGeneration,
-        connected: ptyId !== null,
-        writable: this.graphStatus === 'ready' && ptyId !== null,
+        connected,
+        writable: this.graphStatus === 'ready' && connected,
         lastOutputAt: tailSource?.lastOutputAt ?? null,
         lastExitCode: tailSource?.lastExitCode ?? null,
         tailBuffer: tailSource?.tailBuffer ?? [],
@@ -2508,8 +2516,9 @@ export class OrcaRuntimeService {
       })
 
       if (leaf.ptyId) {
+        const recordConnected = !this.isControllerConfirmedMissingPtyId(leaf.ptyId)
         this.recordPtyWorktree(leaf.ptyId, leaf.worktreeId, {
-          connected: true,
+          connected: recordConnected,
           lastOutputAt: existing?.ptyId === leaf.ptyId ? existing.lastOutputAt : null,
           preview: existing?.ptyId === leaf.ptyId ? existing.preview : '',
           tabId: leaf.tabId,
@@ -3344,7 +3353,9 @@ export class OrcaRuntimeService {
         return true
       }
       const pty = this.findPtyForMobileTerminalTab(worktreeId, candidate)
-      if (pty?.connected) {
+      if (pty) {
+        // Why: a controller-missing verdict is non-destructive; an explicit
+        // close should still ask the provider to tear down the pane's PTY id.
         this.ptyController?.kill(pty.ptyId)
       } else {
         const persistedSshPtyId = this.getPersistedSshPtyIdForMobileTerminalTab(candidate)
@@ -3778,6 +3789,7 @@ export class OrcaRuntimeService {
   }
 
   onPtySpawned(ptyId: string): void {
+    this.markControllerPtyRegistered(ptyId)
     const pty = this.getOrCreatePtyWorktreeRecord(ptyId)
     if (pty) {
       pty.connected = true
@@ -3791,6 +3803,7 @@ export class OrcaRuntimeService {
   }
 
   registerPty(ptyId: string, worktreeId: string, connectionId: string | null = null): void {
+    this.markControllerPtyRegistered(ptyId)
     this.recordPtyWorktree(ptyId, worktreeId, { connected: true, connectionId })
   }
 
@@ -3840,8 +3853,7 @@ export class OrcaRuntimeService {
       : null
     let ptyTailAfter: ReturnType<typeof appendNormalizedToTailBuffer> | null = null
     if (pty) {
-      pty.connected = true
-      pty.disconnectedAt = null
+      this.markControllerPtyLive(ptyId)
       pty.lastOutputAt = at
       const normalized = normalizeTerminalChunk(data, pty.tailPendingAnsi)
       pty.tailPendingAnsi = normalized.pendingAnsi
@@ -6575,6 +6587,11 @@ export class OrcaRuntimeService {
           continue
         }
         if (opts.requireFreshPtyLiveness && leaf.ptyId && !refreshedPtyLiveness?.has(leaf.ptyId)) {
+          if (this.isControllerReconciledPtyId(leaf.ptyId)) {
+            continue
+          }
+        }
+        if (this.isControllerConfirmedMissingPtyId(leaf.ptyId)) {
           continue
         }
         if (!leaf.ptyId && livePtyWorktreeIds.has(leaf.worktreeId)) {
@@ -6594,7 +6611,11 @@ export class OrcaRuntimeService {
       if (!pty.connected || ptyIdsFromLeaves.has(pty.ptyId)) {
         continue
       }
-      if (opts.requireFreshPtyLiveness && !refreshedPtyLiveness?.has(pty.ptyId)) {
+      if (
+        opts.requireFreshPtyLiveness &&
+        !refreshedPtyLiveness?.has(pty.ptyId) &&
+        this.isControllerReconciledPtyId(pty.ptyId)
+      ) {
         continue
       }
       if (targetWorktreeId && pty.worktreeId !== targetWorktreeId) {
@@ -6614,6 +6635,7 @@ export class OrcaRuntimeService {
   // terminal in the current worktree — matching browser's implicit active tab.
   async resolveActiveTerminal(worktreeSelector?: string): Promise<string> {
     if (this.graphStatus !== 'ready') {
+      await this.refreshPtyLivenessForTerminalAction()
       const targetWorktreeId = worktreeSelector
         ? (await this.resolveWorktreeSelector(worktreeSelector)).id
         : null
@@ -6644,6 +6666,7 @@ export class OrcaRuntimeService {
     const targetWorktreeId = worktreeSelector
       ? (await this.resolveWorktreeSelector(worktreeSelector)).id
       : null
+    await this.refreshPtyLivenessForTerminalAction()
 
     // Prefer the tab's activeLeafId — this is the pane the user last focused
     for (const tab of this.tabs.values()) {
@@ -6655,7 +6678,7 @@ export class OrcaRuntimeService {
       }
       const leafKey = this.getLeafKey(tab.tabId, tab.activeLeafId)
       const leaf = this.leaves.get(leafKey)
-      if (leaf) {
+      if (leaf && this.isLeafEligibleForTerminalProjection(leaf)) {
         return this.issueHandle(leaf)
       }
     }
@@ -6665,6 +6688,9 @@ export class OrcaRuntimeService {
       if (targetWorktreeId && leaf.worktreeId !== targetWorktreeId) {
         continue
       }
+      if (!this.isLeafEligibleForTerminalProjection(leaf)) {
+        continue
+      }
       return this.issueHandle(leaf)
     }
 
@@ -6672,6 +6698,7 @@ export class OrcaRuntimeService {
   }
 
   async showTerminal(handle: string): Promise<RuntimeTerminalShow> {
+    await this.refreshPtyLivenessForTerminalAction()
     const pty = this.getLivePtyForHandle(handle)
     if (pty) {
       const worktreesById = await this.getResolvedWorktreeMap()
@@ -6701,6 +6728,7 @@ export class OrcaRuntimeService {
     handle: string,
     opts: { cursor?: number; limit?: number } = {}
   ): Promise<RuntimeTerminalRead> {
+    await this.refreshPtyLivenessForTerminalAction()
     const pty = this.getLivePtyForHandle(handle)
     if (pty) {
       const read = this.readPtyTerminal(handle, pty.pty, opts)
@@ -6803,6 +6831,9 @@ export class OrcaRuntimeService {
     }
   ): Promise<RuntimeTerminalWait> {
     const condition = options?.condition ?? 'exit'
+    if (this.ptyController?.listProcesses) {
+      await this.refreshPtyLivenessForTerminalAction()
+    }
     const pty = this.getLivePtyForHandle(handle)
     if (pty) {
       if (condition === 'exit' && !pty.pty.connected) {
@@ -7113,6 +7144,9 @@ export class OrcaRuntimeService {
 
     const countedPtyIds = new Set<string>()
     for (const leaf of this.leaves.values()) {
+      if (!this.isLeafEligibleForTerminalProjection(leaf)) {
+        continue
+      }
       const summary = this.getSummaryForRuntimeWorktreeId(
         summaries,
         resolvedWorktrees,
@@ -7167,7 +7201,8 @@ export class OrcaRuntimeService {
 
     const session = this.store?.getWorkspaceSession?.()
     for (const [worktreeId, tabs] of Object.entries(session?.tabsByWorktree ?? {})) {
-      if (tabs.length === 0) {
+      const liveTabs = tabs.filter((tab) => this.getPersistedTerminalTabLivePtyIds(tab).length > 0)
+      if (liveTabs.length === 0) {
         continue
       }
       const summary = this.getSummaryForRuntimeWorktreeId(summaries, resolvedWorktrees, worktreeId)
@@ -7177,12 +7212,17 @@ export class OrcaRuntimeService {
       // Why: desktop can show terminal tabs that are not mounted as renderer
       // leaves and are not currently visible in the PTY provider list. Mobile
       // still needs those worktrees to show as terminal-bearing entries.
-      summary.liveTerminalCount = Math.max(summary.liveTerminalCount, tabs.length)
-      summary.hasAttachedPty = summary.hasAttachedPty || tabs.some((tab) => tab.ptyId !== null)
-      for (const tab of tabs) {
+      summary.liveTerminalCount = Math.max(summary.liveTerminalCount, liveTabs.length)
+      summary.hasAttachedPty =
+        summary.hasAttachedPty ||
+        liveTabs.some((tab) => this.getPersistedTerminalTabLivePtyIds(tab).some(Boolean))
+      for (const tab of liveTabs) {
         summary.status = mergeWorktreeStatus(
           summary.status,
-          getSavedTabWorktreeStatus(tab.title, tab.ptyId !== null)
+          getSavedTabWorktreeStatus(
+            tab.title,
+            this.getPersistedTerminalTabLivePtyIds(tab).some(Boolean)
+          )
         )
       }
     }
@@ -13383,6 +13423,7 @@ export class OrcaRuntimeService {
   }
 
   async focusTerminal(handle: string): Promise<RuntimeTerminalFocus> {
+    await this.refreshPtyLivenessForTerminalAction()
     const pty = this.getLivePtyForHandle(handle)
     if (pty) {
       if (!pty.pty.connected) {
@@ -13445,6 +13486,7 @@ export class OrcaRuntimeService {
       telemetrySource?: TerminalPaneSplitSource
     } = {}
   ): Promise<RuntimeTerminalSplit> {
+    await this.refreshPtyLivenessForTerminalAction()
     const livePty = this.getLivePtyForHandle(handle)
     if (livePty) {
       return await this.splitPtyBackedTerminal(livePty.pty, opts)
@@ -13630,15 +13672,27 @@ export class OrcaRuntimeService {
     const graphEpoch = this.captureReadyGraphEpoch()
     const worktree = await this.resolveWorktreeSelector(worktreeSelector)
     this.assertStableReadyGraph(graphEpoch)
-    const ptyIds = new Set<string>()
-    for (const leaf of this.leaves.values()) {
-      if (leaf.worktreeId === worktree.id && leaf.ptyId) {
-        ptyIds.add(leaf.ptyId)
+    const resolvedWorktrees = [...(await this.getResolvedWorktreeMap()).values()]
+    const refreshedPtyLiveness =
+      await this.refreshPtyWorktreeRecordsFromController(resolvedWorktrees)
+    this.assertStableReadyGraph(graphEpoch)
+    const ptyIds = refreshedPtyLiveness
+      ? this.getLivePtyIdsForWorktree(worktree.id, refreshedPtyLiveness)
+      : new Set<string>()
+    if (!refreshedPtyLiveness) {
+      for (const leaf of this.leaves.values()) {
+        if (
+          leaf.worktreeId === worktree.id &&
+          leaf.ptyId &&
+          this.isLeafEligibleForTerminalProjection(leaf)
+        ) {
+          ptyIds.add(leaf.ptyId)
+        }
       }
-    }
-    for (const pty of this.ptysById.values()) {
-      if (pty.worktreeId === worktree.id && pty.connected) {
-        ptyIds.add(pty.ptyId)
+      for (const pty of this.ptysById.values()) {
+        if (pty.worktreeId === worktree.id && pty.connected) {
+          ptyIds.add(pty.ptyId)
+        }
       }
     }
 
@@ -13758,8 +13812,15 @@ export class OrcaRuntimeService {
     const graphEpoch = this.captureReadyGraphEpoch()
     const worktree = await this.resolveWorktreeSelector(worktreeSelector)
     this.assertStableReadyGraph(graphEpoch)
+    await this.refreshPtyLivenessForTerminalAction()
+    this.assertStableReadyGraph(graphEpoch)
     for (const leaf of this.leaves.values()) {
-      if (leaf.worktreeId === worktree.id && leaf.ptyId) {
+      if (
+        leaf.worktreeId === worktree.id &&
+        leaf.ptyId &&
+        leaf.connected &&
+        !this.isControllerConfirmedMissingPtyId(leaf.ptyId)
+      ) {
         return true
       }
     }
@@ -14863,6 +14924,15 @@ export class OrcaRuntimeService {
     if (!this.ptyController?.listProcesses) {
       return null
     }
+    const participatingConnectionIds = new Set(
+      this.ptyController.listProcessProviderConnectionIds?.() ??
+        [...this.ptysById.values()].map((pty) => pty.connectionId)
+    )
+    const reconciliationCandidates = new Map(
+      [...this.ptysById.values()]
+        .filter((pty) => this.isControllerReconciledPtyRecord(pty, participatingConnectionIds))
+        .map((pty) => [pty.ptyId, this.controllerPtyRegistrationGenerationById.get(pty.ptyId) ?? 0])
+    )
     const sessionsResult = await withTimeoutResult(
       this.ptyController.listProcesses(),
       PTY_CONTROLLER_LIST_TIMEOUT_MS
@@ -14874,6 +14944,7 @@ export class OrcaRuntimeService {
     const sessions = sessionsResult.value
     const livePtyIds = new Set(sessions.map((session) => session.id))
     for (const session of sessions) {
+      this.markControllerPtyLive(session.id)
       const worktreeId =
         inferWorktreeIdFromPtyId(session.id) ??
         findResolvedWorktreeIdForPath(resolvedWorktrees, session.cwd)
@@ -14886,14 +14957,81 @@ export class OrcaRuntimeService {
         })
       }
     }
-    for (const pty of this.ptysById.values()) {
-      if (!livePtyIds.has(pty.ptyId) && !this.leafExistsForPty(pty.ptyId)) {
-        pty.connected = false
-        pty.disconnectedAt ??= Date.now()
+    for (const [ptyId, registrationGeneration] of reconciliationCandidates) {
+      if (!livePtyIds.has(ptyId)) {
+        if (
+          (this.controllerPtyRegistrationGenerationById.get(ptyId) ?? 0) !== registrationGeneration
+        ) {
+          continue
+        }
+        this.markControllerPtyMissing(ptyId)
       }
     }
     this.pruneDisconnectedPtyRecords()
     return livePtyIds
+  }
+
+  private async refreshPtyLivenessForTerminalAction(): Promise<Set<string> | null> {
+    return await this.refreshPtyWorktreeRecordsFromController([])
+  }
+
+  private isControllerReconciledPtyId(ptyId: string): boolean {
+    return !ptyId.startsWith('remote:')
+  }
+
+  private isControllerReconciledPtyRecord(
+    pty: RuntimePtyWorktreeRecord,
+    participatingConnectionIds: ReadonlySet<string | null>
+  ): boolean {
+    return (
+      this.isControllerReconciledPtyId(pty.ptyId) &&
+      participatingConnectionIds.has(pty.connectionId)
+    )
+  }
+
+  private isControllerConfirmedMissingPtyId(ptyId: string | null | undefined): boolean {
+    return typeof ptyId === 'string' && this.controllerConfirmedMissingPtyIds.has(ptyId)
+  }
+
+  private markControllerPtyRegistered(ptyId: string): void {
+    this.controllerPtyRegistrationGeneration += 1
+    this.controllerPtyRegistrationGenerationById.set(
+      ptyId,
+      this.controllerPtyRegistrationGeneration
+    )
+    this.markControllerPtyLive(ptyId)
+  }
+
+  private markControllerPtyLive(ptyId: string): void {
+    this.controllerConfirmedMissingPtyIds.delete(ptyId)
+    const pty = this.ptysById.get(ptyId)
+    if (pty) {
+      pty.connected = true
+      pty.disconnectedAt = null
+    }
+    for (const leaf of this.getLeavesForPty(ptyId)) {
+      leaf.connected = true
+      leaf.writable = this.graphStatus === 'ready'
+    }
+  }
+
+  private markControllerPtyMissing(ptyId: string): void {
+    if (!this.isControllerReconciledPtyId(ptyId)) {
+      return
+    }
+    this.controllerConfirmedMissingPtyIds.add(ptyId)
+    const pty = this.ptysById.get(ptyId)
+    if (pty) {
+      pty.connected = false
+      pty.disconnectedAt ??= Date.now()
+    }
+    // Why: controller absence is only a soft liveness verdict; invalidate
+    // stale leaf handles without tearing down the renderer's pane/layout.
+    for (const leaf of this.getLeavesForPty(ptyId)) {
+      leaf.connected = false
+      leaf.writable = false
+      this.invalidateLeafHandle(this.getLeafKey(leaf.tabId, leaf.leafId))
+    }
   }
 
   private pruneDisconnectedPtyTranscript(pty: RuntimePtyWorktreeRecord): void {
@@ -14924,6 +15062,8 @@ export class OrcaRuntimeService {
   private dropDisconnectedPtyRecord(ptyId: string): void {
     // Why: pruning can remove a PTY without the normal exit callback.
     serveSimStateWatcher.unbindPty(ptyId)
+    this.controllerConfirmedMissingPtyIds.delete(ptyId)
+    this.controllerPtyRegistrationGenerationById.delete(ptyId)
     this.ptysById.delete(ptyId)
     this.recentPtyOutputById.delete(ptyId)
     this.ptyOutputSequenceById.delete(ptyId)
@@ -14991,6 +15131,8 @@ export class OrcaRuntimeService {
   ): RuntimeTerminalSummary {
     const worktree = worktreesById.get(leaf.worktreeId)
     const tab = this.tabs.get(leaf.tabId) ?? null
+    const connected = leaf.connected && !this.isControllerConfirmedMissingPtyId(leaf.ptyId)
+    const writable = leaf.writable && connected
 
     return {
       handle: this.issueHandle(leaf),
@@ -15001,8 +15143,8 @@ export class OrcaRuntimeService {
       tabId: leaf.tabId,
       leafId: leaf.leafId,
       title: getLatestLeafTitle(leaf, tab?.title ?? null),
-      connected: leaf.connected,
-      writable: leaf.writable,
+      connected,
+      writable,
       lastOutputAt: leaf.lastOutputAt,
       preview: leaf.preview
     }
@@ -15613,7 +15755,7 @@ export class OrcaRuntimeService {
     }
     const contexts: Record<string, AgentStatusOrchestrationContext> = {}
     for (const leaf of this.leaves.values()) {
-      if (!leaf.ptyId) {
+      if (!leaf.ptyId || !this.isLeafEligibleForTerminalProjection(leaf)) {
         continue
       }
       const handle = this.issueHandle(leaf)
@@ -15623,7 +15765,12 @@ export class OrcaRuntimeService {
       }
     }
     for (const pty of this.ptysById.values()) {
-      if (!pty.paneKey || contexts[pty.paneKey]) {
+      if (
+        !pty.paneKey ||
+        contexts[pty.paneKey] ||
+        !pty.connected ||
+        this.isControllerConfirmedMissingPtyId(pty.ptyId)
+      ) {
         continue
       }
       const handle = this.issuePtyHandle(pty)
@@ -15692,12 +15839,16 @@ export class OrcaRuntimeService {
     const parsed = parsePaneKey(paneKey)
     if (parsed) {
       const leaf = this.leaves.get(this.getLeafKey(parsed.tabId, parsed.leafId))
-      if (leaf?.ptyId) {
+      if (leaf?.ptyId && this.isLeafEligibleForTerminalProjection(leaf)) {
         return this.issueHandle(leaf)
       }
     }
     for (const pty of this.ptysById.values()) {
-      if (pty.paneKey === paneKey) {
+      if (
+        pty.paneKey === paneKey &&
+        pty.connected &&
+        !this.isControllerConfirmedMissingPtyId(pty.ptyId)
+      ) {
         return this.issuePtyHandle(pty)
       }
     }
@@ -16052,6 +16203,9 @@ export class OrcaRuntimeService {
     if (!leaf || leaf.ptyId !== record.ptyId || leaf.ptyGeneration !== record.ptyGeneration) {
       throw new Error('terminal_handle_stale')
     }
+    if (this.isControllerConfirmedMissingPtyId(leaf.ptyId)) {
+      throw new Error('terminal_handle_stale')
+    }
     return { record, leaf }
   }
 
@@ -16208,8 +16362,28 @@ export class OrcaRuntimeService {
 
   private refreshWritableFlags(): void {
     for (const leaf of this.leaves.values()) {
-      leaf.writable = this.graphStatus === 'ready' && leaf.connected && leaf.ptyId !== null
+      leaf.writable =
+        this.graphStatus === 'ready' &&
+        leaf.connected &&
+        leaf.ptyId !== null &&
+        !this.isControllerConfirmedMissingPtyId(leaf.ptyId)
     }
+  }
+
+  private isLeafEligibleForTerminalProjection(leaf: RuntimeLeafRecord): boolean {
+    return leaf.connected && !this.isControllerConfirmedMissingPtyId(leaf.ptyId)
+  }
+
+  private getPersistedTerminalTabLivePtyIds(tab: TerminalTab): (string | null)[] {
+    const session = this.store?.getWorkspaceSession?.()
+    const layout = session?.terminalLayoutsByTabId?.[tab.id]
+    const ptyIds =
+      layout && Object.keys(layout.ptyIdsByLeafId ?? {}).length > 0
+        ? Object.values(layout.ptyIdsByLeafId ?? {})
+        : [tab.ptyId]
+    return ptyIds.filter(
+      (ptyId) => ptyId === null || !this.isControllerConfirmedMissingPtyId(ptyId)
+    )
   }
 
   private invalidateLeafHandle(leafKey: string): void {
