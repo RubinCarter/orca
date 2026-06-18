@@ -460,6 +460,18 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
   })
   let storedCallbacks: Parameters<PtyTransport['connect']>[0]['callbacks'] = {}
 
+  function unregisterPtyHandlers(id: string): void {
+    ptyDataHandlers.delete(id)
+    ptyReplayHandlers.delete(id)
+    ptyExitHandlers.delete(id)
+    ptyTeardownHandlers.delete(id)
+  }
+
+  function unregisterPtyDataAndStatusHandlers(id: string): void {
+    ptyDataHandlers.delete(id)
+    ptyReplayHandlers.delete(id)
+  }
+
   // Why: true while we're replaying buffered/attach-time bytes into the
   // terminal. Routes those bytes through onReplayData so the renderer can
   // engage the replay guard — otherwise xterm auto-replies to embedded
@@ -468,15 +480,18 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
 
   // Why: shared by connect() and attach() to avoid duplicating title/bell/exit
   // logic across the two code paths that register a PTY.
-  function registerPtyDataHandler(id: string): () => void {
-    const replayHandler = (data: string): void => {
+  function registerPtyDataHandler(id: string): void {
+    // Why: relay pty.attach sends replay data via a dedicated pty:replay IPC
+    // channel. Route it through onReplayData so the renderer engages the
+    // replay guard and xterm auto-replies do not leak into the shell.
+    ptyReplayHandlers.set(id, (data) => {
       if (storedCallbacks.onReplayData) {
         storedCallbacks.onReplayData(data)
       } else {
         storedCallbacks.onData?.(data)
       }
-    }
-    const dataHandler = (data: string, meta?: PtyDataMeta): void => {
+    })
+    ptyDataHandlers.set(id, (data, meta) => {
       outputProcessor.processData(
         data,
         storedCallbacks,
@@ -486,74 +501,30 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
         },
         meta
       )
-    }
-
-    // Why: relay pty.attach sends replay data via a dedicated pty:replay IPC
-    // channel. Route it through onReplayData so the renderer engages the
-    // replay guard and xterm auto-replies do not leak into the shell.
-    ptyReplayHandlers.set(id, replayHandler)
-    ptyDataHandlers.set(id, dataHandler)
-
-    return () => {
-      // Why: pane remounts can briefly have an old transport cleaning up after
-      // a replacement has already attached the same PTY. Only remove handlers
-      // still owned by this transport so a stale cleanup cannot freeze output.
-      if (ptyReplayHandlers.get(id) === replayHandler) {
-        ptyReplayHandlers.delete(id)
-      }
-      if (ptyDataHandlers.get(id) === dataHandler) {
-        ptyDataHandlers.delete(id)
-      }
-    }
+    })
   }
 
   function clearAccumulatedState(): void {
     outputProcessor.clearAccumulatedState()
   }
 
-  function registerPtyExitHandler(id: string): () => void {
-    const exitHandler = (code: number): void => {
+  function registerPtyExitHandler(id: string): void {
+    ptyExitHandlers.set(id, (code) => {
       clearAccumulatedState()
       connected = false
       ptyId = null
-      unregisterPtyHandlers()
+      unregisterPtyHandlers(id)
       storedCallbacks.onExit?.(code)
       storedCallbacks.onDisconnect?.()
       onPtyExit?.(id)
-    }
-    ptyExitHandlers.set(id, exitHandler)
+    })
     // Why: shutdownWorktreeTerminals bypasses the transport layer — it
     // kills PTYs directly via IPC without calling disconnect()/destroy().
     // This teardown callback lets unregisterPtyDataHandlers cancel
     // accumulated closure state (staleTitleTimer, agent tracker) that
     // would otherwise fire stale notifications after the data handler
     // is removed but before the exit event arrives.
-    const teardownHandler = clearAccumulatedState
-    ptyTeardownHandlers.set(id, teardownHandler)
-
-    return () => {
-      if (ptyExitHandlers.get(id) === exitHandler) {
-        ptyExitHandlers.delete(id)
-      }
-      if (ptyTeardownHandlers.get(id) === teardownHandler) {
-        ptyTeardownHandlers.delete(id)
-      }
-    }
-  }
-
-  let unregisterPtyDataHandlersForCurrentTransport: (() => void) | null = null
-  let unregisterPtyExitHandlersForCurrentTransport: (() => void) | null = null
-
-  function unregisterPtyHandlers(): void {
-    unregisterPtyDataHandlersForCurrentTransport?.()
-    unregisterPtyDataHandlersForCurrentTransport = null
-    unregisterPtyExitHandlersForCurrentTransport?.()
-    unregisterPtyExitHandlersForCurrentTransport = null
-  }
-
-  function unregisterPtyDataAndStatusHandlers(): void {
-    unregisterPtyDataHandlersForCurrentTransport?.()
-    unregisterPtyDataHandlersForCurrentTransport = null
+    ptyTeardownHandlers.set(id, clearAccumulatedState)
   }
 
   return {
@@ -599,9 +570,8 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
           onPtySpawn?.(spawnResult.id)
         }
 
-        unregisterPtyHandlers()
-        unregisterPtyDataHandlersForCurrentTransport = registerPtyDataHandler(spawnResult.id)
-        unregisterPtyExitHandlersForCurrentTransport = registerPtyExitHandler(spawnResult.id)
+        registerPtyDataHandler(spawnResult.id)
+        registerPtyExitHandler(spawnResult.id)
 
         storedCallbacks.onConnect?.()
         storedCallbacks.onStatus?.('shell')
@@ -670,9 +640,8 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
       connected = true
       // Why: skip onPtySpawn — it would reset lastActivityAt and destroy the
       // recency sort order that reconnectPersistedTerminals preserved.
-      unregisterPtyHandlers()
-      unregisterPtyDataHandlersForCurrentTransport = registerPtyDataHandler(id)
-      unregisterPtyExitHandlersForCurrentTransport = registerPtyExitHandler(id)
+      registerPtyDataHandler(id)
+      registerPtyExitHandler(id)
 
       // Why: hidden automation PTYs may have already rendered their TUI into
       // the eager buffer. Clear stale pane contents before replaying that
@@ -750,7 +719,7 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
         window.api.pty.kill(id)
         connected = false
         ptyId = null
-        unregisterPtyHandlers()
+        unregisterPtyHandlers(id)
         storedCallbacks.onDisconnect?.()
       }
     },
@@ -763,7 +732,7 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
         // unmounted pane immediately, but keep the PTY exit observer alive so
         // a shell that dies during the remount gap can still clear stale
         // tab/leaf bindings before the next pane attempts to reattach.
-        unregisterPtyDataAndStatusHandlers()
+        unregisterPtyDataAndStatusHandlers(ptyId)
       }
       connected = false
       ptyId = null

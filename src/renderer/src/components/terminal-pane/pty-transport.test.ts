@@ -931,30 +931,6 @@ describe('createIpcPtyTransport', () => {
     expect(onPtyExit).toHaveBeenCalledWith('pty-detached')
     expect(transport.getPtyId()).toBeNull()
   })
-
-  it('does not let a stale detach remove a newer pane data handler for the same PTY', async () => {
-    const { createIpcPtyTransport } = await import('./pty-transport')
-    const oldPaneData = vi.fn()
-    const newPaneData = vi.fn()
-
-    const oldTransport = createIpcPtyTransport()
-    oldTransport.attach({
-      existingPtyId: 'pty-remount',
-      callbacks: { onData: oldPaneData }
-    })
-
-    const newTransport = createIpcPtyTransport()
-    newTransport.attach({
-      existingPtyId: 'pty-remount',
-      callbacks: { onData: newPaneData }
-    })
-
-    oldTransport.detach?.()
-    onData?.({ id: 'pty-remount', data: 'still live' })
-
-    expect(oldPaneData).not.toHaveBeenCalledWith('still live')
-    expect(newPaneData).toHaveBeenCalledWith('still live')
-  })
 })
 
 describe('createRemoteRuntimePtyTransport', () => {
