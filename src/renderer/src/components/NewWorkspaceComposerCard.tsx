@@ -88,6 +88,10 @@ type NewWorkspaceComposerCardProps = {
   canReuseSelectedBranch: boolean
   reuseSelectedBranch: boolean
   onReuseSelectedBranchChange: (next: boolean) => void
+  /** Shows the footer "create another after this" toggle — worktree targets only. */
+  showCreateMultiple?: boolean
+  createMultiple?: boolean
+  onCreateMultipleChange?: (next: boolean) => void
   smartNameGitHubSourceContext?: TaskSourceContext | null
   /** Advisory shown under the name field when a fork PR can't accept maintainer pushes. */
   forkPushWarning: string | null
@@ -324,6 +328,9 @@ export default function NewWorkspaceComposerCard({
   canReuseSelectedBranch,
   reuseSelectedBranch,
   onReuseSelectedBranchChange,
+  showCreateMultiple = false,
+  createMultiple = false,
+  onCreateMultipleChange,
   smartNameGitHubSourceContext,
   forkPushWarning,
   detectedAgentIds,
@@ -1002,7 +1009,43 @@ export default function NewWorkspaceComposerCard({
         </div>
       ) : null}
 
-      <div className="flex justify-end">
+      <div
+        className={cn(
+          'flex items-center gap-3',
+          showCreateMultiple ? 'justify-between' : 'justify-end'
+        )}
+      >
+        {showCreateMultiple ? (
+          <label className="group flex w-fit cursor-pointer items-center gap-2 text-xs text-foreground">
+            <span
+              className={cn(
+                'flex size-4 items-center justify-center rounded-[3px] border shadow-sm transition',
+                createMultiple
+                  ? 'border-emerald-500/60 bg-emerald-500 text-white'
+                  : 'border-foreground/20 bg-background dark:border-white/20 dark:bg-muted/10'
+              )}
+            >
+              <Check
+                className={cn(
+                  'size-3 transition-opacity',
+                  createMultiple ? 'opacity-100' : 'opacity-0'
+                )}
+              />
+            </span>
+            <input
+              type="checkbox"
+              checked={createMultiple}
+              onChange={(event) => onCreateMultipleChange?.(event.target.checked)}
+              className="sr-only"
+            />
+            <span>
+              {translate(
+                'auto.components.NewWorkspaceComposerCard.createMultiple',
+                'Create another after this'
+              )}
+            </span>
+          </label>
+        ) : null}
         <Button
           onClick={() => void onCreate()}
           disabled={createDisabled}
