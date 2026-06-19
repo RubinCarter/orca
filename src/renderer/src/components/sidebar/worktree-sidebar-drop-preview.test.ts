@@ -87,6 +87,26 @@ describe('resolveWorktreeSidebarStatusDropCommitTarget', () => {
     })
   })
 
+  it('reuses the latest lineage target when pointerup hit-testing blanks at the same point', () => {
+    expect(
+      resolveWorktreeSidebarStatusDropCommitTarget({
+        currentTarget: { status: null, isPinDrop: false, lineageParentId: null },
+        currentPreview: null,
+        latestTrackedTarget: {
+          target: { status: null, isPinDrop: false, lineageParentId: 'parent-worktree' },
+          preview: null,
+          x: 100,
+          y: 100
+        },
+        x: 102,
+        y: 101
+      })
+    ).toEqual({
+      target: { status: null, isPinDrop: false, lineageParentId: 'parent-worktree' },
+      preview: null
+    })
+  })
+
   it('does not reuse a stale status target after the pointer has moved away', () => {
     expect(
       resolveWorktreeSidebarStatusDropCommitTarget({

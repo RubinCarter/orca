@@ -2760,7 +2760,9 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
             x: event.clientX,
             y: event.clientY
           })
-          if (target.isPinDrop) {
+          if (target.lineageParentId) {
+            commitWorktreeLineageParentDrop(drag.draggedIds, target.lineageParentId)
+          } else if (target.isPinDrop) {
             onPinWorktrees(drag.draggedIds)
           } else if (target.status) {
             if (statusDrop) {

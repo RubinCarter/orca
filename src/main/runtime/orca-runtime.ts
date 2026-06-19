@@ -12015,7 +12015,7 @@ export class OrcaRuntimeService {
     } catch (err) {
       throw new RuntimeLineageError(
         'LINEAGE_PARENT_CONTEXT_MISSING',
-        'Workspace directory is not writable. Cannot manage this external worktree.',
+        'Could not initialize worktree metadata. Cannot manage this external worktree.',
         err
       )
     }

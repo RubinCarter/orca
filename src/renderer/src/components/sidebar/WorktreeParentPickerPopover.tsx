@@ -142,7 +142,14 @@ export function WorktreeParentPickerPopover({
     if (!open) {
       return
     }
-    setAnchorRect(getAnchorRect(anchorElement))
+    const updateAnchorRect = (): void => setAnchorRect(getAnchorRect(anchorElement))
+    updateAnchorRect()
+    window.addEventListener('resize', updateAnchorRect)
+    window.addEventListener('scroll', updateAnchorRect, true)
+    return () => {
+      window.removeEventListener('resize', updateAnchorRect)
+      window.removeEventListener('scroll', updateAnchorRect, true)
+    }
   }, [anchorElement, open])
 
   useEffect(() => {

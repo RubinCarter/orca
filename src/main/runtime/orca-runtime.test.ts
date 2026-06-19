@@ -13483,6 +13483,8 @@ describe('OrcaRuntimeService', () => {
       expect.stringContaining('"instanceId"')
     )
     const writtenPaths = fsProvider.writeFile.mock.calls.map(([filePath]) => filePath as string)
+    // Why: SSH filesystem paths belong to the remote host, so local OS path
+    // separators must not leak into runtime metadata writes.
     expect(writtenPaths.every((filePath) => !filePath.includes('\\'))).toBe(true)
     expect(setWorktreeLineage).toHaveBeenCalledWith(
       childId,
@@ -13636,7 +13638,7 @@ describe('OrcaRuntimeService', () => {
         runtime.updateManagedWorktreeMeta(`id:${childId}`, {
           lineage: { parentWorktree: `id:${parentId}` }
         })
-      ).rejects.toThrow('Workspace directory is not writable')
+      ).rejects.toThrow('Could not initialize worktree metadata')
     } finally {
       unregisterSshFilesystemProvider('ssh-1')
     }

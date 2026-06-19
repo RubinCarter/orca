@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { join } from 'path'
 import type { Repo, Worktree, WorktreeLineage } from '../../../../shared/types'
 import { canAssignWorktreeParent } from './worktree-parent-eligibility'
 import { getEligibleWorktreeParents } from './worktree-parent-candidates'
@@ -8,7 +9,7 @@ function makeWorktree(id: string, repoId = 'repo'): Worktree {
     id,
     instanceId: `${id}-instance`,
     repoId,
-    path: `/workspaces/${id}`,
+    path: join('/workspaces', id),
     head: `${id}-head`,
     branch: `refs/heads/${id}`,
     isBare: false,
@@ -137,6 +138,25 @@ describe('canAssignWorktreeParent', () => {
         worktreeMap: makeMap([parent, child])
       })
     ).toBe(true)
+  })
+
+  it('rejects candidates inside pre-existing lineage loops', () => {
+    const child = makeWorktree('child')
+    const firstLoopParent = makeWorktree('first-loop-parent')
+    const secondLoopParent = makeWorktree('second-loop-parent')
+    const lineageById = {
+      [firstLoopParent.id]: makeLineage(firstLoopParent, secondLoopParent),
+      [secondLoopParent.id]: makeLineage(secondLoopParent, firstLoopParent)
+    }
+
+    expect(
+      canAssignWorktreeParent({
+        child,
+        candidateParent: firstLoopParent,
+        lineageById,
+        worktreeMap: makeMap([child, firstLoopParent, secondLoopParent])
+      })
+    ).toBe(false)
   })
 
   it('stays repo-agnostic while the picker candidate filter is repo and host scoped', () => {

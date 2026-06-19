@@ -24,7 +24,12 @@ export function canAssignWorktreeParent({
   }
 
   let current: Worktree | undefined = candidateParent
+  const visited = new Set<string>()
   while (current) {
+    if (visited.has(current.id)) {
+      return false
+    }
+    visited.add(current.id)
     if (current.id === child.id) {
       return false
     }
