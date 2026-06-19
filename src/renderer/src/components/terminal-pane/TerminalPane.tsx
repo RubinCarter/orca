@@ -2104,6 +2104,43 @@ export default function TerminalPane({
     [getPrimarySelectionMiddleClickPane]
   )
 
+  const activatePaneTitleInteraction = useCallback((paneId: number): void => {
+    managerRef.current?.setActivePane(paneId, { focus: false })
+  }, [])
+
+  const sendWorkspaceFilePathToPane = useCallback(
+    (pane: ManagedPane, filePath: string): void => {
+      const transport = paneTransportsRef.current.get(pane.id)
+      if (!transport) {
+        return
+      }
+      const state = useAppStore.getState()
+      const worktreePath =
+        Object.values(state.worktreesByRepo ?? {})
+          .flat()
+          .find((worktree) => worktree.id === worktreeId)?.path ??
+        cwd ??
+        filePath
+      const targetShell = resolveTerminalDropTargetShell({
+        activeRuntimeEnvironmentId: state.settings?.activeRuntimeEnvironmentId,
+        worktreePath,
+        // Why: internal Explorer drags paste a worktree-absolute path directly
+        // into the target shell. Runtime drops use the runtime worktree's path
+        // shape; legacy SSH drops remain POSIX.
+        connectionId: getConnectionId(worktreeId)
+      })
+      if (transport.sendInput(shellEscapePath(filePath, targetShell))) {
+        recordTerminalUserInputForLeaf(tabId, pane.leafId)
+      }
+      // Move focus to the terminal so the user can keep typing where the
+      // dropped path just landed. Without this, focus stays on the file tree
+      // row that originated the drag and subsequent keystrokes do not reach
+      // the pty — #978.
+      pane.terminal.focus()
+    },
+    [cwd, tabId, worktreeId]
+  )
+
   const effectiveAppearance = settings
     ? resolveEffectiveTerminalAppearance(settings, systemPrefersDark)
     : null
@@ -2177,33 +2214,7 @@ export default function TerminalPane({
           if (!pane) {
             return
           }
-          const transport = paneTransportsRef.current.get(pane.id)
-          if (!transport) {
-            return
-          }
-          const state = useAppStore.getState()
-          const worktreePath =
-            Object.values(state.worktreesByRepo ?? {})
-              .flat()
-              .find((worktree) => worktree.id === worktreeId)?.path ??
-            cwd ??
-            filePath
-          const targetShell = resolveTerminalDropTargetShell({
-            activeRuntimeEnvironmentId: state.settings?.activeRuntimeEnvironmentId,
-            worktreePath,
-            // Why: internal Explorer drags paste a worktree-absolute path
-            // directly into the target shell. Runtime drops use the runtime
-            // worktree's path shape; legacy SSH drops remain POSIX.
-            connectionId: getConnectionId(worktreeId)
-          })
-          if (transport.sendInput(shellEscapePath(filePath, targetShell))) {
-            recordTerminalUserInputForLeaf(tabId, pane.leafId)
-          }
-          // Move focus to the terminal so the user can keep typing where the
-          // dropped path just landed. Without this, focus stays on the file
-          // tree row that originated the drag and subsequent keystrokes do
-          // not reach the pty — #978.
-          pane.terminal.focus()
+          sendWorkspaceFilePathToPane(pane, filePath)
         }}
       />
       {terminalError && isActive && (
@@ -2308,8 +2319,28 @@ export default function TerminalPane({
             <div
               key={`pane-title-${pane.leafId}`}
               className="pane-title-bar"
+              data-native-file-drop-target="terminal"
+              data-terminal-tab-id={tabId}
               data-pane-prevent-terminal-focus=""
               {...(isEditing ? { 'data-editing': '' } : {})}
+              onPointerDownCapture={() => activatePaneTitleInteraction(pane.id)}
+              onDragOver={(event) => {
+                activatePaneTitleInteraction(pane.id)
+                if (event.dataTransfer.types.includes(WORKSPACE_FILE_PATH_MIME)) {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'copy'
+                }
+              }}
+              onDrop={(event) => {
+                const filePath = event.dataTransfer.getData(WORKSPACE_FILE_PATH_MIME)
+                if (!filePath) {
+                  return
+                }
+                event.preventDefault()
+                event.stopPropagation()
+                activatePaneTitleInteraction(pane.id)
+                sendWorkspaceFilePathToPane(pane, filePath)
+              }}
               onContextMenuCapture={(event) => contextMenu.onPaneTitleContextMenu(event, pane.id)}
               style={{
                 left: overlayRect.left,

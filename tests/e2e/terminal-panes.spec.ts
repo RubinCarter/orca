@@ -19,6 +19,7 @@ import {
   countVisibleTerminalPanes,
   focusLastTerminalPane,
   moveTerminalPaneByLeafId,
+  readPaneIdentitySnapshot,
   readTerminalPaneDomLeafOrder,
   splitActiveTerminalPane,
   waitForPaneIdentitySnapshot,
@@ -428,6 +429,64 @@ test.describe('Terminal Panes', () => {
 
     await expect(orcaPage.locator('.pane-title-text', { hasText: updatedTitle })).toHaveCount(1)
     await expect(orcaPage.locator('.pane-title-text', { hasText: title })).toHaveCount(0)
+  })
+
+  test('Set Title strip activates its pane and accepts file-path drops', async ({ orcaPage }) => {
+    const title = `Drop target title ${Date.now()}`
+    const droppedPath = `/tmp/title-drop-${Date.now()}.txt`
+
+    await setPaneTitleFromTerminalMenu(orcaPage, title)
+    const initialSnapshot = await waitForPaneIdentitySnapshot(orcaPage, 1)
+    const titledLeafId = initialSnapshot.activeLeafId ?? initialSnapshot.panes[0]?.leafId
+    if (!titledLeafId) {
+      throw new Error('No titled pane leaf id found before split')
+    }
+
+    await splitActiveTerminalPane(orcaPage, 'vertical')
+    await waitForPaneCount(orcaPage, 2)
+    const splitSnapshot = await waitForPaneIdentitySnapshot(orcaPage, 2)
+    const otherPane = splitSnapshot.panes.find((pane) => pane.leafId !== titledLeafId)
+    if (!otherPane) {
+      throw new Error('No inactive pane found for title-strip drop test')
+    }
+
+    await orcaPage.evaluate(
+      ({ tabId, paneId }) => {
+        window.__paneManagers?.get(tabId)?.setActivePane(paneId, { focus: false })
+      },
+      { tabId: splitSnapshot.tabId, paneId: otherPane.numericPaneId }
+    )
+    await expect
+      .poll(async () => (await readPaneIdentitySnapshot(orcaPage))?.activeLeafId ?? null)
+      .toBe(otherPane.leafId)
+
+    const titleBar = orcaPage.locator('.pane-title-bar', { hasText: title }).first()
+    await expect(titleBar).toHaveAttribute('data-native-file-drop-target', 'terminal')
+    await expect(titleBar).toHaveAttribute('data-terminal-tab-id', splitSnapshot.tabId)
+
+    await titleBar.evaluate((element, path) => {
+      const dataTransfer = new DataTransfer()
+      dataTransfer.setData('text/x-orca-file-path', path)
+      element.dispatchEvent(
+        new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer })
+      )
+      element.dispatchEvent(
+        new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer })
+      )
+    }, droppedPath)
+
+    await expect
+      .poll(async () => (await readPaneIdentitySnapshot(orcaPage))?.activeLeafId ?? null, {
+        timeout: 5_000,
+        message: 'Title-strip drop did not activate the titled pane'
+      })
+      .toBe(titledLeafId)
+    await expect
+      .poll(async () => (await getTerminalContent(orcaPage)).includes(droppedPath), {
+        timeout: 5_000,
+        message: 'Title-strip drop did not paste into the titled pane terminal'
+      })
+      .toBe(true)
   })
 
   test('Set Title overlay follows its pane after same-count pane move', async ({ orcaPage }) => {
