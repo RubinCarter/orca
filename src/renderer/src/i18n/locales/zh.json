@@ -1674,7 +1674,8 @@
         "recentWorktreesHeader": "最近的工作树",
         "settingsBadge": "设置",
         "actionBadge": "操作",
-        "paletteHostBadge": "主机：{{value0}}"
+        "paletteHostBadge": "主机：{{value0}}",
+        "workspaceTabMissing": "Tab no longer exists"
       },
       "github": {
         "pr": {

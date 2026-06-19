@@ -1674,7 +1674,8 @@
         "recentWorktreesHeader": "최근 작업 트리",
         "settingsBadge": "설정",
         "actionBadge": "행동",
-        "paletteHostBadge": "Host: {{value0}}"
+        "paletteHostBadge": "Host: {{value0}}",
+        "workspaceTabMissing": "Tab no longer exists"
       },
       "github": {
         "pr": {

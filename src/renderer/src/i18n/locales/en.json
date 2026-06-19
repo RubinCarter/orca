@@ -1674,7 +1674,8 @@
         "recentWorktreesHeader": "Recent Worktrees",
         "settingsBadge": "Settings",
         "actionBadge": "Action",
-        "paletteHostBadge": "Host: {{value0}}"
+        "paletteHostBadge": "Host: {{value0}}",
+        "workspaceTabMissing": "Tab no longer exists"
       },
       "github": {
         "pr": {

@@ -1674,7 +1674,8 @@
         "recentWorktreesHeader": "最近のワークツリー",
         "settingsBadge": "設定",
         "actionBadge": "操作",
-        "paletteHostBadge": "Host: {{value0}}"
+        "paletteHostBadge": "Host: {{value0}}",
+        "workspaceTabMissing": "Tab no longer exists"
       },
       "github": {
         "pr": {
