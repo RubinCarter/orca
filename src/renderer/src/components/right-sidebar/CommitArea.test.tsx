@@ -457,6 +457,9 @@ describe('CommitArea', () => {
     expect(markup).toContain('id="commit-area-create-pr-intent"')
     expect(markup).toContain('role="alert"')
     expect(markup).toContain('Create PR failed: push this branch first.')
+    const notice = markup.match(/id="commit-area-create-pr-intent"[\s\S]*?<\/div>/)?.[0] ?? ''
+    expect(notice).toContain('break-words')
+    expect(notice).not.toContain('truncate')
   })
 })
 

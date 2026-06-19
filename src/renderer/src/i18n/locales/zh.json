@@ -8843,7 +8843,8 @@
                   "9e779995dd": "创建 {{value0}}",
                   "226b85a3a7": "fetch",
                   "323bb614aa": "Commit 并同步",
-                  "2b8e6595fd": "Commit"
+                  "2b8e6595fd": "Commit",
+                  "04d709801d": "Fetch from remote without merging"
                 }
               },
               "primary": {
@@ -9080,6 +9081,9 @@
                 "copyCommand": "Copy command"
               }
             }
+          },
+          "SourceControlEntryContextMenu": {
+            "a1f2c8d901": "View"
           }
         }
       },

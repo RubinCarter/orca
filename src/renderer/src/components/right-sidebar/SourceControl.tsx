@@ -223,6 +223,7 @@ import {
   type CreatePrIntentRunToken
 } from './source-control-create-pr-intent-flow'
 import { resolveVisibleCreatePrHeaderAction } from './source-control-create-pr-intent-state'
+import { resolveBlockedCreateReviewNoticeMessage } from './source-control-create-review-blocked-action'
 import {
   buildLoadingHostedReviewCreationEligibility,
   resolveCreatePrHeaderAction,
@@ -2840,10 +2841,21 @@ function SourceControlInner(): React.JSX.Element {
       !activeRepo ||
       !activeWorktreeId ||
       !worktreePath ||
-      !hostedReviewCreation?.canCreate ||
+      !hostedReviewCreation ||
       prGenerating ||
       createPrInFlightRef.current[activeWorktreeId]
     ) {
+      return
+    }
+
+    if (!hostedReviewCreation.canCreate) {
+      const message = resolveBlockedCreateReviewNoticeMessage(hostedReviewCreation)
+      if (message) {
+        setCreatePrIntentNoticeForWorktree(activeWorktreeId, {
+          tone: 'destructive',
+          message
+        })
+      }
       return
     }
 
@@ -6659,7 +6671,11 @@ export function CommitArea({
               : 'text-muted-foreground'
           )}
         >
-          <span className="min-w-0 flex-1 truncate">{createPrIntentNotice.message}</span>
+          {/* Why: Create Review blockers carry recovery steps; truncating them hides
+          the action the user needs in the default narrow sidebar. */}
+          <span className="min-w-0 flex-1 break-words leading-4 [overflow-wrap:anywhere]">
+            {createPrIntentNotice.message}
+          </span>
           {createPrIntentNotice.action === 'settings' && onOpenSourceControlAiSettings ? (
             <button
               type="button"

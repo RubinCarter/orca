@@ -85,7 +85,12 @@ describe('resolvePrimaryAction Create PR intent', () => {
     const result = resolvePrimaryAction(input)
     expect(result.kind).toBe('create_pr_intent')
     expect(result.disabled).toBe(false)
-    expect(resolveCreatePrHeaderAction(input)).toEqual(result)
+    expect(resolveCreatePrHeaderAction(input)).toEqual({
+      kind: 'create_pr',
+      label: 'Create PR',
+      title: 'Push commits before creating a pull request.',
+      disabled: false
+    })
     expect(resolveCommitAreaPrimaryAction(input)).toEqual({
       kind: 'push',
       label: 'Push',
@@ -156,6 +161,30 @@ describe('resolvePrimaryAction Create PR intent', () => {
     expect(result.title).toBe('Prepare this branch and create a merge request')
   })
 
+  it('returns a direct Create MR header notice path for a GitLab dirty branch', () => {
+    expect(
+      resolveCreatePrHeaderAction(
+        inputs({
+          stagedCount: 1,
+          hasMessage: true,
+          upstreamStatus: upstreamInSync,
+          hostedReviewCreation: {
+            provider: 'gitlab',
+            review: null,
+            canCreate: false,
+            blockedReason: 'dirty',
+            nextAction: 'commit'
+          }
+        })
+      )
+    ).toEqual({
+      kind: 'create_pr',
+      label: 'Create MR',
+      title: 'Commit changes before creating a merge request.',
+      disabled: false
+    })
+  })
+
   it('keeps in-flight Create MR intent copy provider-aware', () => {
     const input = inputs({
       isPrIntentInFlight: true,
@@ -219,7 +248,12 @@ describe('resolvePrimaryAction Create PR intent', () => {
       }
     })
 
-    expect(resolveCreatePrHeaderAction(input)?.kind).toBe('create_pr_intent')
+    expect(resolveCreatePrHeaderAction(input)).toEqual({
+      kind: 'create_pr',
+      label: 'Create PR',
+      title: 'Publish commits before creating a pull request.',
+      disabled: false
+    })
     expect(resolveCommitAreaPrimaryAction(input)).toEqual({
       kind: 'publish',
       label: 'Publish Branch',
@@ -247,7 +281,12 @@ describe('resolvePrimaryAction Create PR intent', () => {
       }
     })
 
-    expect(resolveCreatePrHeaderAction(input)?.kind).toBe('create_pr_intent')
+    expect(resolveCreatePrHeaderAction(input)).toEqual({
+      kind: 'create_pr',
+      label: 'Create PR',
+      title: 'Sync this branch before creating a pull request.',
+      disabled: false
+    })
     expect(resolveCommitAreaPrimaryAction(input)).toEqual({
       kind: 'push',
       label: 'Force Push',
@@ -301,7 +340,7 @@ describe('resolvePrimaryAction Create PR intent', () => {
     })
   })
 
-  it('returns a disabled Create PR header when the branch has nothing to publish yet', () => {
+  it('returns a clickable Create PR header notice path when the branch has nothing to publish yet', () => {
     expect(
       resolveCreatePrHeaderAction(
         inputs({
@@ -320,7 +359,7 @@ describe('resolvePrimaryAction Create PR intent', () => {
       kind: 'create_pr',
       label: 'Create PR',
       title: 'Publish commits before creating a pull request.',
-      disabled: true
+      disabled: false
     })
   })
 })
