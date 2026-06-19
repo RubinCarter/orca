@@ -32,7 +32,7 @@ import { getGitCloneFailureMessage } from '../../shared/git-clone-failure-messag
 import { createHash, randomUUID } from 'crypto'
 import { homedir } from 'os'
 import { isAbsolute, join, resolve } from 'path'
-import { mkdir, readFile, readdir, rm, stat, writeFile } from 'fs/promises'
+import { mkdir, readFile, readdir, rm, stat } from 'fs/promises'
 import { OrchestrationDb } from './orchestration/db'
 import { formatMessagesForInjection } from './orchestration/formatter'
 import type {
@@ -1088,14 +1088,6 @@ function omitUndefinedProperties<T extends Record<string, unknown>>(value: T): P
   return Object.fromEntries(
     Object.entries(value).filter(([, entry]) => entry !== undefined)
   ) as Partial<T>
-}
-
-function parseWorktreeMetaJson(content: string): Partial<WorktreeMeta> {
-  const parsed = JSON.parse(content) as unknown
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('Worktree metadata file must contain a JSON object')
-  }
-  return parsed as Partial<WorktreeMeta>
 }
 
 async function isRuntimeWorktreePathMissing(
@@ -9792,23 +9784,6 @@ export class OrcaRuntimeService {
     }
   }
 
-  private async ensureLocalOrcaDirIgnored(repoPath: string): Promise<void> {
-    const gitignorePath = join(repoPath, '.gitignore')
-    try {
-      const content = await readFile(gitignorePath, 'utf-8')
-      if (/^\.orca\/?$/m.test(content)) {
-        return
-      }
-      const separator = content.endsWith('\n') ? '' : '\n'
-      await writeFile(gitignorePath, `${content}${separator}.orca\n`, 'utf-8')
-    } catch (error) {
-      if (!isENOENT(error)) {
-        throw error
-      }
-      await writeFile(gitignorePath, '.orca\n', 'utf-8')
-    }
-  }
-
   async listManagedWorktrees(
     repoSelector?: string,
     limit = DEFAULT_WORKTREE_LIST_LIMIT
@@ -11939,88 +11914,6 @@ export class OrcaRuntimeService {
     return { base, behind: drift.behind, recentSubjects }
   }
 
-  private async ensureWorktreeInstanceId(worktree: Worktree): Promise<void> {
-    if (worktree.instanceId) {
-      return
-    }
-
-    const now = Date.now()
-
-    try {
-      const repo = this.store?.getRepos().find((r) => r.id === worktree.repoId)
-      let existingMeta: Partial<WorktreeMeta> = {}
-      if (repo?.connectionId) {
-        const fsProvider = getSshFilesystemProvider(repo.connectionId)
-        if (!fsProvider) {
-          throw new Error('SSH filesystem provider not found')
-        }
-        const dotOrcaPath = joinWorktreeRelativePath(worktree.path, '.orca')
-        const jsonPath = joinWorktreeRelativePath(worktree.path, '.orca/worktree.json')
-        try {
-          await fsProvider.createDir(dotOrcaPath)
-        } catch {
-          // ignore if exists
-        }
-        await this.ensureRemoteOrcaDirIgnored(fsProvider, worktree.path, { required: true })
-        try {
-          const result = await fsProvider.readFile(jsonPath)
-          if (result.isBinary) {
-            throw new Error('Remote worktree metadata file is binary')
-          }
-          existingMeta = parseWorktreeMetaJson(result.content)
-        } catch (error) {
-          if (!isENOENT(error)) {
-            throw error
-          }
-        }
-        const instanceId =
-          typeof existingMeta.instanceId === 'string' ? existingMeta.instanceId : randomUUID()
-        const metaUpdates: Partial<WorktreeMeta> = {
-          instanceId,
-          createdAt: existingMeta.createdAt ?? now,
-          orcaCreatedAt: existingMeta.orcaCreatedAt ?? now
-        }
-        const jsonContent = JSON.stringify({ ...existingMeta, ...metaUpdates }, null, 2)
-        await fsProvider.writeFile(jsonPath, jsonContent)
-        if (this.store) {
-          this.store.setWorktreeMeta(worktree.id, metaUpdates)
-        }
-        worktree.instanceId = instanceId
-      } else {
-        const dotOrcaPath = join(worktree.path, '.orca')
-        const jsonPath = join(dotOrcaPath, 'worktree.json')
-        await mkdir(dotOrcaPath, { recursive: true })
-        await this.ensureLocalOrcaDirIgnored(worktree.path)
-        try {
-          existingMeta = parseWorktreeMetaJson(await readFile(jsonPath, 'utf-8'))
-        } catch (error) {
-          if (!isENOENT(error)) {
-            throw error
-          }
-        }
-        const instanceId =
-          typeof existingMeta.instanceId === 'string' ? existingMeta.instanceId : randomUUID()
-        const metaUpdates: Partial<WorktreeMeta> = {
-          instanceId,
-          createdAt: existingMeta.createdAt ?? now,
-          orcaCreatedAt: existingMeta.orcaCreatedAt ?? now
-        }
-        const jsonContent = JSON.stringify({ ...existingMeta, ...metaUpdates }, null, 2)
-        await writeFile(jsonPath, jsonContent, 'utf-8')
-        if (this.store) {
-          this.store.setWorktreeMeta(worktree.id, metaUpdates)
-        }
-        worktree.instanceId = instanceId
-      }
-    } catch (err) {
-      throw new RuntimeLineageError(
-        'LINEAGE_PARENT_CONTEXT_MISSING',
-        'Could not initialize worktree metadata. Cannot manage this external worktree.',
-        err
-      )
-    }
-  }
-
   async updateManagedWorktreeMeta(
     worktreeSelector: string,
     updates: Partial<WorktreeMeta> & {
@@ -12040,9 +11933,6 @@ export class OrcaRuntimeService {
       this.store.removeWorkspaceLineage?.(worktreeWorkspaceKey(worktree.id))
     } else if (lineage?.parentWorktree) {
       const parent = await this.resolveWorktreeSelector(lineage.parentWorktree)
-
-      await this.ensureWorktreeInstanceId(worktree)
-      await this.ensureWorktreeInstanceId(parent)
 
       this.validateLineageParent(worktree, parent)
       if (!worktree.instanceId || !parent.instanceId) {

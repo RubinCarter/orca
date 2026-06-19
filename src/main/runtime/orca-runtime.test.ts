@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'events'
 import { randomUUID } from 'crypto'
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { lstat, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { ipcMain } from 'electron'
@@ -13473,7 +13473,7 @@ describe('OrcaRuntimeService', () => {
     ).rejects.toThrow('selector_not_found')
   })
 
-  it('backfills SSH worktree instance metadata with remote paths and ignored .orca dirs', async () => {
+  it('rejects SSH lineage updates when Orca worktree identity is missing', async () => {
     const remoteRepo = {
       id: 'remote-repo',
       path: '/home/user/repo',
@@ -13486,115 +13486,8 @@ describe('OrcaRuntimeService', () => {
     const parentId = `${remoteRepo.id}::/home/user/repo-parent`
     const metaById: Record<string, WorktreeMeta> = {}
     const setWorktreeLineage = vi.fn((_worktreeId: string, lineage: WorktreeLineage) => lineage)
-    const listSshWorktrees = vi.fn().mockResolvedValue([
-      {
-        path: '/home/user/repo-child',
-        head: 'abc',
-        branch: 'feature/child',
-        isBare: false,
-        isMainWorktree: false
-      },
-      {
-        path: '/home/user/repo-parent',
-        head: 'def',
-        branch: 'feature/parent',
-        isBare: false,
-        isMainWorktree: false
-      }
-    ])
-    const missingFileError = Object.assign(new Error('missing'), { code: 'ENOENT' })
     const fsProvider = {
-      readFile: vi.fn(async (filePath: string) => {
-        if (filePath.endsWith('/.gitignore')) {
-          return { isBinary: false, content: 'node_modules\n' }
-        }
-        throw missingFileError
-      }),
-      createDir: vi.fn().mockResolvedValue(undefined),
-      writeFile: vi.fn().mockResolvedValue(undefined)
-    }
-    getSshGitProviderMock.mockReturnValue({ listWorktrees: listSshWorktrees })
-    registerSshFilesystemProvider('ssh-1', fsProvider as never)
-    const runtimeStore = {
-      ...store,
-      getRepo: (id: string) => (id === remoteRepo.id ? remoteRepo : undefined),
-      getRepos: () => [remoteRepo],
-      getAllWorktreeMeta: () => metaById,
-      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
-      setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
-        metaById[worktreeId] = { ...(metaById[worktreeId] ?? makeWorktreeMeta()), ...meta }
-        return metaById[worktreeId]
-      },
-      getWorktreeLineage: () => undefined,
-      setWorktreeLineage
-    }
-    const runtime = new OrcaRuntimeService(runtimeStore as never)
-
-    try {
-      await runtime.updateManagedWorktreeMeta(`id:${childId}`, {
-        lineage: { parentWorktree: `id:${parentId}` }
-      })
-    } finally {
-      unregisterSshFilesystemProvider('ssh-1')
-    }
-
-    expect(fsProvider.createDir).toHaveBeenCalledWith('/home/user/repo-child/.orca')
-    expect(fsProvider.createDir).toHaveBeenCalledWith('/home/user/repo-parent/.orca')
-    expect(fsProvider.writeFile).toHaveBeenCalledWith(
-      '/home/user/repo-child/.gitignore',
-      'node_modules\n.orca\n'
-    )
-    expect(fsProvider.writeFile).toHaveBeenCalledWith(
-      '/home/user/repo-parent/.gitignore',
-      'node_modules\n.orca\n'
-    )
-    expect(fsProvider.writeFile).toHaveBeenCalledWith(
-      '/home/user/repo-child/.orca/worktree.json',
-      expect.stringContaining('"instanceId"')
-    )
-    expect(fsProvider.writeFile).toHaveBeenCalledWith(
-      '/home/user/repo-parent/.orca/worktree.json',
-      expect.stringContaining('"instanceId"')
-    )
-    const writtenPaths = fsProvider.writeFile.mock.calls.map(([filePath]) => filePath as string)
-    // Why: SSH filesystem paths belong to the remote host, so local OS path
-    // separators must not leak into runtime metadata writes.
-    expect(writtenPaths.every((filePath) => !filePath.includes('\\'))).toBe(true)
-    expect(setWorktreeLineage).toHaveBeenCalledWith(
-      childId,
-      expect.objectContaining({
-        worktreeInstanceId: metaById[childId].instanceId,
-        parentWorktreeInstanceId: metaById[parentId].instanceId
-      })
-    )
-  })
-
-  it('preserves existing SSH worktree metadata when backfilling instance ids', async () => {
-    const remoteRepo = {
-      id: 'remote-repo',
-      path: '/home/user/repo',
-      displayName: 'remote',
-      badgeColor: 'blue',
-      addedAt: 1,
-      connectionId: 'ssh-1'
-    }
-    const childId = `${remoteRepo.id}::/home/user/repo-child`
-    const parentId = `${remoteRepo.id}::/home/user/repo-parent`
-    const metaById: Record<string, WorktreeMeta> = {}
-    const missingFileError = Object.assign(new Error('missing'), { code: 'ENOENT' })
-    const fsProvider = {
-      readFile: vi.fn(async (filePath: string) => {
-        if (filePath.endsWith('/.gitignore')) {
-          return { isBinary: false, content: '.orca\n' }
-        }
-        if (filePath === '/home/user/repo-child/.orca/worktree.json') {
-          return {
-            isBinary: false,
-            content: JSON.stringify({ displayName: 'Portable child', comment: 'keep me' })
-          }
-        }
-        throw missingFileError
-      }),
+      readFile: vi.fn(),
       createDir: vi.fn().mockResolvedValue(undefined),
       writeFile: vi.fn().mockResolvedValue(undefined)
     }
@@ -13617,81 +13510,6 @@ describe('OrcaRuntimeService', () => {
       ])
     })
     registerSshFilesystemProvider('ssh-1', fsProvider as never)
-    const runtime = new OrcaRuntimeService({
-      ...store,
-      getRepo: (id: string) => (id === remoteRepo.id ? remoteRepo : undefined),
-      getRepos: () => [remoteRepo],
-      getAllWorktreeMeta: () => metaById,
-      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
-      setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
-        metaById[worktreeId] = { ...(metaById[worktreeId] ?? makeWorktreeMeta()), ...meta }
-        return metaById[worktreeId]
-      },
-      getWorktreeLineage: () => undefined,
-      setWorktreeLineage: vi.fn((_worktreeId: string, lineage: WorktreeLineage) => lineage)
-    } as never)
-
-    try {
-      await runtime.updateManagedWorktreeMeta(`id:${childId}`, {
-        lineage: { parentWorktree: `id:${parentId}` }
-      })
-    } finally {
-      unregisterSshFilesystemProvider('ssh-1')
-    }
-
-    const childMetaWrite = fsProvider.writeFile.mock.calls.find(
-      ([filePath]) => filePath === '/home/user/repo-child/.orca/worktree.json'
-    )
-    expect(childMetaWrite).toBeDefined()
-    const writtenMeta = JSON.parse(String(childMetaWrite?.[1])) as WorktreeMeta
-    expect(writtenMeta).toEqual(
-      expect.objectContaining({
-        displayName: 'Portable child',
-        comment: 'keep me',
-        instanceId: expect.any(String)
-      })
-    )
-  })
-
-  it('does not write SSH worktree instance metadata when .orca cannot be ignored', async () => {
-    const remoteRepo = {
-      id: 'remote-repo',
-      path: '/home/user/repo',
-      displayName: 'remote',
-      badgeColor: 'blue',
-      addedAt: 1,
-      connectionId: 'ssh-1'
-    }
-    const childId = `${remoteRepo.id}::/home/user/repo-child`
-    const parentId = `${remoteRepo.id}::/home/user/repo-parent`
-    const metaById: Record<string, WorktreeMeta> = {}
-    const listSshWorktrees = vi.fn().mockResolvedValue([
-      {
-        path: '/home/user/repo-child',
-        head: 'abc',
-        branch: 'feature/child',
-        isBare: false,
-        isMainWorktree: false
-      },
-      {
-        path: '/home/user/repo-parent',
-        head: 'def',
-        branch: 'feature/parent',
-        isBare: false,
-        isMainWorktree: false
-      }
-    ])
-    const fsProvider = {
-      readFile: vi.fn(async () => ({ isBinary: false, content: 'node_modules\n' })),
-      createDir: vi.fn().mockResolvedValue(undefined),
-      writeFile: vi.fn(async (filePath: string) => {
-        if (filePath.endsWith('/.gitignore')) {
-          throw new Error('permission denied')
-        }
-      })
-    }
-    getSshGitProviderMock.mockReturnValue({ listWorktrees: listSshWorktrees })
-    registerSshFilesystemProvider('ssh-1', fsProvider as never)
     const runtimeStore = {
       ...store,
       getRepo: (id: string) => (id === remoteRepo.id ? remoteRepo : undefined),
@@ -13703,7 +13521,7 @@ describe('OrcaRuntimeService', () => {
         return metaById[worktreeId]
       },
       getWorktreeLineage: () => undefined,
-      setWorktreeLineage: vi.fn((_worktreeId: string, lineage: WorktreeLineage) => lineage)
+      setWorktreeLineage
     }
     const runtime = new OrcaRuntimeService(runtimeStore as never)
 
@@ -13712,19 +13530,17 @@ describe('OrcaRuntimeService', () => {
         runtime.updateManagedWorktreeMeta(`id:${childId}`, {
           lineage: { parentWorktree: `id:${parentId}` }
         })
-      ).rejects.toThrow('Could not initialize worktree metadata')
+      ).rejects.toThrow('Worktree instance identity was unavailable')
     } finally {
       unregisterSshFilesystemProvider('ssh-1')
     }
 
-    expect(
-      fsProvider.writeFile.mock.calls.some(([filePath]) =>
-        String(filePath).endsWith('/.orca/worktree.json')
-      )
-    ).toBe(false)
+    expect(fsProvider.createDir).not.toHaveBeenCalled()
+    expect(fsProvider.writeFile).not.toHaveBeenCalled()
+    expect(setWorktreeLineage).not.toHaveBeenCalled()
   })
 
-  it('backfills local worktree instance metadata and ignores .orca dirs', async () => {
+  it('rejects local lineage updates when Orca worktree identity is missing', async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), 'orca-runtime-lineage-'))
     const repoPath = join(tempRoot, 'repo')
     const childPath = join(tempRoot, 'child')
@@ -13784,112 +13600,16 @@ describe('OrcaRuntimeService', () => {
 
     try {
       await mkdir(childPath, { recursive: true })
-      await writeFile(join(childPath, '.gitignore'), 'node_modules\n', 'utf-8')
 
-      await runtime.updateManagedWorktreeMeta(`id:${childId}`, {
-        lineage: { parentWorktree: `id:${parentId}` }
-      })
-
-      await expect(readFile(join(childPath, '.gitignore'), 'utf-8')).resolves.toBe(
-        'node_modules\n.orca\n'
-      )
-      await expect(readFile(join(parentPath, '.gitignore'), 'utf-8')).resolves.toBe('.orca\n')
-      await expect(readFile(join(childPath, '.orca', 'worktree.json'), 'utf-8')).resolves.toContain(
-        '"instanceId"'
-      )
       await expect(
-        readFile(join(parentPath, '.orca', 'worktree.json'), 'utf-8')
-      ).resolves.toContain('"instanceId"')
-      expect(setWorktreeLineage).toHaveBeenCalledWith(
-        childId,
-        expect.objectContaining({
-          worktreeInstanceId: metaById[childId].instanceId,
-          parentWorktreeInstanceId: metaById[parentId].instanceId
+        runtime.updateManagedWorktreeMeta(`id:${childId}`, {
+          lineage: { parentWorktree: `id:${parentId}` }
         })
-      )
-    } finally {
-      await rm(tempRoot, { recursive: true, force: true })
-    }
-  })
+      ).rejects.toThrow('Worktree instance identity was unavailable')
 
-  it('preserves existing local worktree metadata when backfilling instance ids', async () => {
-    const tempRoot = await mkdtemp(join(tmpdir(), 'orca-runtime-lineage-'))
-    const repoPath = join(tempRoot, 'repo')
-    const childPath = join(tempRoot, 'child')
-    const parentPath = join(tempRoot, 'parent')
-    const repoId = 'local-repo'
-    const childId = `${repoId}::${childPath}`
-    const parentId = `${repoId}::${parentPath}`
-    const metaById: Record<string, WorktreeMeta> = {}
-    const runtimeStore = {
-      ...store,
-      getRepo: (id: string) =>
-        id === repoId
-          ? {
-              id: repoId,
-              path: repoPath,
-              displayName: 'local',
-              badgeColor: 'blue',
-              addedAt: 1
-            }
-          : undefined,
-      getRepos: () => [
-        {
-          id: repoId,
-          path: repoPath,
-          displayName: 'local',
-          badgeColor: 'blue',
-          addedAt: 1
-        }
-      ],
-      getAllWorktreeMeta: () => metaById,
-      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
-      setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
-        metaById[worktreeId] = { ...(metaById[worktreeId] ?? makeWorktreeMeta()), ...meta }
-        return metaById[worktreeId]
-      },
-      getWorktreeLineage: () => undefined,
-      setWorktreeLineage: vi.fn((_worktreeId: string, lineage: WorktreeLineage) => lineage)
-    }
-    vi.mocked(listWorktrees).mockResolvedValue([
-      {
-        path: childPath,
-        head: 'abc',
-        branch: 'feature/child',
-        isBare: false,
-        isMainWorktree: false
-      },
-      {
-        path: parentPath,
-        head: 'def',
-        branch: 'feature/parent',
-        isBare: false,
-        isMainWorktree: false
-      }
-    ])
-    const runtime = new OrcaRuntimeService(runtimeStore as never)
-
-    try {
-      await mkdir(join(childPath, '.orca'), { recursive: true })
-      await writeFile(
-        join(childPath, '.orca', 'worktree.json'),
-        JSON.stringify({ displayName: 'Portable child', comment: 'keep me' }),
-        'utf-8'
-      )
-
-      await runtime.updateManagedWorktreeMeta(`id:${childId}`, {
-        lineage: { parentWorktree: `id:${parentId}` }
-      })
-
-      await expect(readFile(join(childPath, '.orca', 'worktree.json'), 'utf-8')).resolves.toEqual(
-        expect.stringContaining('"displayName": "Portable child"')
-      )
-      await expect(readFile(join(childPath, '.orca', 'worktree.json'), 'utf-8')).resolves.toEqual(
-        expect.stringContaining('"comment": "keep me"')
-      )
-      await expect(readFile(join(childPath, '.orca', 'worktree.json'), 'utf-8')).resolves.toEqual(
-        expect.stringContaining('"instanceId"')
-      )
+      await expect(lstat(join(childPath, '.orca'))).rejects.toThrow()
+      await expect(lstat(join(parentPath, '.orca'))).rejects.toThrow()
+      expect(setWorktreeLineage).not.toHaveBeenCalled()
     } finally {
       await rm(tempRoot, { recursive: true, force: true })
     }
@@ -14088,7 +13808,7 @@ describe('OrcaRuntimeService', () => {
     )
   })
 
-  it('backfills instanceId during runtime selector resolution for upgraded metadata', async () => {
+  it('rejects lineage updates when upgraded metadata is missing a parent instance id', async () => {
     const parentPath = '/tmp/worktree-parent'
     const childPath = '/tmp/worktree-child'
     const parentId = `${TEST_REPO_ID}::${parentPath}`
@@ -14102,11 +13822,7 @@ describe('OrcaRuntimeService', () => {
       getAllWorktreeMeta: () => metaById,
       getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
       setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
-        metaById[worktreeId] = {
-          ...metaById[worktreeId],
-          ...meta,
-          instanceId: meta.instanceId ?? metaById[worktreeId]?.instanceId ?? 'backfilled-instance'
-        }
+        metaById[worktreeId] = { ...metaById[worktreeId], ...meta }
         return metaById[worktreeId]
       },
       getWorktreeLineage: () => undefined,
@@ -14130,17 +13846,13 @@ describe('OrcaRuntimeService', () => {
     ])
     const runtime = new OrcaRuntimeService(runtimeStore as never)
 
-    await runtime.updateManagedWorktreeMeta(`id:${childId}`, {
-      lineage: { parentWorktree: `id:${parentId}` }
-    })
-
-    expect(runtimeStore.setWorktreeLineage).toHaveBeenCalledWith(
-      childId,
-      expect.objectContaining({
-        worktreeInstanceId: 'child-instance',
-        parentWorktreeInstanceId: 'backfilled-instance'
+    await expect(
+      runtime.updateManagedWorktreeMeta(`id:${childId}`, {
+        lineage: { parentWorktree: `id:${parentId}` }
       })
-    )
+    ).rejects.toThrow('Worktree instance identity was unavailable')
+
+    expect(runtimeStore.setWorktreeLineage).not.toHaveBeenCalled()
   })
 
   it('rotates a missing parent instance during runtime selector scans before same-path reuse', async () => {
