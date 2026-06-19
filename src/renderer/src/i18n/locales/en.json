@@ -1024,7 +1024,7 @@
         "d71cd3003e": "+ Assignee"
       },
       "NewWorkspaceComposerCard": {
-        "reuseExistingBranch": "Reuse this branch",
+        "reuseExistingBranch": "Reuse branch",
         "reuseExistingBranchHint": "Check out the existing branch instead of creating a new one from it.",
         "cbb47ee0dc": "Only available for local Git projects.",
         "d861de981b": "Sparse checkout",

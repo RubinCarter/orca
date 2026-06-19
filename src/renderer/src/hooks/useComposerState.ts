@@ -151,6 +151,7 @@ import {
 } from '@/lib/workspace-create-error-format'
 import type { SshConnectionStatus } from '../../../shared/ssh-types'
 import {
+  isBranchCheckedOutInWorktrees,
   resolveComposerBranchNameOverrideForCreate,
   resolveComposerBranchReuse,
   resolveComposerBranchSelection
@@ -2555,27 +2556,41 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       // Why (#5181): reuse an existing local branch (check it out) instead of
       // branching off it. Default reuse ON when the worktree name was
       // auto-derived from the branch, and preserve name edits so reuse survives
-      // renaming the worktree folder.
+      // renaming the worktree folder. Reuse is impossible when the branch is
+      // already checked out in another worktree (git allows it in only one), so
+      // gate eligibility on that and don't pin the override to a busy branch.
+      const branchCheckedOutElsewhere = isBranchCheckedOutInWorktrees(
+        localBranchName,
+        (worktreesByRepo[repoId] ?? []).map((worktree) => worktree.branch)
+      )
       const { reuseEligibleBranch: nextReuseEligibleBranch, defaultReuse } =
         resolveComposerBranchReuse({
           refName,
           localBranchName,
-          selectionProducedOverride: selection.branchNameOverride !== undefined
+          selectionProducedOverride: selection.branchNameOverride !== undefined,
+          branchCheckedOutElsewhere
         })
       setReuseEligibleBranch(nextReuseEligibleBranch)
       setReuseSelectedBranch(defaultReuse)
       setBranchNameOverridePreservesNameEdits(defaultReuse)
+      // Why: a busy local branch can't be reused — keeping it as the override
+      // would collide and silently produce a suffixed branch, so drop it and let
+      // the worktree name derive a fresh branch from the selected ref as base.
+      const effectiveOverride =
+        branchCheckedOutElsewhere && refName === localBranchName
+          ? undefined
+          : selection.branchNameOverride
       if (selection.name !== undefined && selection.lastAutoName !== undefined) {
         setName(selection.name)
         lastAutoNameRef.current = selection.lastAutoName
-        branchAutoNameRef.current = selection.branchAutoName
-        setBranchNameOverride(selection.branchNameOverride)
+        branchAutoNameRef.current = effectiveOverride ? selection.branchAutoName : ''
+        setBranchNameOverride(effectiveOverride)
       } else {
-        setBranchNameOverride(selection.branchNameOverride)
-        branchAutoNameRef.current = selection.branchAutoName
+        setBranchNameOverride(effectiveOverride)
+        branchAutoNameRef.current = effectiveOverride ? selection.branchAutoName : ''
       }
     },
-    [name]
+    [name, worktreesByRepo, repoId]
   )
 
   const handleReuseSelectedBranchChange = useCallback(

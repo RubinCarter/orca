@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isBranchCheckedOutInWorktrees,
   resolveComposerBranchNameOverrideForCreate,
   resolveComposerBranchReuse,
   resolveComposerBranchSelection
@@ -78,13 +79,24 @@ describe('resolveComposerBranchSelection', () => {
   })
 })
 
+describe('isBranchCheckedOutInWorktrees', () => {
+  it('matches a branch against both refs/heads-qualified and short worktree refs', () => {
+    expect(
+      isBranchCheckedOutInWorktrees('feature-x', ['refs/heads/main', 'refs/heads/feature-x'])
+    ).toBe(true)
+    expect(isBranchCheckedOutInWorktrees('feature-x', ['feature-x'])).toBe(true)
+    expect(isBranchCheckedOutInWorktrees('feature-x', ['refs/heads/main', ''])).toBe(false)
+  })
+})
+
 describe('resolveComposerBranchReuse', () => {
   it('marks an existing local branch reusable and defaults reuse ON for an auto-derived name', () => {
     expect(
       resolveComposerBranchReuse({
         refName: 'feature-x',
         localBranchName: 'feature-x',
-        selectionProducedOverride: true
+        selectionProducedOverride: true,
+        branchCheckedOutElsewhere: false
       })
     ).toEqual({ reuseEligibleBranch: 'feature-x', defaultReuse: true })
   })
@@ -94,7 +106,8 @@ describe('resolveComposerBranchReuse', () => {
       resolveComposerBranchReuse({
         refName: 'fix/bug-0',
         localBranchName: 'fix/bug-0',
-        selectionProducedOverride: true
+        selectionProducedOverride: true,
+        branchCheckedOutElsewhere: false
       })
     ).toEqual({ reuseEligibleBranch: 'fix/bug-0', defaultReuse: true })
   })
@@ -104,7 +117,20 @@ describe('resolveComposerBranchReuse', () => {
       resolveComposerBranchReuse({
         refName: 'origin/feature/something',
         localBranchName: 'feature/something',
-        selectionProducedOverride: true
+        selectionProducedOverride: true,
+        branchCheckedOutElsewhere: false
+      })
+    ).toEqual({ reuseEligibleBranch: null, defaultReuse: false })
+  })
+
+  it('does not offer reuse when the branch is already checked out in another worktree', () => {
+    // Why: git refuses a branch in two worktrees, so reuse is impossible here.
+    expect(
+      resolveComposerBranchReuse({
+        refName: 'feature-x',
+        localBranchName: 'feature-x',
+        selectionProducedOverride: true,
+        branchCheckedOutElsewhere: true
       })
     ).toEqual({ reuseEligibleBranch: null, defaultReuse: false })
   })
@@ -116,7 +142,8 @@ describe('resolveComposerBranchReuse', () => {
       resolveComposerBranchReuse({
         refName: 'feature-x',
         localBranchName: 'feature-x',
-        selectionProducedOverride: false
+        selectionProducedOverride: false,
+        branchCheckedOutElsewhere: false
       })
     ).toEqual({ reuseEligibleBranch: 'feature-x', defaultReuse: false })
   })

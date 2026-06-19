@@ -665,6 +665,50 @@ export default function NewWorkspaceComposerCard({
               <span>{forkPushWarning}</span>
             </p>
           ) : null}
+          {canReuseSelectedBranch ? (
+            // Why (#5181): sits right under the branch selection (not the Name
+            // field, which can differ from the branch) so reusing the picked
+            // branch is an explicit, discoverable choice. Only shown when reuse
+            // is actually possible — an existing local branch not already
+            // checked out in another worktree.
+            <div className="space-y-1 pt-1">
+              <label className="group flex w-fit items-center gap-2 text-xs text-foreground">
+                <span
+                  className={cn(
+                    'flex size-4 items-center justify-center rounded-[3px] border shadow-sm transition',
+                    reuseSelectedBranch
+                      ? 'border-emerald-500/60 bg-emerald-500 text-white'
+                      : 'border-foreground/20 bg-background dark:border-white/20 dark:bg-muted/10'
+                  )}
+                >
+                  <Check
+                    className={cn(
+                      'size-3 transition-opacity',
+                      reuseSelectedBranch ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                </span>
+                <input
+                  type="checkbox"
+                  checked={reuseSelectedBranch}
+                  onChange={(event) => onReuseSelectedBranchChange(event.target.checked)}
+                  className="sr-only"
+                />
+                <span>
+                  {translate(
+                    'auto.components.NewWorkspaceComposerCard.reuseExistingBranch',
+                    'Reuse branch'
+                  )}
+                </span>
+              </label>
+              <p className="pl-6 text-[11px] text-muted-foreground">
+                {translate(
+                  'auto.components.NewWorkspaceComposerCard.reuseExistingBranchHint',
+                  'Check out the existing branch instead of creating a new one from it.'
+                )}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-1" data-contextual-tour-target="workspace-creation-agent">
@@ -768,49 +812,6 @@ export default function NewWorkspaceComposerCard({
                     )}
                     className="w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   />
-                </div>
-              ) : null}
-
-              {canReuseSelectedBranch ? (
-                // Why (#5181): when an existing local branch is selected, let the
-                // user reuse it (check it out) instead of branching off it, and
-                // make that choice explicit + durable across worktree-name edits.
-                <div className="space-y-1">
-                  <label className="group flex items-center gap-2 text-xs text-foreground">
-                    <span
-                      className={cn(
-                        'flex size-4 items-center justify-center rounded-[3px] border shadow-sm transition',
-                        reuseSelectedBranch
-                          ? 'border-emerald-500/60 bg-emerald-500 text-white'
-                          : 'border-foreground/20 bg-background dark:border-white/20 dark:bg-muted/10'
-                      )}
-                    >
-                      <Check
-                        className={cn(
-                          'size-3 transition-opacity',
-                          reuseSelectedBranch ? 'opacity-100' : 'opacity-0'
-                        )}
-                      />
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={reuseSelectedBranch}
-                      onChange={(event) => onReuseSelectedBranchChange(event.target.checked)}
-                      className="sr-only"
-                    />
-                    <span>
-                      {translate(
-                        'auto.components.NewWorkspaceComposerCard.reuseExistingBranch',
-                        'Reuse this branch'
-                      )}
-                    </span>
-                  </label>
-                  <p className="pl-6 text-[11px] text-muted-foreground">
-                    {translate(
-                      'auto.components.NewWorkspaceComposerCard.reuseExistingBranchHint',
-                      'Check out the existing branch instead of creating a new one from it.'
-                    )}
-                  </p>
                 </div>
               ) : null}
 

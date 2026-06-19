@@ -37,23 +37,40 @@ export function resolveComposerBranchSelection(args: {
 }
 
 /**
+ * True when `branchName` is already checked out in one of the given worktree
+ * branch refs (which may be `refs/heads/foo` or short `foo`). Git refuses to
+ * check out a branch in two worktrees, so such a branch cannot be reused.
+ */
+export function isBranchCheckedOutInWorktrees(
+  branchName: string,
+  worktreeBranches: readonly string[]
+): boolean {
+  return worktreeBranches.some((ref) => ref.replace(/^refs\/heads\//, '') === branchName)
+}
+
+/**
  * Issue #5181: decide whether a picked branch row is an existing LOCAL branch
  * that can be reused (checked out) instead of branched off, and whether reuse
  * should default ON.
  *
- * A branch is local when its ref and local name match — remote-only refs carry
- * an `origin/`-style prefix (e.g. refName `origin/foo`, localBranchName `foo`),
- * so they are not reusable as-is. Reuse defaults ON only when the worktree name
- * was auto-derived from the branch (the selection produced a branch-name
- * override); a user who typed a custom worktree name first is branching off the
- * ref, so reuse stays OFF unless they opt in.
+ * Reuse is only possible for a LOCAL branch (ref === local name; remote-only
+ * refs carry an `origin/`-style prefix) that is NOT already checked out in
+ * another worktree — git allows a branch in only one worktree at a time. Reuse
+ * defaults ON only when the worktree name was auto-derived from the branch (the
+ * selection produced a branch-name override); a user who typed a custom
+ * worktree name first is branching off the ref, so reuse stays OFF unless they
+ * opt in.
  */
 export function resolveComposerBranchReuse(args: {
   refName: string
   localBranchName: string
   selectionProducedOverride: boolean
+  branchCheckedOutElsewhere: boolean
 }): { reuseEligibleBranch: string | null; defaultReuse: boolean } {
-  const reuseEligibleBranch = args.refName === args.localBranchName ? args.localBranchName : null
+  const reuseEligibleBranch =
+    args.refName === args.localBranchName && !args.branchCheckedOutElsewhere
+      ? args.localBranchName
+      : null
   return {
     reuseEligibleBranch,
     defaultReuse: reuseEligibleBranch !== null && args.selectionProducedOverride

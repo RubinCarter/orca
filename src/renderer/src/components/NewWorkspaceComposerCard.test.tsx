@@ -210,7 +210,7 @@ describe('NewWorkspaceComposerCard folder task source mode', () => {
 
   it('shows the reuse-branch checkbox only when a local branch is reusable', () => {
     current = renderCard({ advancedOpen: true, canReuseSelectedBranch: false })
-    expect(current.container.textContent).not.toContain('Reuse this branch')
+    expect(current.container.textContent).not.toContain('Reuse branch')
 
     act(() => current?.root.unmount())
     current?.container.remove()
@@ -220,7 +220,7 @@ describe('NewWorkspaceComposerCard folder task source mode', () => {
       canReuseSelectedBranch: true,
       reuseSelectedBranch: true
     })
-    expect(current.container.textContent).toContain('Reuse this branch')
+    expect(current.container.textContent).toContain('Reuse branch')
     expect(current.container.textContent).toContain(
       'Check out the existing branch instead of creating a new one from it.'
     )
@@ -235,7 +235,7 @@ describe('NewWorkspaceComposerCard folder task source mode', () => {
       onReuseSelectedBranchChange: (next) => changes.push(next)
     })
     const reuseLabel = [...current.container.querySelectorAll('label')].find((label) =>
-      label.textContent?.includes('Reuse this branch')
+      label.textContent?.includes('Reuse branch')
     )
     const checkbox = reuseLabel?.querySelector<HTMLInputElement>('input[type="checkbox"]')
     expect(checkbox).toBeTruthy()
