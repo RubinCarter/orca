@@ -880,6 +880,76 @@ describe('getPRForBranch', () => {
     expect(pr).toMatchObject({ number: 42, title: 'Open fallback PR' })
   })
 
+  it('returns a merged PR when branch lookup and fallback point at the same PR', async () => {
+    getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    ghExecFileAsyncMock
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify([
+          {
+            number: 5511,
+            title: 'Merged current PR',
+            state: 'closed',
+            merged_at: '2026-06-16T17:15:33Z',
+            html_url: 'https://github.com/acme/widgets/pull/5511',
+            updated_at: '2026-06-16T17:15:33Z',
+            draft: false,
+            mergeable_state: 'clean',
+            head: { ref: 'feature/test', sha: 'merged-head-oid' },
+            base: { ref: 'main', sha: 'base-oid' }
+          }
+        ])
+      })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          number: 5511,
+          title: 'Merged current PR',
+          state: 'MERGED',
+          url: 'https://github.com/acme/widgets/pull/5511',
+          statusCheckRollup: [],
+          updatedAt: '2026-06-16T17:15:33Z',
+          isDraft: false,
+          mergeable: 'MERGEABLE',
+          baseRefName: 'main',
+          headRefName: 'feature/test',
+          baseRefOid: 'base-oid',
+          headRefOid: 'merged-head-oid'
+        })
+      })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          number: 5511,
+          title: 'Merged current PR',
+          state: 'MERGED',
+          url: 'https://github.com/acme/widgets/pull/5511',
+          statusCheckRollup: [],
+          updatedAt: '2026-06-16T17:15:33Z',
+          isDraft: false,
+          mergeable: 'MERGEABLE',
+          baseRefName: 'main',
+          headRefName: 'feature/test',
+          baseRefOid: 'base-oid',
+          headRefOid: 'merged-head-oid'
+        })
+      })
+
+    const pr = await getPRForBranch('/repo-root', 'feature/test', null, null, 5511)
+
+    expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
+      3,
+      [
+        'pr',
+        'view',
+        '5511',
+        '--repo',
+        'acme/widgets',
+        '--json',
+        'number,title,state,url,statusCheckRollup,updatedAt,isDraft,mergeable,reviewDecision,mergeStateStatus,autoMergeRequest,baseRefName,headRefName,baseRefOid,headRefOid'
+      ],
+      { cwd: '/repo-root' }
+    )
+    expect(pr).toMatchObject({ number: 5511, state: 'merged', title: 'Merged current PR' })
+  })
+
   it('does not carry a merged upstream branch head repo into a fallback PR number', async () => {
     resolvePRRepositoryCandidatesMock.mockResolvedValueOnce({
       candidates: [{ owner: 'stablyai', repo: 'orca' }],
@@ -980,6 +1050,38 @@ describe('getPRForBranch', () => {
     )
 
     expect(pr).toBeNull()
+  })
+
+  it('returns a merged fallback PR when visible fallback lifecycle is accepted', async () => {
+    getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    ghExecFileAsyncMock
+      .mockResolvedValueOnce({ stdout: JSON.stringify([]) })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          number: 5511,
+          title: 'Merged visible fallback PR',
+          state: 'MERGED',
+          url: 'https://github.com/acme/widgets/pull/5511',
+          statusCheckRollup: [],
+          updatedAt: '2026-06-16T17:15:33Z',
+          isDraft: false,
+          mergeable: 'MERGEABLE',
+          baseRefName: 'main',
+          headRefName: 'deleted-head',
+          baseRefOid: 'base-oid',
+          headRefOid: 'head-oid'
+        })
+      })
+
+    const pr = await getPRForBranch('/repo-root', 'deleted-head', null, null, 5511, {
+      acceptMergedFallbackPR: true
+    })
+
+    expect(pr).toMatchObject({
+      number: 5511,
+      state: 'merged',
+      title: 'Merged visible fallback PR'
+    })
   })
 
   it('falls back to the tracked upstream branch when the local branch name differs', async () => {

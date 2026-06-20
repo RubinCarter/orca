@@ -22,6 +22,7 @@ import {
   addWorktree,
   assertWorktreeCleanForRemoval,
   listWorktrees,
+  listWorktreesStrict,
   removeWorktree
 } from '../git/worktree'
 import * as gitRunner from '../git/runner'
@@ -281,6 +282,7 @@ const {
 
 vi.mock('../git/worktree', () => ({
   listWorktrees: vi.fn().mockResolvedValue(MOCK_GIT_WORKTREES),
+  listWorktreesStrict: vi.fn().mockResolvedValue(MOCK_GIT_WORKTREES),
   assertWorktreeCleanForRemoval: vi.fn().mockResolvedValue(undefined),
   addWorktree: addWorktreeMock,
   removeWorktree: removeWorktreeMock,
@@ -491,6 +493,7 @@ function resetRuntimeTestMocks(): void {
   electronMocks.ipcMain.removeListener.mockClear()
   electronMocks.ipcMain.emit.mockClear()
   vi.mocked(listWorktrees).mockResolvedValue(MOCK_GIT_WORKTREES)
+  vi.mocked(listWorktreesStrict).mockResolvedValue(MOCK_GIT_WORKTREES)
   vi.mocked(addWorktree).mockReset()
   vi.mocked(assertWorktreeCleanForRemoval).mockReset()
   vi.mocked(assertWorktreeCleanForRemoval).mockResolvedValue(undefined)
@@ -14267,6 +14270,27 @@ describe('OrcaRuntimeService', () => {
         }
       ]
     })
+    const workerHandle = runtime.preAllocateHandleForPty('pty-1')
+    runtime.setOrchestrationDb({
+      getActiveDispatchForTerminal: vi.fn((handle: string) =>
+        handle === workerHandle
+          ? {
+              id: 'ctx-1',
+              task_id: 'task-1',
+              assignee_handle: workerHandle,
+              status: 'dispatched'
+            }
+          : undefined
+      ),
+      getLatestDispatchForTerminal: vi.fn(() => undefined),
+      getTask: vi.fn(() => ({
+        id: 'task-1',
+        task_title: 'Dispatch prompt work',
+        display_name: 'Review dispatch prompts and make worker labels distinct',
+        spec: 'Review dispatch prompts\n\nand make worker labels distinct'
+      })),
+      getActiveCoordinatorRun: vi.fn(() => undefined)
+    } as never)
     runtime.attachWindow(1)
     runtime.syncWindowGraph(1, {
       tabs: [
@@ -14297,6 +14321,8 @@ describe('OrcaRuntimeService', () => {
         state: 'working',
         agentType: 'claude',
         prompt: 'ship it',
+        taskTitle: 'Dispatch prompt work',
+        displayName: 'Review dispatch prompts and make worker labels distinct',
         lastAssistantMessage: 'on it',
         stateStartedAt: 900,
         updatedAt: 1000
@@ -16200,6 +16226,9 @@ describe('OrcaRuntimeService', () => {
       ),
       getTask: vi.fn(() => ({
         id: 'task-1',
+        task_title: 'Dispatch prompt work',
+        display_name: 'Review dispatch prompts and make worker labels distinct',
+        spec: 'Review dispatch prompts\n\nand make worker labels distinct',
         created_by_terminal_handle: coordinatorHandle
       })),
       getActiveCoordinatorRun: vi.fn(() => ({
@@ -16249,6 +16278,8 @@ describe('OrcaRuntimeService', () => {
     expect(result.agentOrchestrationByPaneKey?.[workerPaneKey]).toMatchObject({
       taskId: 'task-1',
       dispatchId: 'ctx-1',
+      taskTitle: 'Dispatch prompt work',
+      displayName: 'Review dispatch prompts and make worker labels distinct',
       parentPaneKey: coordinatorPaneKey,
       parentTerminalHandle: coordinatorHandle,
       coordinatorHandle,
@@ -19523,7 +19554,14 @@ describe('OrcaRuntimeService', () => {
     const result = await runtime.removeManagedWorktree(TEST_WORKTREE_ID)
 
     expect(runHook).not.toHaveBeenCalled()
-    expect(removeWorktree).toHaveBeenCalledWith(TEST_REPO_PATH, TEST_WORKTREE_PATH, false)
+    expect(removeWorktree).toHaveBeenCalledWith(
+      TEST_REPO_PATH,
+      TEST_WORKTREE_PATH,
+      false,
+      expect.objectContaining({
+        knownRemovedWorktree: expect.objectContaining({ path: TEST_WORKTREE_PATH })
+      })
+    )
     expect(deleteWorktreeHistoryDirMock).toHaveBeenCalledWith(TEST_WORKTREE_ID)
     expect(result.warning).toBe(
       `orca.yaml archive hook skipped for ${TEST_WORKTREE_PATH}; pass --run-hooks to run it.`
@@ -19560,8 +19598,122 @@ describe('OrcaRuntimeService', () => {
       wslDistro: 'Ubuntu'
     })
     expect(removeWorktree).toHaveBeenCalledWith(TEST_REPO_PATH, TEST_WORKTREE_PATH, false, {
+      knownRemovedWorktree: expect.objectContaining({ path: TEST_WORKTREE_PATH }),
       wslDistro: 'Ubuntu'
     })
+  })
+
+  it('deletes a Windows runtime worktree using the canonical registered path', async () => {
+    setPlatform('win32')
+    const repo = {
+      id: TEST_REPO_ID,
+      path: 'C:\\repo',
+      displayName: 'repo',
+      badgeColor: 'blue',
+      addedAt: 1
+    }
+    const requestedWorktreeId = `${TEST_REPO_ID}::C:/workspaces/improve-dashboard`
+    const registeredWorktree = {
+      path: 'c:\\workspaces\\Improve-Dashboard',
+      head: 'feature-head',
+      branch: 'refs/heads/improve-dashboard',
+      isBare: false,
+      isMainWorktree: false
+    }
+    const runtimeStore = {
+      ...store,
+      getRepos: () => [repo],
+      getRepo: (id: string) => (id === TEST_REPO_ID ? repo : undefined),
+      getAllWorktreeMeta: () => ({
+        [requestedWorktreeId]: makeWorktreeMeta()
+      }),
+      getWorktreeMeta: (worktreeId: string) =>
+        worktreeId === requestedWorktreeId ? makeWorktreeMeta() : undefined,
+      getProjects: () => [
+        {
+          id: 'project-1',
+          displayName: 'repo',
+          badgeColor: 'blue',
+          sourceRepoIds: [TEST_REPO_ID],
+          localWindowsRuntimePreference: { kind: 'wsl', distro: 'Ubuntu' },
+          createdAt: 0,
+          updatedAt: 0
+        }
+      ],
+      getSettings: () => ({
+        ...store.getSettings(),
+        localWindowsRuntimeDefault: { kind: 'windows-host' }
+      })
+    }
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    vi.mocked(getEffectiveHooks).mockReturnValue(null)
+    vi.mocked(listWorktrees).mockResolvedValue([
+      {
+        path: repo.path,
+        head: 'main-head',
+        branch: 'refs/heads/main',
+        isBare: false,
+        isMainWorktree: true
+      },
+      registeredWorktree
+    ])
+    vi.mocked(listWorktreesStrict).mockResolvedValue([
+      {
+        path: repo.path,
+        head: 'main-head',
+        branch: 'refs/heads/main',
+        isBare: false,
+        isMainWorktree: true
+      },
+      registeredWorktree
+    ])
+    vi.mocked(removeWorktree).mockResolvedValue({})
+
+    await runtime.removeManagedWorktree(requestedWorktreeId)
+
+    expect(listWorktrees).toHaveBeenCalledWith(repo.path, { wslDistro: 'Ubuntu' })
+    expect(listWorktreesStrict).toHaveBeenCalledWith(repo.path, { wslDistro: 'Ubuntu' })
+    expect(assertWorktreeCleanForRemoval).toHaveBeenCalledWith(registeredWorktree.path, false, {
+      wslDistro: 'Ubuntu'
+    })
+    expect(removeWorktree).toHaveBeenCalledWith(repo.path, registeredWorktree.path, false, {
+      knownRemovedWorktree: registeredWorktree,
+      wslDistro: 'Ubuntu'
+    })
+  })
+
+  it('surfaces selected-runtime list failures during runtime worktree removal', async () => {
+    setPlatform('win32')
+    const runtimeStore = {
+      ...store,
+      getProjects: () => [
+        {
+          id: 'project-1',
+          displayName: 'repo',
+          badgeColor: 'blue',
+          sourceRepoIds: [TEST_REPO_ID],
+          localWindowsRuntimePreference: { kind: 'wsl', distro: 'Ubuntu' },
+          createdAt: 0,
+          updatedAt: 0
+        }
+      ],
+      getSettings: () => ({
+        ...store.getSettings(),
+        localWindowsRuntimeDefault: { kind: 'windows-host' }
+      })
+    }
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    vi.mocked(listWorktrees).mockResolvedValue(MOCK_GIT_WORKTREES)
+    vi.mocked(listWorktreesStrict).mockRejectedValue(new Error('wsl git list failed'))
+
+    await expect(runtime.removeManagedWorktree(TEST_WORKTREE_ID)).rejects.toThrow(
+      'wsl git list failed'
+    )
+
+    expect(listWorktrees).toHaveBeenCalledWith(TEST_REPO_PATH, { wslDistro: 'Ubuntu' })
+    expect(listWorktreesStrict).toHaveBeenCalledWith(TEST_REPO_PATH, { wslDistro: 'Ubuntu' })
+    expect(assertWorktreeCleanForRemoval).not.toHaveBeenCalled()
+    expect(removeWorktree).not.toHaveBeenCalled()
   })
 
   it('force-deletes a branch that was preserved by runtime worktree removal', async () => {
@@ -19892,6 +20044,29 @@ describe('OrcaRuntimeService', () => {
         isMainWorktree: false
       }
     ])
+    vi.mocked(listWorktreesStrict).mockResolvedValue([
+      {
+        path: TEST_REPO_PATH,
+        head: 'main',
+        branch: 'refs/heads/main',
+        isBare: false,
+        isMainWorktree: true
+      },
+      {
+        path: TEST_WORKTREE_PATH,
+        head: 'parent',
+        branch: 'refs/heads/parent',
+        isBare: false,
+        isMainWorktree: false
+      },
+      {
+        path: `${TEST_WORKTREE_PATH}/child`,
+        head: 'child',
+        branch: 'refs/heads/child',
+        isBare: false,
+        isMainWorktree: false
+      }
+    ])
     vi.mocked(getEffectiveHooks).mockReturnValue({
       scripts: {
         archive: 'pnpm worktree:archive'
@@ -19971,7 +20146,14 @@ describe('OrcaRuntimeService', () => {
     vi.spyOn(gitRunner, 'gitExecFileAsync').mockResolvedValue({ stdout: '', stderr: '' })
 
     await expect(runtime.removeManagedWorktree(TEST_WORKTREE_ID)).resolves.toEqual({})
-    expect(removeWorktree).toHaveBeenCalledWith(TEST_REPO_PATH, TEST_WORKTREE_PATH, false)
+    expect(removeWorktree).toHaveBeenCalledWith(
+      TEST_REPO_PATH,
+      TEST_WORKTREE_PATH,
+      false,
+      expect.objectContaining({
+        knownRemovedWorktree: expect.objectContaining({ path: TEST_WORKTREE_PATH })
+      })
+    )
     expect(deleteWorktreeHistoryDirMock).toHaveBeenCalledWith(TEST_WORKTREE_ID)
   })
 
@@ -19994,7 +20176,14 @@ describe('OrcaRuntimeService', () => {
       undefined,
       undefined
     )
-    expect(removeWorktree).toHaveBeenCalledWith(TEST_REPO_PATH, TEST_WORKTREE_PATH, false)
+    expect(removeWorktree).toHaveBeenCalledWith(
+      TEST_REPO_PATH,
+      TEST_WORKTREE_PATH,
+      false,
+      expect.objectContaining({
+        knownRemovedWorktree: expect.objectContaining({ path: TEST_WORKTREE_PATH })
+      })
+    )
   })
 
   it('clears optimistic reconcile tokens when a CLI worktree removal succeeds', async () => {

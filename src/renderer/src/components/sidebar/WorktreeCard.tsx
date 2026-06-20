@@ -409,7 +409,10 @@ const WorktreeCard = React.memo(function WorktreeCard({
     linkedGitLabMR,
     linkedBitbucketPR,
     linkedAzureDevOpsPR,
-    linkedGiteaPR
+    linkedGiteaPR,
+    {
+      reviewHintKey: hostedReviewEntry?.linkedReviewHintKey
+    }
   )
   const issue: IssueInfo | null | undefined = worktree.linkedIssue
     ? issueEntry !== undefined
@@ -1050,9 +1053,9 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const showConflictOperationBadge =
     !!conflictOperation && conflictOperation !== 'unknown' && conflictOperation !== 'rebase'
   const hasMetadataBadge = showConflictOperationBadge || hasAutomationMetadata
-  const showUnreadQuickAction = !affiliateListMode && showStatus
-  // Why: the slot owns the tiny unread/status lane; legacy keeps the bell,
-  // while the experimental card keeps the status glyph visible.
+  const showUnreadQuickAction = !affiliateListMode && showStatus && !newCardStyle
+  // Why: the slot owns the tiny unread/status lane; legacy keeps the bell
+  // toggle, while the experimental card keeps the status glyph passive.
   const showCombinedStatusSlot = showStatus
   const showTitleRowPrimary = compactCards && worktree.isMainWorktree && !isFolder
   const showMetaRowDetails = !newCardStyle && !compactCards && (hasDetails || hasPorts)
@@ -1763,6 +1766,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
       ) : (
         <WorktreeContextMenu
           worktree={worktree}
+          newCardStyle={newCardStyle}
           selectedWorktrees={selectedWorktrees}
           onContextMenuSelect={handleContextMenuSelect}
         >

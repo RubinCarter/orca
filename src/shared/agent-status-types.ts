@@ -63,6 +63,8 @@ export const AGENT_STATE_HISTORY_MAX = 20
 export type AgentStatusOrchestrationContext = {
   taskId: string
   dispatchId: string
+  taskTitle?: string
+  displayName?: string
   parentTerminalHandle?: string
   parentPaneKey?: string
   coordinatorHandle?: string

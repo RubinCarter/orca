@@ -132,19 +132,19 @@ export function WorktreeCardStatusSlot({
       </>
     )
 
-  if (!showStatus && !showUnreadAction) {
+  const unreadActionEnabled = showUnreadAction && !newCardStyle
+
+  if (!showStatus && !unreadActionEnabled) {
     return null
   }
 
-  if (!showUnreadAction) {
+  if (!unreadActionEnabled) {
     return passiveStatus
   }
 
   const actionLabel = isUnread ? 'Mark as read' : 'Mark as unread'
   const tooltip =
-    showStatus && (!isUnread || newCardStyle)
-      ? `${passiveStatusLabel} · ${unreadTooltip}`
-      : unreadTooltip
+    showStatus && !isUnread ? `${passiveStatusLabel} · ${unreadTooltip}` : unreadTooltip
 
   return (
     <>

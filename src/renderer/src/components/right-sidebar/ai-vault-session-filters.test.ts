@@ -88,6 +88,65 @@ describe('filterAiVaultSessions', () => {
     expect(new Set(shownWhenAllowed)).toEqual(new Set(['claude:1', 'claude:empty']))
   })
 
+  it('matches visible preview message text', () => {
+    expect(
+      filterAiVaultSessions(
+        [
+          {
+            ...baseSession,
+            previewMessages: [
+              {
+                role: 'assistant',
+                text: 'The fixture ordering now matches the golden output.',
+                timestamp: null
+              }
+            ]
+          }
+        ],
+        {
+          query: 'fixture ordering',
+          agents: ['claude'],
+          scope: 'all',
+          sort: 'updated',
+          activeWorktreePath: null,
+          hideEmptySessions: true
+        }
+      ).map((session) => session.id)
+    ).toEqual(['claude:1'])
+  })
+
+  it('does not match hidden preview text when conversation turns are visible', () => {
+    expect(
+      filterAiVaultSessions(
+        [
+          {
+            ...baseSession,
+            previewMessages: [
+              {
+                role: 'user',
+                text: 'Please repair the screenshot comparison.',
+                timestamp: null
+              },
+              {
+                role: 'tool',
+                text: 'internal-build-cache-token',
+                timestamp: null
+              }
+            ]
+          }
+        ],
+        {
+          query: 'internal-build-cache-token',
+          agents: ['claude'],
+          scope: 'all',
+          sort: 'updated',
+          activeWorktreePath: null,
+          hideEmptySessions: true
+        }
+      )
+    ).toEqual([])
+  })
+
   it('matches Windows workspace paths case-insensitively', () => {
     expect(
       filterAiVaultSessions(

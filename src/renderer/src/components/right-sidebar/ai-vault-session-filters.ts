@@ -11,6 +11,7 @@ import type {
   AiVaultSort
 } from '../../../../shared/ai-vault-types'
 import { aiVaultAgentLabel } from '../../../../shared/ai-vault-types'
+import { sessionPreviewSearchText } from './ai-vault-session-display'
 
 export type AiVaultSessionFilterState = {
   query: string
@@ -143,7 +144,8 @@ function matchesQuery(session: AiVaultSession, parsed: ParsedQuery): boolean {
     session.branch,
     session.model,
     session.cwd,
-    session.filePath
+    session.filePath,
+    sessionPreviewSearchText(session)
   ]
     .filter(Boolean)
     .join(' ')

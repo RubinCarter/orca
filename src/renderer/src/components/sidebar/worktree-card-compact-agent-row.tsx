@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import CommentMarkdown from './CommentMarkdown'
 import { getAgentDotState } from './worktree-card-agent-summary'
 import { translate } from '@/i18n/i18n'
+import { getAgentRowPrimaryText } from '@/lib/agent-row-primary-text'
 
 const MARKDOWN_IMAGE_PATTERN = /!\[[^\]\n]*\]\([^)]+\)/
 
@@ -41,7 +42,7 @@ function lastEnteredDoneAt(agent: DashboardAgentRowData): number | null {
 }
 
 function getCompactAgentPrimary(agent: DashboardAgentRowData): string {
-  const prompt = agent.entry.prompt?.trim() ?? ''
+  const prompt = getAgentRowPrimaryText(agent.entry)
   return prompt || agentStateLabel(getAgentDotState(agent))
 }
 

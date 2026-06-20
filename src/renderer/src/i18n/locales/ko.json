@@ -2912,7 +2912,11 @@
             "e740f92596": "새로 고침 실패",
             "8418ec448d": "{{value0}} 사용량을 새로 고칠 수 없습니다. Agent 세션은 여전히 로그인되어 있을 수 있습니다.",
             "45198c7d95": "rate-limit 재설정 1회 사용 가능",
-            "bce421cba3": "rate-limit 재설정 {{value0}}회 사용 가능"
+            "bce421cba3": "rate-limit 재설정 {{value0}}회 사용 가능",
+            "7ec6e030a0": "Next expires now",
+            "d1e442a9e5": "Expires now",
+            "6cf9eaed10": "Next expires in {{value0}}",
+            "20ad66aed1": "Expires in {{value0}}"
           },
           "SshTargetStatusRow": {
             "sshHost": "SSH 호스트"

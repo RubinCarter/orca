@@ -112,6 +112,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../git/worktree', () => ({
   listWorktrees: listWorktreesMock,
+  listWorktreesStrict: listWorktreesMock,
   parseWorktreeList: parseWorktreeListMock,
   assertWorktreeCleanForRemoval: assertWorktreeCleanForRemovalMock,
   addWorktree: addWorktreeMock,
@@ -6230,6 +6231,22 @@ describe('registerWorktreeHandlers', () => {
       false,
       expect.objectContaining({ wslDistro: 'Ubuntu' })
     )
+  })
+
+  it('surfaces selected-runtime list failures during local worktree removal', async () => {
+    mockSelectedWslProjectRuntime()
+    const listError = new Error('wsl git list failed')
+    listWorktreesMock.mockRejectedValue(listError)
+
+    await expect(
+      handlers['worktrees:remove'](null, {
+        worktreeId: 'repo-1::/workspace/feature-wt'
+      })
+    ).rejects.toThrow('wsl git list failed')
+
+    expect(listWorktreesMock).toHaveBeenCalledWith('/workspace/repo', { wslDistro: 'Ubuntu' })
+    expect(assertWorktreeCleanForRemovalMock).not.toHaveBeenCalled()
+    expect(removeWorktreeMock).not.toHaveBeenCalled()
   })
 
   it('fails dirty non-force deletes before PTY teardown', async () => {

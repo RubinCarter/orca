@@ -498,7 +498,12 @@ export type RuntimeWorktreeAgentRow = {
   parentPaneKey: string | null
   state: AgentStatusState
   agentType: AgentType | null
+  /** Raw hook-reported prompt. Display surfaces can prefer displayName. */
   prompt: string
+  /** Explicit orchestration task title, or null outside dispatch. */
+  taskTitle: string | null
+  /** Explicit UI label for orchestration task rows, or null outside dispatch. */
+  displayName: string | null
   lastAssistantMessage: string | null
   toolName: string | null
   toolInput: string | null

@@ -58,7 +58,7 @@ describe('WorktreeCardStatusSlot', () => {
     expect(markup).toContain('text-amber-500')
   })
 
-  it('keeps the status dot visible for unread rows when new card style is on', () => {
+  it('keeps the status dot passive for unread rows when new card style is on', () => {
     const markup = renderToStaticMarkup(
       <WorktreeCardStatusSlot
         worktreeId="wt-1"
@@ -73,8 +73,9 @@ describe('WorktreeCardStatusSlot', () => {
       />
     )
 
-    expect(markup).toContain('aria-label="Mark as read"')
-    expect(markup).toContain('Active · Mark as read')
+    expect(markup).not.toContain('aria-label="Mark as read"')
+    expect(markup).not.toContain('Mark as read')
+    expect(markup).toContain('Active')
     expect(markup).toContain('bg-emerald-500')
     expect(markup).not.toContain('lucide-bell')
     expect(markup).not.toContain('text-amber-500')
@@ -307,7 +308,7 @@ describe('WorktreeCardStatusSlot', () => {
     expect(markup).toContain('text-amber-500')
   })
 
-  it('keeps PR status visible for unread rows when new card style is on', () => {
+  it('keeps PR status passive for unread rows when new card style is on', () => {
     const markup = renderToStaticMarkup(
       <WorktreeCardStatusSlot
         worktreeId="wt-1"
@@ -322,19 +323,18 @@ describe('WorktreeCardStatusSlot', () => {
       />
     )
 
-    expect(markup).toContain('aria-label="Mark as read"')
-    expect(markup).toContain('Mark as read')
-    expect(markup).toContain('PR checks: Failed · Mark as read')
-    expect(markup).toContain(
-      'group/unread relative flex cursor-pointer items-center justify-center rounded transition-all size-5'
-    )
+    expect(markup).not.toContain('aria-label="Mark as read"')
+    expect(markup).not.toContain('Mark as read')
+    expect(markup).toContain('PR checks: Failed')
+    expect(markup).not.toContain('group/unread')
+    expect(markup).not.toContain('cursor-pointer')
     expect(markup).toContain('text-rose-500/85')
     expect(markup).not.toContain('lucide-bell')
     expect(markup).not.toContain('text-amber-500')
     expect(markup).not.toContain('bg-emerald-500')
   })
 
-  it('keeps the branch icon visible for unread rows in new card style', () => {
+  it('keeps the branch icon passive for unread rows in new card style', () => {
     const markup = renderToStaticMarkup(
       <WorktreeCardStatusSlot
         worktreeId="wt-1"
@@ -348,10 +348,10 @@ describe('WorktreeCardStatusSlot', () => {
       />
     )
 
-    expect(markup).toContain('Branch · Mark as read')
-    expect(markup).toContain(
-      'group/unread relative flex cursor-pointer items-center justify-center rounded transition-all size-5'
-    )
+    expect(markup).toContain('Branch')
+    expect(markup).not.toContain('Mark as read')
+    expect(markup).not.toContain('group/unread')
+    expect(markup).not.toContain('cursor-pointer')
     expect(markup).toContain('lucide-git-branch')
     expect(markup).not.toContain('lucide-bell')
     expect(markup).not.toContain('text-amber-500')
