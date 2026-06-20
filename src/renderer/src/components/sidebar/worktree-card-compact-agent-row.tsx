@@ -199,9 +199,11 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
       <span className="min-w-0 flex-1 truncate">
         {/* Why: the selected-row fill is strong enough to wash out the dimmed
             prompt/secondary text, so lift both toward full foreground when focused. */}
-        <span className={isFocusedPane ? 'text-foreground' : 'text-foreground/85'}>{primary}</span>
+        <span className={isFocusedPane ? 'text-foreground' : 'text-muted-foreground/90'}>
+          {primary}
+        </span>
         {secondary && (
-          <span className={isFocusedPane ? 'text-foreground/70' : 'text-muted-foreground/75'}>
+          <span className={isFocusedPane ? 'text-foreground/70' : 'text-muted-foreground/65'}>
             {' '}
             - {secondary}
           </span>

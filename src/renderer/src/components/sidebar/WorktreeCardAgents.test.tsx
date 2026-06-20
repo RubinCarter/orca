@@ -205,6 +205,47 @@ describe('WorktreeCardAgents', () => {
     expect(markup).not.toContain('data-testid="agent-row"')
   })
 
+  it('dims non-focused compact agent row text', async () => {
+    mockAgentActivityDisplayMode = 'compact'
+    mockAgents = [
+      mockAgent({
+        agentType: 'codex',
+        startedAt: 1000,
+        prompt: 'Run tests',
+        lastAssistantMessage: 'Inspecting changes'
+      })
+    ]
+    const { default: WorktreeCardAgents } = await import('./WorktreeCardAgents')
+
+    const markup = renderToStaticMarkup(<WorktreeCardAgents worktreeId="wt-1" />)
+
+    expect(markup).toContain('<span class="text-muted-foreground/90">Run tests</span>')
+    expect(markup).toContain('<span class="text-muted-foreground/65"> - Inspecting changes</span>')
+    expect(markup).not.toContain('data-focused-agent-pane="true"')
+    expect(markup).not.toContain('<span class="text-foreground">Run tests</span>')
+  })
+
+  it('keeps focused compact agent row text legible', async () => {
+    mockAgentActivityDisplayMode = 'compact'
+    mockFocusedAgentPaneKey = 'tab-1:1'
+    mockAgents = [
+      mockAgent({
+        agentType: 'codex',
+        startedAt: 1000,
+        prompt: 'Focused prompt',
+        lastAssistantMessage: 'Reading output'
+      })
+    ]
+    const { default: WorktreeCardAgents } = await import('./WorktreeCardAgents')
+
+    const markup = renderToStaticMarkup(<WorktreeCardAgents worktreeId="wt-1" />)
+
+    expect(markup).toContain('data-focused-agent-pane="true"')
+    expect(markup).toContain('<span class="text-foreground">Focused prompt</span>')
+    expect(markup).toContain('<span class="text-foreground/70"> - Reading output</span>')
+    expect(markup).not.toContain('<span class="text-muted-foreground/90">Focused prompt</span>')
+  })
+
   it('marks only the focused agent row', async () => {
     mockAgentActivityDisplayMode = 'full'
     mockFocusedAgentPaneKey = 'tab-1:2'
