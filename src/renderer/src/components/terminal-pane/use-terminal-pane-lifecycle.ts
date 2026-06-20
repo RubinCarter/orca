@@ -222,6 +222,24 @@ export function suppressIntentionalPaneCloseExit(
   return ptyId
 }
 
+export function mapRestoredPaneTitlesByPaneId(
+  savedTitles: Record<string, string> | undefined,
+  restoredPaneByLeafId: ReadonlyMap<string, number>
+): Record<number, string> {
+  if (!savedTitles) {
+    return {}
+  }
+
+  const restored: Record<number, string> = {}
+  for (const [oldLeafId, title] of Object.entries(savedTitles)) {
+    const newPaneId = restoredPaneByLeafId.get(oldLeafId)
+    if (newPaneId != null && title) {
+      restored[newPaneId] = title
+    }
+  }
+  return restored
+}
+
 function terminalSelectionExceedsPrimaryLimit(terminal: Terminal): boolean {
   const range = terminal.getSelectionPosition()
   if (!range) {
@@ -1111,24 +1129,18 @@ export function useTerminalPaneLifecycle({
 
     // Seed pane titles from the persisted snapshot using the same
     // old-leafId → new-paneId mapping used for buffer restore.
-    const savedTitles = initialLayoutRef.current.titlesByLeafId
-    if (savedTitles) {
-      const restored: Record<number, string> = {}
-      for (const [oldLeafId, title] of Object.entries(savedTitles)) {
-        const newPaneId = restoredPaneByLeafId.get(oldLeafId)
-        if (newPaneId != null && title) {
-          restored[newPaneId] = title
-        }
-      }
-      if (Object.keys(restored).length > 0) {
-        // Merge (not replace) so we don't discard any concurrent state
-        // updates from onPaneClosed that React may have batched.
-        setPaneTitles((prev) => ({ ...prev, ...restored }))
-        // Why: the lifecycle immediately persists a fresh layout after restore,
-        // before React state has flushed. Keep the ref in sync now so that
-        // persist preserves restored titles instead of rewriting them away.
-        paneTitlesRef.current = { ...paneTitlesRef.current, ...restored }
-      }
+    const restoredTitles = mapRestoredPaneTitlesByPaneId(
+      initialLayoutRef.current.titlesByLeafId,
+      restoredPaneByLeafId
+    )
+    if (Object.keys(restoredTitles).length > 0) {
+      // Merge (not replace) so we don't discard any concurrent state
+      // updates from onPaneClosed that React may have batched.
+      setPaneTitles((prev) => ({ ...prev, ...restoredTitles }))
+      // Why: the lifecycle immediately persists a fresh layout after restore,
+      // before React state has flushed. Keep the ref in sync now so that
+      // persist preserves restored titles instead of rewriting them away.
+      paneTitlesRef.current = { ...paneTitlesRef.current, ...restoredTitles }
     }
 
     const restoredActivePaneId =
