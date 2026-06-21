@@ -52,6 +52,8 @@ export type Section = { title: string; icon?: 'pin'; data: Worktree[] }
 export function getWorktreeStatus(
   w: Worktree
 ): 'working' | 'active' | 'permission' | 'done' | 'inactive' {
+  // Why: desktop's sidebar activity is the parity source. Runtime status may
+  // still report retained/background PTYs as active after desktop hides them.
   if (w.hasHostSidebarActivity === false) {
     return 'inactive'
   }

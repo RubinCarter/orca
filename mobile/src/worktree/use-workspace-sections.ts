@@ -31,6 +31,8 @@ function getVisibleHostIds(args: {
   workspaceHostScope?: string
   visibleWorkspaceHostIds?: string[] | null
 }): Set<ExecutionHostId> | null {
+  // Why: desktop stores an explicit visible-host list for sticky multi-host
+  // selections; when present it is more specific than the broad scope value.
   const explicit = args.visibleWorkspaceHostIds
     ?.map((id) => normalizeExecutionHostId(id))
     .filter((id): id is ExecutionHostId => id != null)
@@ -67,6 +69,8 @@ function getRepoExecutionHostId(
   if (executionHostId) {
     return executionHostId
   }
+  // Why: repos added through SSH predate executionHostId; connectionId is the
+  // legacy host owner and must still map to the same sidebar scope.
   const connectionId = repo.connectionId?.trim()
   return connectionId
     ? (`ssh:${encodeURIComponent(connectionId)}` as ExecutionHostId)
@@ -92,6 +96,18 @@ export function getVisibleRepoIdsByName(args: {
     })
     .map((repo) => [repo.displayName, repo.id] as const)
   return new Map(entries)
+}
+
+export function getHostScopedWorktrees(args: {
+  displayWorktrees: Worktree[]
+  repoSummaries: RepoSectionSummary[]
+  visibleRepoIdsByName: ReadonlyMap<string, string>
+}): Worktree[] {
+  if (args.repoSummaries.length === 0) {
+    return args.displayWorktrees
+  }
+  const visibleRepoIds = new Set(args.visibleRepoIdsByName.values())
+  return args.displayWorktrees.filter((worktree) => visibleRepoIds.has(worktree.repoId))
 }
 
 export function useWorkspaceSections(args: {
@@ -128,9 +144,27 @@ export function useWorkspaceSections(args: {
     visibleWorkspaceHostIds
   } = args
 
+  const visibleRepoIdsByName = useMemo(() => {
+    return getVisibleRepoIdsByName({
+      repos: repoSummaries,
+      workspaceHostScope,
+      visibleWorkspaceHostIds
+    })
+  }, [repoSummaries, visibleWorkspaceHostIds, workspaceHostScope])
+
+  const hostScopedWorktrees = useMemo(
+    () =>
+      getHostScopedWorktrees({
+        displayWorktrees,
+        repoSummaries,
+        visibleRepoIdsByName
+      }),
+    [displayWorktrees, repoSummaries, visibleRepoIdsByName]
+  )
+
   const uniqueRepos = useMemo(() => {
     const repos = new Map<string, { id: string; color: string }>()
-    for (const w of displayWorktrees) {
+    for (const w of hostScopedWorktrees) {
       if (!repos.has(w.repo)) {
         repos.set(w.repo, {
           id: repoIdsByName.get(w.repo) ?? w.repoId,
@@ -139,15 +173,7 @@ export function useWorkspaceSections(args: {
       }
     }
     return [...repos.entries()].map(([name, { id, color }]) => ({ name, id, color }))
-  }, [displayWorktrees, repoColorsByName, repoIdsByName])
-
-  const visibleRepoIdsByName = useMemo(() => {
-    return getVisibleRepoIdsByName({
-      repos: repoSummaries,
-      workspaceHostScope,
-      visibleWorkspaceHostIds
-    })
-  }, [repoSummaries, visibleWorkspaceHostIds, workspaceHostScope])
+  }, [hostScopedWorktrees, repoColorsByName, repoIdsByName])
 
   const uniqueRepoColors = useMemo(
     () => new Map(uniqueRepos.map((repo) => [repo.name, repo.color])),
@@ -157,7 +183,7 @@ export function useWorkspaceSections(args: {
   const rawSections = useMemo(
     () =>
       buildSections(
-        displayWorktrees,
+        hostScopedWorktrees,
         sortMode,
         filters,
         search,
@@ -165,7 +191,7 @@ export function useWorkspaceSections(args: {
         pinnedIds,
         visibleRepoIdsByName
       ),
-    [displayWorktrees, sortMode, filters, search, groupMode, pinnedIds, visibleRepoIdsByName]
+    [hostScopedWorktrees, sortMode, filters, search, groupMode, pinnedIds, visibleRepoIdsByName]
   )
 
   const sections = useMemo(

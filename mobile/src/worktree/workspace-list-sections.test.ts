@@ -1,16 +1,18 @@
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Worktree } from './workspace-list-sections'
 import { buildSections, filterWorktrees, getWorktreeStatus } from './workspace-list-sections'
 
 function worktree(overrides: Partial<Worktree> = {}): Worktree {
+  const worktreePath = join('/tmp', 'orca', 'worktrees', 'feature')
   return {
     workspaceKind: 'git',
-    worktreeId: 'repo-1::/tmp/orca/worktrees/feature',
+    worktreeId: `repo-1::${worktreePath}`,
     repoId: 'repo-1',
     repo: 'orca',
     branch: 'feature/mobile-parity',
     displayName: 'feature',
-    path: '/tmp/orca/worktrees/feature',
+    path: worktreePath,
     liveTerminalCount: 0,
     hasAttachedPty: false,
     preview: '',
