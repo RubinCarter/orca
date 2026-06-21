@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Worktree } from './workspace-list-sections'
-import { filterWorktrees } from './workspace-list-sections'
+import { filterWorktrees, getWorktreeStatus } from './workspace-list-sections'
 
 function worktree(overrides: Partial<Worktree> = {}): Worktree {
   return {
@@ -96,5 +96,31 @@ describe('filterWorktrees', () => {
         ''
       )
     ).toEqual([folder])
+  })
+})
+
+describe('getWorktreeStatus', () => {
+  it('uses host sidebar inactivity for the row status dot when available', () => {
+    expect(
+      getWorktreeStatus(
+        worktree({
+          status: 'active',
+          liveTerminalCount: 3,
+          hasHostSidebarActivity: false
+        })
+      )
+    ).toBe('inactive')
+  })
+
+  it('marks host sidebar activity active when runtime status has not caught up', () => {
+    expect(
+      getWorktreeStatus(
+        worktree({
+          status: 'inactive',
+          liveTerminalCount: 0,
+          hasHostSidebarActivity: true
+        })
+      )
+    ).toBe('active')
   })
 })

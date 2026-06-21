@@ -52,6 +52,15 @@ export type Section = { title: string; icon?: 'pin'; data: Worktree[] }
 export function getWorktreeStatus(
   w: Worktree
 ): 'working' | 'active' | 'permission' | 'done' | 'inactive' {
+  if (w.hasHostSidebarActivity === false) {
+    return 'inactive'
+  }
+  if (w.status && w.status !== 'inactive') {
+    return w.status
+  }
+  if (w.hasHostSidebarActivity === true) {
+    return 'active'
+  }
   if (w.status) {
     return w.status
   }
