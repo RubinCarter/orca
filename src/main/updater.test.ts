@@ -870,6 +870,7 @@ describe('updater', () => {
       expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
     })
 
+    autoUpdaterMock.emit('checking-for-update')
     autoUpdaterMock.emit('update-not-available')
 
     await vi.waitFor(() => {
