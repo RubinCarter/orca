@@ -8669,7 +8669,17 @@
             "b715ef615b": "{{value1}}より{{value0}}commits 進んでいます",
             "c1a8f3e204": "{{value0}}より1commit 遅れています",
             "d2b9g4f315": "{{value1}}より{{value0}}commits 遅れています",
-            "e9c2a5d416": "{{value0}}と同じ状態"
+            "e9c2a5d416": "{{value0}}と同じ状態",
+            "submoduleCommit": "Commit",
+            "submoduleCommitInProgress": "Commit in progress...",
+            "submoduleResolveConflicts": "Resolve conflicts before committing",
+            "submoduleCommitStaged": "Commit staged submodule changes",
+            "submoduleEnterMessage": "Enter a commit message to commit",
+            "submoduleStageAll": "Stage All",
+            "submoduleStageAllTitle": "Stage all submodule changes",
+            "submoduleNothingToCommit": "Stage at least one submodule file to commit",
+            "submoduleCommitMessage": "Message",
+            "submoduleCommitMessageLabel": "Submodule commit message"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "選択した agent を開始できませんでした。",

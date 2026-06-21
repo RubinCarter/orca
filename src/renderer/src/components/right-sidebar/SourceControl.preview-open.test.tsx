@@ -48,6 +48,8 @@ const mocks = vi.hoisted(() => {
     createEmptySplitGroup: vi.fn(),
     getRuntimeGitStatus: vi.fn(),
     stageRuntimeGitPath: vi.fn(),
+    bulkStageRuntimeGitPaths: vi.fn(),
+    commitRuntimeGit: vi.fn(),
     discardRuntimeGitPath: vi.fn(),
     refreshGitStatusForWorktree: vi.fn(),
     requestEditorSaveQuiesce: vi.fn(),
@@ -89,6 +91,8 @@ vi.mock('@/runtime/runtime-git-client', async (importOriginal) => {
     ...actual,
     getRuntimeGitStatus: mocks.calls.getRuntimeGitStatus,
     stageRuntimeGitPath: mocks.calls.stageRuntimeGitPath,
+    bulkStageRuntimeGitPaths: mocks.calls.bulkStageRuntimeGitPaths,
+    commitRuntimeGit: mocks.calls.commitRuntimeGit,
     discardRuntimeGitPath: mocks.calls.discardRuntimeGitPath
   }
 })
@@ -148,6 +152,8 @@ function resetState(overrides: Partial<Record<string, unknown>> = {}): void {
     conflictOperation: 'unknown'
   })
   mocks.calls.stageRuntimeGitPath.mockResolvedValue(undefined)
+  mocks.calls.bulkStageRuntimeGitPaths.mockResolvedValue(undefined)
+  mocks.calls.commitRuntimeGit.mockResolvedValue({ success: true })
   mocks.calls.discardRuntimeGitPath.mockResolvedValue(undefined)
   mocks.calls.refreshGitStatusForWorktree.mockResolvedValue(undefined)
   mocks.calls.requestEditorSaveQuiesce.mockResolvedValue(undefined)
@@ -537,6 +543,144 @@ describe('SourceControl preview row opens', () => {
         worktreePath: '/repo/wt/packages/nested'
       }),
       'README.md'
+    )
+  })
+
+  it('renders a separate submodule repository action surface that stages in the nested repo', async () => {
+    resetState({
+      gitSubmodulesByWorktree: {
+        [mocks.activeWorktree.id]: [
+          {
+            name: 'packages/nested',
+            path: 'packages/nested',
+            url: 'https://example.com/nested.git'
+          }
+        ]
+      },
+      gitStatusByWorktree: {
+        [mocks.activeWorktree.id]: [
+          gitEntry({
+            path: 'packages/nested',
+            submodule: { commitChanged: false, trackedChanges: true, untrackedChanges: false }
+          })
+        ]
+      }
+    })
+    mocks.calls.getRuntimeGitStatus.mockResolvedValue({
+      entries: [
+        gitEntry({
+          path: 'README.md',
+          area: 'unstaged',
+          status: 'modified',
+          added: 3,
+          removed: 1
+        })
+      ],
+      conflictOperation: 'unknown'
+    })
+    renderSourceControl()
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const actions = container.querySelector<HTMLDivElement>(
+      '[data-source-control-submodule-actions="packages/nested"]'
+    )
+    expect(actions).not.toBeNull()
+    const stageAllButton = [...(actions?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(
+      (button) => button.textContent?.includes('Stage All')
+    )
+    expect(stageAllButton).not.toBeNull()
+
+    await act(async () => {
+      stageAllButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(mocks.calls.bulkStageRuntimeGitPaths).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worktreeId: null,
+        worktreePath: '/repo/wt/packages/nested'
+      }),
+      ['README.md']
+    )
+  })
+
+  it('commits staged submodule files from the separate submodule repository action surface', async () => {
+    resetState({
+      gitSubmodulesByWorktree: {
+        [mocks.activeWorktree.id]: [
+          {
+            name: 'packages/nested',
+            path: 'packages/nested',
+            url: 'https://example.com/nested.git'
+          }
+        ]
+      },
+      gitStatusByWorktree: {
+        [mocks.activeWorktree.id]: [
+          gitEntry({
+            path: 'packages/nested',
+            submodule: { commitChanged: false, trackedChanges: true, untrackedChanges: false }
+          })
+        ]
+      }
+    })
+    mocks.calls.getRuntimeGitStatus.mockResolvedValue({
+      entries: [
+        gitEntry({
+          path: 'README.md',
+          area: 'staged',
+          status: 'modified',
+          added: 3,
+          removed: 1
+        })
+      ],
+      conflictOperation: 'unknown'
+    })
+    renderSourceControl()
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const actions = container.querySelector<HTMLDivElement>(
+      '[data-source-control-submodule-actions="packages/nested"]'
+    )
+    const message = actions?.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Submodule commit message"]'
+    )
+    expect(message).not.toBeNull()
+
+    await act(async () => {
+      if (message) {
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLTextAreaElement.prototype,
+          'value'
+        )?.set
+        valueSetter?.call(message, 'fix nested readme')
+        message.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      await Promise.resolve()
+    })
+
+    const commitButton = [...(actions?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(
+      (button) => button.textContent?.includes('Commit')
+    )
+    expect(commitButton).not.toBeNull()
+
+    await act(async () => {
+      commitButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(mocks.calls.commitRuntimeGit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worktreeId: null,
+        worktreePath: '/repo/wt/packages/nested'
+      }),
+      'fix nested readme'
     )
   })
 

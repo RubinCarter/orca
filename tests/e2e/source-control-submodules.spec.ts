@@ -114,6 +114,9 @@ test.describe('Source Control submodules', () => {
     const clean = await createCommittedSubmodule(worktreePath, `000-e2e-clean-submodule-${stamp}`)
     const dirty = await createCommittedSubmodule(worktreePath, `000-e2e-dirty-submodule-${stamp}`)
     libraryPaths.push(clean.libraryPath, dirty.libraryPath)
+    const dirtySubmoduleWorktreePath = path.join(worktreePath, dirty.submodulePath)
+    await git(dirtySubmoduleWorktreePath, ['config', 'user.email', 'e2e@test.local'])
+    await git(dirtySubmoduleWorktreePath, ['config', 'user.name', 'E2E Test'])
     await writeFile(path.join(worktreePath, dirty.submodulePath, 'README.md'), 'dirty library\n')
     await writeFile(path.join(worktreePath, dirty.submodulePath, 'NOTES.md'), 'nested notes\n')
 
@@ -157,18 +160,46 @@ test.describe('Source Control submodules', () => {
     const nestedNotesRow = orcaPage.locator('[data-source-control-path="NOTES.md"]')
     await expect(nestedReadmeRow).toBeVisible()
     await expect(nestedNotesRow).toBeVisible()
-    await nestedReadmeRow.hover()
-    await nestedReadmeRow.getByLabel('Stage').click()
+    const submoduleActions = orcaPage.locator(
+      `[data-source-control-submodule-actions="${dirty.submodulePath}"]`
+    )
+    await expect(submoduleActions).toBeVisible()
+    await expect(submoduleActions.getByRole('button', { name: 'Stage All' })).toBeVisible()
+    await submoduleActions.getByRole('button', { name: 'Stage All' }).click()
 
-    const dirtySubmoduleWorktreePath = path.join(worktreePath, dirty.submodulePath)
     await expect
       .poll(async () => {
         return orcaPage.evaluate(async (submodulePath) => {
           const status = await window.api.git.status({ worktreePath: submodulePath })
-          return status.entries.find((entry) => entry.path === 'README.md')?.area ?? null
+          return status.entries
+            .map((entry) => [entry.path, entry.area])
+            .sort(([a], [b]) => a.localeCompare(b))
         }, dirtySubmoduleWorktreePath)
       })
-      .toBe('staged')
+      .toEqual([
+        ['NOTES.md', 'staged'],
+        ['README.md', 'staged']
+      ])
+
+    await expect(submoduleActions.getByRole('button', { name: 'Commit' })).toBeDisabled()
+    await submoduleActions.getByLabel('Submodule commit message').fill('commit nested changes')
+    await expect(submoduleActions.getByRole('button', { name: 'Commit' })).toBeEnabled()
+    await submoduleActions.getByRole('button', { name: 'Commit' }).click()
+
+    await expect
+      .poll(async () => {
+        return orcaPage.evaluate(async (submodulePath) => {
+          const status = await window.api.git.status({ worktreePath: submodulePath })
+          return status.entries.length
+        }, dirtySubmoduleWorktreePath)
+      })
+      .toBe(0)
+    const { stdout: latestSubmoduleCommit } = await execFileAsync(
+      'git',
+      ['log', '-1', '--pretty=%s'],
+      { cwd: dirtySubmoduleWorktreePath }
+    )
+    expect(latestSubmoduleCommit.trim()).toBe('commit nested changes')
 
     await openFileExplorer(orcaPage)
     const cleanExplorerRow = orcaPage.getByRole('button', {

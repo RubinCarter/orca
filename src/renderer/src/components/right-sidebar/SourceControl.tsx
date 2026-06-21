@@ -849,6 +849,13 @@ function SourceControlInner(): React.JSX.Element {
   const [submoduleStatusByPath, setSubmoduleStatusByPath] = useState<
     Record<string, SubmoduleSourceControlStatus>
   >({})
+  const [submoduleCommitDrafts, setSubmoduleCommitDrafts] = useState<Record<string, string>>({})
+  const [submoduleCommitErrors, setSubmoduleCommitErrors] = useState<Record<string, string | null>>(
+    {}
+  )
+  const [submoduleCommitInFlight, setSubmoduleCommitInFlight] = useState<Record<string, boolean>>(
+    {}
+  )
   const submoduleStatusRequestSeqRef = useRef(0)
   const [pendingDiffCommentsClear, setPendingDiffCommentsClear] =
     useState<PendingDiffCommentsClear | null>(null)
@@ -5064,6 +5071,64 @@ function SourceControlInner(): React.JSX.Element {
     ]
   )
 
+  const handleCommitSubmodule = useCallback(
+    async (
+      submodulePath: string,
+      submoduleWorktreePath: string,
+      stagedEntries: readonly GitStatusEntry[]
+    ): Promise<void> => {
+      const message = (submoduleCommitDrafts[submodulePath] ?? '').trim()
+      if (!message || stagedEntries.length === 0 || submoduleCommitInFlight[submodulePath]) {
+        return
+      }
+      setSubmoduleCommitInFlight((prev) => ({ ...prev, [submodulePath]: true }))
+      setSubmoduleCommitErrors((prev) => ({ ...prev, [submodulePath]: null }))
+      try {
+        const result = await commitRuntimeGit(
+          {
+            // Why: VS Code models initialized submodules as their own SCM repos;
+            // commits must run in the nested repo, not the parent gitlink owner.
+            settings: activeRepoSettings,
+            worktreeId: null,
+            worktreePath: submoduleWorktreePath,
+            connectionId: activeConnectionId ?? undefined
+          },
+          message
+        )
+        if (!result.success) {
+          setSubmoduleCommitErrors((prev) => ({
+            ...prev,
+            [submodulePath]: result.error ?? 'Commit failed'
+          }))
+          return
+        }
+        setSubmoduleCommitDrafts((prev) => {
+          if ((prev[submodulePath] ?? '').trim() !== message) {
+            return prev
+          }
+          return { ...prev, [submodulePath]: '' }
+        })
+        await refreshSubmoduleSourceControlStatuses()
+        await refreshActiveGitStatusAfterMutation()
+      } catch (error) {
+        setSubmoduleCommitErrors((prev) => ({
+          ...prev,
+          [submodulePath]: error instanceof Error ? error.message : 'Commit failed'
+        }))
+      } finally {
+        setSubmoduleCommitInFlight((prev) => ({ ...prev, [submodulePath]: false }))
+      }
+    },
+    [
+      activeConnectionId,
+      activeRepoSettings,
+      refreshActiveGitStatusAfterMutation,
+      refreshSubmoduleSourceControlStatuses,
+      submoduleCommitDrafts,
+      submoduleCommitInFlight
+    ]
+  )
+
   const requestDiscardSubmoduleEntry = useCallback(
     (submoduleWorktreePath: string, entry: GitStatusEntry): void => {
       setPendingDiscard({
@@ -5989,6 +6054,21 @@ function SourceControlInner(): React.JSX.Element {
               const stageAllPaths = section.visibleEntries
                 .filter(isStageableStatusEntry)
                 .map((entry) => entry.path)
+              const stagedEntries = section.groups.staged
+              const submoduleHasStageableChanges =
+                section.groups.unstaged.some(isStageableStatusEntry) ||
+                section.groups.untracked.some(isStageableStatusEntry)
+              const submoduleHasUnresolvedConflicts = section.visibleEntries.some(
+                (entry) => entry.conflictStatus === 'unresolved'
+              )
+              const submoduleCommitMessage = submoduleCommitDrafts[section.submodule.path] ?? ''
+              const submodulePrimaryAction = resolveSubmoduleRepositoryPrimaryAction({
+                stagedCount: stagedEntries.length,
+                hasStageableChanges: submoduleHasStageableChanges,
+                hasMessage: submoduleCommitMessage.trim().length > 0,
+                hasUnresolvedConflicts: submoduleHasUnresolvedConflicts,
+                isCommitting: submoduleCommitInFlight[section.submodule.path] ?? false
+              })
               const unstageAllPaths = getUnstageAllPaths(section.visibleEntries)
               const label = translate(
                 'auto.components.right.sidebar.SourceControl.submoduleRepoLabel',
@@ -6041,6 +6121,35 @@ function SourceControlInner(): React.JSX.Element {
                       </div>
                     }
                   />
+                  {!isCollapsed && (
+                    <SubmoduleRepositoryActions
+                      submodulePath={section.submodule.path}
+                      commitMessage={submoduleCommitMessage}
+                      commitError={submoduleCommitErrors[section.submodule.path] ?? null}
+                      isCommitting={submoduleCommitInFlight[section.submodule.path] ?? false}
+                      primaryAction={submodulePrimaryAction}
+                      onCommitMessageChange={(value) => {
+                        setSubmoduleCommitDrafts((prev) => ({
+                          ...prev,
+                          [section.submodule.path]: value
+                        }))
+                      }}
+                      onPrimaryAction={() => {
+                        if (submodulePrimaryAction.disabled) {
+                          return
+                        }
+                        if (submodulePrimaryAction.kind === 'stage') {
+                          void handleStageAllSubmodulePaths(section.worktreePath, stageAllPaths)
+                          return
+                        }
+                        void handleCommitSubmodule(
+                          section.submodule.path,
+                          section.worktreePath,
+                          stagedEntries
+                        )
+                      }}
+                    />
+                  )}
                   {!isCollapsed &&
                     section.visibleEntries.map((entry) => {
                       const key = `${collapseKey}:${entry.area}::${entry.path}`
@@ -6532,6 +6641,164 @@ function getCommitFailureKindLabel(summary: string): string | null {
   }
 
   return null
+}
+
+function resolveSubmoduleRepositoryPrimaryAction({
+  stagedCount,
+  hasStageableChanges,
+  hasMessage,
+  hasUnresolvedConflicts,
+  isCommitting
+}: {
+  stagedCount: number
+  hasStageableChanges: boolean
+  hasMessage: boolean
+  hasUnresolvedConflicts: boolean
+  isCommitting: boolean
+}): PrimaryAction {
+  const commitLabel = translate(
+    'auto.components.right.sidebar.SourceControl.submoduleCommit',
+    'Commit'
+  )
+  if (isCommitting) {
+    return {
+      kind: 'commit',
+      label: commitLabel,
+      title: translate(
+        'auto.components.right.sidebar.SourceControl.submoduleCommitInProgress',
+        'Commit in progress...'
+      ),
+      disabled: true
+    }
+  }
+  if (hasUnresolvedConflicts) {
+    return {
+      kind: 'commit',
+      label: commitLabel,
+      title: translate(
+        'auto.components.right.sidebar.SourceControl.submoduleResolveConflicts',
+        'Resolve conflicts before committing'
+      ),
+      disabled: true
+    }
+  }
+  if (stagedCount > 0 && hasMessage) {
+    return {
+      kind: 'commit',
+      label: commitLabel,
+      title: translate(
+        'auto.components.right.sidebar.SourceControl.submoduleCommitStaged',
+        'Commit staged submodule changes'
+      ),
+      disabled: false
+    }
+  }
+  if (stagedCount > 0) {
+    return {
+      kind: 'commit',
+      label: commitLabel,
+      title: translate(
+        'auto.components.right.sidebar.SourceControl.submoduleEnterMessage',
+        'Enter a commit message to commit'
+      ),
+      disabled: true
+    }
+  }
+  if (hasStageableChanges) {
+    return {
+      kind: 'stage',
+      label: translate(
+        'auto.components.right.sidebar.SourceControl.submoduleStageAll',
+        'Stage All'
+      ),
+      title: translate(
+        'auto.components.right.sidebar.SourceControl.submoduleStageAllTitle',
+        'Stage all submodule changes'
+      ),
+      disabled: false
+    }
+  }
+  return {
+    kind: 'commit',
+    label: commitLabel,
+    title: translate(
+      'auto.components.right.sidebar.SourceControl.submoduleNothingToCommit',
+      'Stage at least one submodule file to commit'
+    ),
+    disabled: true
+  }
+}
+
+function SubmoduleRepositoryActions({
+  submodulePath,
+  commitMessage,
+  commitError,
+  isCommitting,
+  primaryAction,
+  onCommitMessageChange,
+  onPrimaryAction
+}: {
+  submodulePath: string
+  commitMessage: string
+  commitError: string | null
+  isCommitting: boolean
+  primaryAction: PrimaryAction
+  onCommitMessageChange: (message: string) => void
+  onPrimaryAction: () => void
+}): React.JSX.Element {
+  const PrimaryIcon = primaryAction.kind === 'stage' ? Plus : Check
+  return (
+    <div className="px-3 pb-2" data-source-control-submodule-actions={submodulePath}>
+      <textarea
+        rows={1}
+        value={commitMessage}
+        disabled={isCommitting}
+        onChange={(event) => onCommitMessageChange(event.target.value)}
+        placeholder={translate(
+          'auto.components.right.sidebar.SourceControl.submoduleCommitMessage',
+          'Message'
+        )}
+        aria-label={translate(
+          'auto.components.right.sidebar.SourceControl.submoduleCommitMessageLabel',
+          'Submodule commit message'
+        )}
+        className="mt-0.5 min-h-9 w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="mt-1 flex">
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={primaryAction.disabled}
+              onClick={onPrimaryAction}
+              className="w-full px-3 text-[11px]"
+              title={primaryAction.title}
+            >
+              {isCommitting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <PrimaryIcon className="size-3.5" aria-hidden="true" />
+              )}
+              {primaryAction.label}
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" sideOffset={6} className="max-w-72">
+          {primaryAction.title}
+        </TooltipContent>
+      </Tooltip>
+      {commitError ? (
+        <div
+          role="alert"
+          className="mt-1 rounded-md border border-destructive/20 bg-card px-2 py-1.5 font-mono text-[11px] leading-4 text-destructive [overflow-wrap:anywhere]"
+        >
+          {commitError}
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 type CommitAreaProps = {

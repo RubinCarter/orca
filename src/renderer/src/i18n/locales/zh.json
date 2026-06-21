@@ -8669,7 +8669,17 @@
             "b715ef615b": "领先 {{value1}} {{value0}} 个提交",
             "c1a8f3e204": "落后 {{value0}} 1 个提交",
             "d2b9g4f315": "落后 {{value1}} {{value0}} 个提交",
-            "e9c2a5d416": "与 {{value0}} 同步"
+            "e9c2a5d416": "与 {{value0}} 同步",
+            "submoduleCommit": "Commit",
+            "submoduleCommitInProgress": "Commit in progress...",
+            "submoduleResolveConflicts": "Resolve conflicts before committing",
+            "submoduleCommitStaged": "Commit staged submodule changes",
+            "submoduleEnterMessage": "Enter a commit message to commit",
+            "submoduleStageAll": "Stage All",
+            "submoduleStageAllTitle": "Stage all submodule changes",
+            "submoduleNothingToCommit": "Stage at least one submodule file to commit",
+            "submoduleCommitMessage": "Message",
+            "submoduleCommitMessageLabel": "Submodule commit message"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "无法启动选定的 Agent。",
