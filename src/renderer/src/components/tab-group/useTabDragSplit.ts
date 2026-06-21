@@ -334,9 +334,11 @@ export function useTabDragSplit({
         updateDragPreviewActivation(event, activeData)
       }
 
+      const state = useAppStore.getState()
       const splitTarget = resolveActivePaneColumnSplitTarget({
         event,
-        groupsByWorktree: useAppStore.getState().groupsByWorktree,
+        groupsByWorktree: state.groupsByWorktree,
+        layoutByWorktree: state.layoutByWorktree,
         worktreeId,
         getDragPointer
       })
@@ -393,6 +395,7 @@ export function useTabDragSplit({
       const paneColumnSplit = resolveActivePaneColumnSplitTarget({
         event,
         groupsByWorktree: state.groupsByWorktree,
+        layoutByWorktree: state.layoutByWorktree,
         worktreeId,
         getDragPointer
       })

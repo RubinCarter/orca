@@ -1,5 +1,6 @@
 import type { DragEndEvent, DragMoveEvent, DragOverEvent } from '@dnd-kit/core'
-import type { TabGroup } from '../../../../shared/types'
+import type { TabGroup, TabGroupLayoutNode } from '../../../../shared/types'
+import { isPaneColumnSplitDropNoOp } from '../../store/slices/pane-column-split-drop-no-op'
 import { resolveTabPaneColumnSplitOverTab, type TabPaneColumnSplitTarget } from './tab-insertion'
 import {
   resolvePaneColumnEdgeZone,
@@ -63,6 +64,7 @@ export function resolvePanelEdgePaneColumnSplit({
   worktreeId,
   pointer,
   groupsByWorktree,
+  layoutByWorktree,
   panelRect: providedPanelRect
 }: {
   activeDrag: TabDragItemData
@@ -70,6 +72,7 @@ export function resolvePanelEdgePaneColumnSplit({
   worktreeId: string
   pointer: { x: number; y: number }
   groupsByWorktree: Record<string, TabGroup[]>
+  layoutByWorktree: Record<string, TabGroupLayoutNode>
   panelRect?: DOMRect | null
 }): PaneColumnSplitTarget | null {
   const panelRect = providedPanelRect ?? getTabGroupPanelRect(targetGroupId, worktreeId)
@@ -83,6 +86,21 @@ export function resolvePanelEdgePaneColumnSplit({
     tabStripHeightPx: TAB_GROUP_TAB_STRIP_HEIGHT_PX
   })
   if (!zone) {
+    return null
+  }
+
+  const sourceGroup = (groupsByWorktree[worktreeId] ?? []).find(
+    (group) => group.id === activeDrag.groupId
+  )
+  if (
+    isPaneColumnSplitDropNoOp({
+      sourceGroupId: activeDrag.groupId,
+      targetGroupId,
+      splitDirection: zone,
+      sourceTabCount: sourceGroup?.tabOrder.length ?? 0,
+      layout: layoutByWorktree[worktreeId]
+    })
+  ) {
     return null
   }
 
@@ -105,11 +123,13 @@ export function resolvePanelEdgePaneColumnSplit({
 export function resolveActivePaneColumnSplitTarget({
   event,
   groupsByWorktree,
+  layoutByWorktree,
   worktreeId,
   getDragPointer
 }: {
   event: DragMoveEvent | DragOverEvent | DragEndEvent
   groupsByWorktree: Record<string, TabGroup[]>
+  layoutByWorktree: Record<string, TabGroupLayoutNode>
   worktreeId: string
   getDragPointer: (event: DragMoveEvent | DragOverEvent | DragEndEvent) => {
     x: number
@@ -160,6 +180,7 @@ export function resolveActivePaneColumnSplitTarget({
     worktreeId,
     pointer,
     groupsByWorktree,
+    layoutByWorktree,
     panelRect: panelHit?.groupId === targetGroupId ? panelHit.panelRect : undefined
   })
 }

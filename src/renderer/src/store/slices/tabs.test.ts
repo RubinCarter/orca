@@ -1069,6 +1069,40 @@ describe('TabsSlice', () => {
       expect(state.groupsByWorktree[WT][0].tabOrder).toEqual([onlyTab.id])
       expect(state.layoutByWorktree[WT]).toEqual({ type: 'leaf', groupId: sourceGroupId })
     })
+
+    it('treats splitting the only tab onto the adjacent sibling edge as a no-op', () => {
+      store.getState().createUnifiedTab(WT, 'editor', {
+        id: 'file-a.ts',
+        label: 'file-a.ts'
+      })
+      const right = store.getState().createUnifiedTab(WT, 'terminal', {
+        id: 'terminal-1',
+        label: 'Terminal 1'
+      })
+      const leftGroupId = store.getState().groupsByWorktree[WT][0].id
+
+      expect(
+        store.getState().dropUnifiedTab(right.id, {
+          groupId: leftGroupId,
+          splitDirection: 'right'
+        })
+      ).toBe(true)
+
+      const rightGroupId = store
+        .getState()
+        .unifiedTabsByWorktree[WT].find((tab) => tab.id === right.id)?.groupId
+      expect(rightGroupId).toBeTruthy()
+
+      const moved = store.getState().dropUnifiedTab(right.id, {
+        groupId: leftGroupId,
+        splitDirection: 'right'
+      })
+
+      expect(moved).toBe(false)
+      expect(
+        store.getState().unifiedTabsByWorktree[WT].find((tab) => tab.id === right.id)?.groupId
+      ).toBe(rightGroupId)
+    })
   })
 
   // ─── setTabLabel / setTabCustomLabel / setUnifiedTabColor ─────────

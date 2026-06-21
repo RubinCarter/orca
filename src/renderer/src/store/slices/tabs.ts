@@ -26,6 +26,7 @@ import {
   sanitizeRecentTabIds,
   updateGroup
 } from './tab-group-state'
+import { isPaneColumnSplitDropNoOp } from './pane-column-split-drop-no-op'
 import { buildHydratedTabState, pruneTabGroupLayoutForGroups } from './tabs-hydration'
 import { buildOrphanTerminalCleanupPatch, getOrphanTerminalIds } from './terminal-orphan-helpers'
 import { createBrowserUuid } from '@/lib/browser-uuid'
@@ -1449,11 +1450,20 @@ export const createTabsSlice: StateCreator<AppState, [], [], TabsSlice> = (set, 
       if (!isSplitDrop && tab.groupId === target.groupId) {
         return {}
       }
-      if (isSplitDrop && tab.groupId === target.groupId && sourceGroup.tabOrder.length <= 1) {
-        // Why: dragging the final tab in a group onto that same group's edge
-        // would create a transient sibling only to collapse the source
-        // immediately, leaving the layout unchanged while still churning focus
-        // and group IDs. Treat that as a no-op instead of faking a split.
+      const layout = state.layoutByWorktree[worktreeId]
+      if (
+        isSplitDrop &&
+        isPaneColumnSplitDropNoOp({
+          sourceGroupId: sourceGroup.id,
+          targetGroupId: target.groupId,
+          splitDirection: target.splitDirection!,
+          sourceTabCount: sourceGroup.tabOrder.length,
+          layout
+        })
+      ) {
+        // Why: dragging the final tab in a group onto that same group's edge,
+        // or onto the adjacent sibling's matching edge, creates a transient
+        // column only to collapse the emptied source immediately.
         return {}
       }
 

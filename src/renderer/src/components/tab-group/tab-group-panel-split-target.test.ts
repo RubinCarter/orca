@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { TabGroupLayoutNode } from '../../../../shared/types'
 import type { TabDragItemData } from './useTabDragSplit'
 import {
   findTabGroupPanelUnderPointer,
@@ -61,6 +62,23 @@ function mockTabGroupRects(panelRect: DOMRect, bodyRect: DOMRect): void {
   })
 }
 
+const horizontalLayout: TabGroupLayoutNode = {
+  type: 'split',
+  direction: 'horizontal',
+  ratio: 0.5,
+  first: { type: 'leaf', groupId: 'group-1' },
+  second: { type: 'leaf', groupId: 'group-2' }
+}
+
+const twoGroupLayout = {
+  'wt-1': [
+    { id: 'group-1', worktreeId: 'wt-1', activeTabId: 'tab-1', tabOrder: ['tab-1'] },
+    { id: 'group-2', worktreeId: 'wt-1', activeTabId: 'tab-2', tabOrder: ['tab-2'] }
+  ]
+}
+
+const layoutByWorktree = { 'wt-1': horizontalLayout }
+
 describe('resolvePanelEdgePaneColumnSplit', () => {
   const panelRect = {
     left: 500,
@@ -94,12 +112,8 @@ describe('resolvePanelEdgePaneColumnSplit', () => {
         targetGroupId: 'group-2',
         worktreeId: 'wt-1',
         pointer: { x: 880, y: 300 },
-        groupsByWorktree: {
-          'wt-1': [
-            { id: 'group-1', worktreeId: 'wt-1', activeTabId: 'tab-1', tabOrder: ['tab-1'] },
-            { id: 'group-2', worktreeId: 'wt-1', activeTabId: 'tab-2', tabOrder: ['tab-2'] }
-          ]
-        }
+        groupsByWorktree: twoGroupLayout,
+        layoutByWorktree
       })
     ).toEqual({ groupId: 'group-2', zone: 'right' })
   })
@@ -111,12 +125,8 @@ describe('resolvePanelEdgePaneColumnSplit', () => {
         targetGroupId: 'group-2',
         worktreeId: 'wt-1',
         pointer: { x: 700, y: 300 },
-        groupsByWorktree: {
-          'wt-1': [
-            { id: 'group-1', worktreeId: 'wt-1', activeTabId: 'tab-1', tabOrder: ['tab-1'] },
-            { id: 'group-2', worktreeId: 'wt-1', activeTabId: 'tab-2', tabOrder: ['tab-2'] }
-          ]
-        }
+        groupsByWorktree: twoGroupLayout,
+        layoutByWorktree
       })
     ).toBeNull()
   })
@@ -128,12 +138,31 @@ describe('resolvePanelEdgePaneColumnSplit', () => {
         targetGroupId: 'group-1',
         worktreeId: 'wt-1',
         pointer: { x: 650, y: 16 },
-        groupsByWorktree: {
-          'wt-1': [
-            { id: 'group-1', worktreeId: 'wt-1', activeTabId: 'tab-1', tabOrder: ['tab-1'] },
-            { id: 'group-2', worktreeId: 'wt-1', activeTabId: 'tab-2', tabOrder: ['tab-2'] }
-          ]
-        }
+        groupsByWorktree: twoGroupLayout,
+        layoutByWorktree
+      })
+    ).toBeNull()
+  })
+
+  it('suppresses adjacent sibling pane-column splits that would collapse back to the current layout', () => {
+    const group1Panel = {
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 600,
+      right: 400,
+      bottom: 600
+    } as DOMRect
+
+    expect(
+      resolvePanelEdgePaneColumnSplit({
+        activeDrag: makeDragData({ groupId: 'group-2', unifiedTabId: 'tab-2' }),
+        targetGroupId: 'group-1',
+        worktreeId: 'wt-1',
+        pointer: { x: 360, y: 300 },
+        groupsByWorktree: twoGroupLayout,
+        layoutByWorktree,
+        panelRect: group1Panel
       })
     ).toBeNull()
   })
@@ -174,12 +203,8 @@ describe('resolveActivePaneColumnSplitTarget', () => {
           overData: null,
           pointer: { x: 880, y: 300 }
         }),
-        groupsByWorktree: {
-          'wt-1': [
-            { id: 'group-1', worktreeId: 'wt-1', activeTabId: 'tab-1', tabOrder: ['tab-1'] },
-            { id: 'group-2', worktreeId: 'wt-1', activeTabId: 'tab-2', tabOrder: ['tab-2'] }
-          ]
-        },
+        groupsByWorktree: twoGroupLayout,
+        layoutByWorktree,
         worktreeId: 'wt-1',
         getDragPointer: () => ({ x: 880, y: 300 })
       })
@@ -198,12 +223,8 @@ describe('resolveActivePaneColumnSplitTarget', () => {
           }),
           pointer: { x: 650, y: 16 }
         }),
-        groupsByWorktree: {
-          'wt-1': [
-            { id: 'group-1', worktreeId: 'wt-1', activeTabId: 'tab-1', tabOrder: ['tab-1'] },
-            { id: 'group-2', worktreeId: 'wt-1', activeTabId: 'tab-2', tabOrder: ['tab-2'] }
-          ]
-        },
+        groupsByWorktree: twoGroupLayout,
+        layoutByWorktree,
         worktreeId: 'wt-1',
         getDragPointer: () => ({ x: 650, y: 16 })
       })
