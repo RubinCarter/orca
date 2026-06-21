@@ -3844,7 +3844,8 @@
           "697d0f6e1b": "取消固定",
           "250de158fd": "移除工作区",
           "changeParentWorkspace": "更改父工作树...",
-          "setParentWorkspace": "设置父工作树..."
+          "setParentWorkspace": "设置父工作树...",
+          "workspaceSection": "工作区"
         },
         "WorktreeList": {
           "d880ea0744": "创建一个组并将该项目移入其中。",

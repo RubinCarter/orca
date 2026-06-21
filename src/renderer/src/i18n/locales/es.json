@@ -3863,7 +3863,8 @@
           "697d0f6e1b": "Desprender",
           "250de158fd": "Remove Workspace",
           "changeParentWorkspace": "Cambiar árbol de trabajo padre...",
-          "setParentWorkspace": "Establecer árbol de trabajo padre..."
+          "setParentWorkspace": "Establecer árbol de trabajo padre...",
+          "workspaceSection": "Espacio de trabajo"
         },
         "WorktreeList": {
           "d880ea0744": "Crea un grupo y mueve este proyecto a él.",

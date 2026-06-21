@@ -3844,7 +3844,8 @@
           "697d0f6e1b": "固定を解除する",
           "250de158fd": "Remove Workspace",
           "changeParentWorkspace": "親ワークツリーを変更...",
-          "setParentWorkspace": "親ワークツリーを設定..."
+          "setParentWorkspace": "親ワークツリーを設定...",
+          "workspaceSection": "ワークスペース"
         },
         "WorktreeList": {
           "d880ea0744": "グループを作成し、このプロジェクトをそのグループに移動します。",

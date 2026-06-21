@@ -3844,7 +3844,8 @@
           "697d0f6e1b": "고정 해제",
           "250de158fd": "워크스페이스 제거",
           "changeParentWorkspace": "상위 워크트리 변경...",
-          "setParentWorkspace": "상위 워크트리 설정..."
+          "setParentWorkspace": "상위 워크트리 설정...",
+          "workspaceSection": "워크스페이스"
         },
         "WorktreeList": {
           "d880ea0744": "그룹을 만들고 이 프로젝트를 그룹으로 이동하세요.",

@@ -3877,7 +3877,8 @@
           "697d0f6e1b": "Unpin",
           "250de158fd": "Remove Workspace",
           "changeParentWorkspace": "Change Parent Worktree...",
-          "setParentWorkspace": "Set Parent Worktree..."
+          "setParentWorkspace": "Set Parent Worktree...",
+          "workspaceSection": "Workspace"
         },
         "WorktreeList": {
           "7a8b9c0d1e": "Update required",
