@@ -14,6 +14,7 @@ import {
   type AgentStartupShell
 } from './tui-agent-startup-shell'
 import { getTuiAgentLaunchCommand, TUI_AGENT_CONFIG } from './tui-agent-config'
+import { withCodexHistoryPersistenceDisabled } from './tui-agent-codex-history'
 import type { StartupCommandDelivery } from './codex-startup-delivery'
 import type { TuiAgent } from './types'
 
@@ -62,60 +63,6 @@ function buildSleepingAgentLaunchConfig(args: {
   }
 }
 
-function findUnquotedOptionTerminator(value: string): number {
-  let quote: '"' | "'" | null = null
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index]
-    if (quote === "'") {
-      if (char === "'") {
-        quote = null
-      }
-      continue
-    }
-    if (quote === '"') {
-      if (char === '\\') {
-        index += 1
-        continue
-      }
-      if (char === '"') {
-        quote = null
-      }
-      continue
-    }
-    if (char === "'" || char === '"') {
-      quote = char
-      continue
-    }
-    if (
-      char === '-' &&
-      value[index + 1] === '-' &&
-      (index === 0 || /\s/.test(value[index - 1] as string)) &&
-      (index + 2 === value.length || /\s/.test(value[index + 2] as string))
-    ) {
-      return index
-    }
-  }
-  return -1
-}
-
-function withCodexHistoryPersistenceDisabled(args: {
-  agent: TuiAgent
-  baseCommand: string
-  shell: AgentStartupShell
-}): string {
-  if (args.agent !== 'codex') {
-    return args.baseCommand
-  }
-  // Why: command overrides can be `npx codex` or absolute paths that bypass
-  // Orca's shell function/macro named `codex`; keep the safety in argv too.
-  const override = '-c history.persistence=none'
-  const terminatorIndex = findUnquotedOptionTerminator(args.baseCommand)
-  if (terminatorIndex === -1) {
-    return `${args.baseCommand} ${override}`
-  }
-  return `${args.baseCommand.slice(0, terminatorIndex)}${override} ${args.baseCommand.slice(terminatorIndex)}`
-}
-
 export function buildAgentStartupPlan(args: {
   agent: TuiAgent
   prompt: string
@@ -146,8 +93,7 @@ export function buildAgentStartupPlan(args: {
   })
   const launchBaseCommand = withCodexHistoryPersistenceDisabled({
     agent,
-    baseCommand: baseCommand.command,
-    shell
+    baseCommand: baseCommand.command
   })
 
   if (!trimmedPrompt) {
@@ -256,8 +202,7 @@ export function buildAgentResumeStartupPlan(args: {
   })
   const launchBaseCommand = withCodexHistoryPersistenceDisabled({
     agent: args.agent,
-    baseCommand: baseCommand.command,
-    shell
+    baseCommand: baseCommand.command
   })
   const resumeArgs = argv
     .slice(1)
@@ -331,8 +276,7 @@ export function buildAgentDraftLaunchPlan(args: {
   })
   const launchBaseCommand = withCodexHistoryPersistenceDisabled({
     agent,
-    baseCommand: baseCommand.command,
-    shell
+    baseCommand: baseCommand.command
   })
   let plan: AgentDraftLaunchPlan | null = null
   if (config.draftPromptFlag) {

@@ -3033,7 +3033,8 @@ describe('OrcaRuntimeService', () => {
       expect(spawn).toHaveBeenCalledWith(
         expect.objectContaining({
           cwd: '/remote/agent-feature',
-          command: "codex '--dangerously-bypass-approvals-and-sandbox' 'hi'",
+          command:
+            "codex '--dangerously-bypass-approvals-and-sandbox' -c history.persistence=none 'hi'",
           worktreeId: result.worktree.id
         })
       )
@@ -3141,7 +3142,8 @@ describe('OrcaRuntimeService', () => {
       expect(spawn).toHaveBeenCalledWith(
         expect.objectContaining({
           cwd: 'C:/remote/agent-feature',
-          command: "codex '--dangerously-bypass-approvals-and-sandbox' 'fix Bob''s branch'"
+          command:
+            "codex '--dangerously-bypass-approvals-and-sandbox' -c history.persistence=none 'fix Bob''s branch'"
         })
       )
       expect(addWorktree).not.toHaveBeenCalled()
@@ -17755,7 +17757,8 @@ describe('OrcaRuntimeService', () => {
     expect(spawn).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: '/tmp/workspaces/runtime-cli-agent-startup',
-        command: "codex '--dangerously-bypass-approvals-and-sandbox' 'hi'",
+        command:
+          "codex '--dangerously-bypass-approvals-and-sandbox' -c history.persistence=none 'hi'",
         worktreeId: result.worktree.id
       })
     )

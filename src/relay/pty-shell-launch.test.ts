@@ -12,7 +12,8 @@ function runInteractiveBashRcfile(
   rcfile: string,
   homeDir: string,
   input = 'true\nfalse\nexit 0\n',
-  pathPrefix?: string
+  pathPrefix?: string,
+  envOverrides: Record<string, string> = {}
 ): string {
   const result = spawnSync(
     'bash',
@@ -23,6 +24,7 @@ function runInteractiveBashRcfile(
       env: {
         ...process.env,
         HOME: homeDir,
+        ...envOverrides,
         ...(pathPrefix ? { PATH: `${pathPrefix}:${process.env.PATH ?? '/usr/bin:/bin'}` } : {}),
         TERM: process.env.TERM || 'xterm'
       },
@@ -228,7 +230,8 @@ describe('getRelayShellLaunchConfig', () => {
       config.args[1] as string,
       homeDir,
       'codex resume -c \'history.persistence="save-all"\' -- --help\nexit 0\n',
-      fakeBin
+      fakeBin,
+      config.env
     )
 
     expect(config.env.ORCA_CODEX_HISTORY_PERSISTENCE_NONE).toBe('1')

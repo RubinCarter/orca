@@ -1264,12 +1264,7 @@ describe('createPtySubprocess', () => {
 
     expect(spawnMock).toHaveBeenCalledWith(
       'cmd.exe',
-      [
-        '/K',
-        expect.stringContaining(
-          'doskey codex=powershell.exe -NoLogo -Command'
-        )
-      ],
+      ['/K', expect.stringContaining('doskey codex=powershell.exe -NoLogo -Command')],
       expect.any(Object)
     )
   })
@@ -1327,9 +1322,10 @@ describe('createPtySubprocess', () => {
 
     expect(spawnMock).toHaveBeenCalledWith(
       'cmd.exe',
-      ['/K', 'chcp 65001 > nul'],
+      ['/K', expect.stringContaining('doskey codex=powershell.exe -NoLogo -Command')],
       expect.any(Object)
     )
+    expect(spawnMock.mock.calls[0]?.[1][1]).toContain('chcp 65001 > nul')
     expect(handle!.startupCommandDeliveredInShellArgs).toBeUndefined()
   })
 

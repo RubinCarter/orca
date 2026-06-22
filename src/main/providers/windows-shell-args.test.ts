@@ -3,21 +3,11 @@ import {
   encodePowerShellCommand,
   getPowerShellOsc133Bootstrap
 } from '../powershell-osc133-bootstrap'
-import {
-  buildWslInteractiveLoginShellCommand,
-  escapeWslShCommandForWindows
-} from '../../shared/wsl-login-shell-command'
 import { resolveWindowsShellLaunchArgs } from './windows-shell-args'
 
 const CODEX_HISTORY_DISABLED_GIT_BASH_FRAGMENT = 'command codex "${_orca_codex_args[@]}"'
-const CODEX_HISTORY_DISABLED_WSL_BASH_FRAGMENT = 'command codex "\\${_orca_codex_args[@]}"'
+const CODEX_HISTORY_DISABLED_WSL_SH_FRAGMENT = 'ORCA_CODEX_WRAPPER_DIR="\\${_orca_codex_bin}"'
 const CODEX_HISTORY_DISABLED_CMD_FRAGMENT = 'doskey codex=powershell.exe -NoLogo -Command'
-
-function expectedWslArgs(linuxCwd: string, distro?: string): string[] {
-  const command = `cd '${linuxCwd}' && export PATH="$HOME/.local/bin:$PATH" && if [[ -n "\${ORCA_CODEX_HOME:-}" ]]; then codex() { local -a _orca_codex_args; local _orca_codex_inserted=0; local _orca_codex_arg; export CODEX_HOME="\${ORCA_CODEX_HOME}"; for _orca_codex_arg in "$@"; do if [[ "\${_orca_codex_inserted}" == "0" && "\${_orca_codex_arg}" == "--" ]]; then _orca_codex_args+=(-c 'history.persistence="none"'); _orca_codex_inserted=1; fi; _orca_codex_args+=("\${_orca_codex_arg}"); done; if [[ "\${_orca_codex_inserted}" == "0" ]]; then _orca_codex_args+=(-c 'history.persistence="none"'); fi; command codex "\${_orca_codex_args[@]}"; }; export -f codex; fi && ${buildWslInteractiveLoginShellCommand()}`
-  const shellArgs = ['--', 'sh', '-c', escapeWslShCommandForWindows(command)]
-  return distro ? ['-d', distro, ...shellArgs] : shellArgs
-}
 
 describe('resolveWindowsShellLaunchArgs', () => {
   it('returns cmd.exe args with chcp 65001 for UTF-8 output', () => {
@@ -42,10 +32,7 @@ describe('resolveWindowsShellLaunchArgs', () => {
       undefined,
       'codex --no-alt-screen'
     )
-    expect(result.shellArgs).toEqual([
-      '/K',
-      expect.stringContaining('chcp 65001 > nul')
-    ])
+    expect(result.shellArgs).toEqual(['/K', expect.stringContaining('chcp 65001 > nul')])
     expect(result.shellArgs[1]).toContain(CODEX_HISTORY_DISABLED_CMD_FRAGMENT)
     expect(result.shellArgs[1]).toContain('& codex --no-alt-screen')
     expect(result.startupCommandDeliveredInShellArgs).toBe(true)
@@ -203,13 +190,13 @@ describe('resolveWindowsShellLaunchArgs', () => {
       undefined,
       'codex'
     )
-    expect(result.shellArgs).toEqual(expectedWslArgs('/mnt/c/Users/alice/code'))
+    expect(result.shellArgs).toEqual(['--', 'sh', '-c', expect.any(String)])
     expect(result.startupCommandDeliveredInShellArgs).toBeUndefined()
-    expect(result.shellArgs[3]).toContain(CODEX_HISTORY_DISABLED_WSL_BASH_FRAGMENT)
-    expect(result.shellArgs[3].indexOf('export CODEX_HOME="\\${ORCA_CODEX_HOME}"')).toBeLessThan(
-      result.shellArgs[3].indexOf(CODEX_HISTORY_DISABLED_WSL_BASH_FRAGMENT)
-    )
-    expect(result.shellArgs[3]).toContain('_orca_codex_arg}" == "--"')
+    expect(result.shellArgs[3]).toContain(CODEX_HISTORY_DISABLED_WSL_SH_FRAGMENT)
+    expect(result.shellArgs[3]).toContain('cat > "\\${_orca_codex_bin}/codex"')
+    expect(result.shellArgs[3]).toContain('history.persistence="none"')
+    expect(result.shellArgs[3]).toContain("cd '/mnt/c/Users/alice/code'")
+    expect(result.shellArgs[3]).toContain('exec "\\$_orca_wsl_shell" -ilc')
     // Why: WSL cannot cd into a Windows path, so node-pty must start from the
     // user's Windows home and we inject the Linux cd into the shellArgs above.
     expect(result.effectiveCwd).toBe('C:\\Users\\alice')
@@ -221,8 +208,8 @@ describe('resolveWindowsShellLaunchArgs', () => {
     // The injected sh cmd must not break out of the surrounding single quotes
     // when the path contains a ' character.
     expect(result.shellArgs[3]).toContain("cd '/mnt/c/weird'\\''path'")
-    expect(result.shellArgs[3]).toContain('exec "\\$_orca_wsl_shell" -l')
-    expect(result.shellArgs[3]).toContain(CODEX_HISTORY_DISABLED_WSL_BASH_FRAGMENT)
+    expect(result.shellArgs[3]).toContain('exec "\\$_orca_wsl_shell" -ilc')
+    expect(result.shellArgs[3]).toContain(CODEX_HISTORY_DISABLED_WSL_SH_FRAGMENT)
   })
 
   it('falls back to /mnt/c when cwd is not a drive-letter path', () => {
@@ -230,7 +217,7 @@ describe('resolveWindowsShellLaunchArgs', () => {
     expect(result.shellArgs[3]).toContain(
       'cd \'/mnt/c\' && export PATH="\\$HOME/.local/bin:\\$PATH"'
     )
-    expect(result.shellArgs[3]).toContain(CODEX_HISTORY_DISABLED_WSL_BASH_FRAGMENT)
+    expect(result.shellArgs[3]).toContain(CODEX_HISTORY_DISABLED_WSL_SH_FRAGMENT)
   })
 
   it('keeps WSL UNC worktree cwd inside the matching distro', () => {
@@ -246,8 +233,9 @@ describe('resolveWindowsShellLaunchArgs', () => {
         '\\\\wsl.localhost\\Ubuntu\\home\\alice\\repo',
         'C:\\Users\\alice'
       )
-      expect(result.shellArgs).toEqual(expectedWslArgs('/home/alice/repo', 'Ubuntu'))
-      expect(result.shellArgs[5]).toContain(CODEX_HISTORY_DISABLED_WSL_BASH_FRAGMENT)
+      expect(result.shellArgs).toEqual(['-d', 'Ubuntu', '--', 'sh', '-c', expect.any(String)])
+      expect(result.shellArgs[5]).toContain(CODEX_HISTORY_DISABLED_WSL_SH_FRAGMENT)
+      expect(result.shellArgs[5]).toContain("cd '/home/alice/repo'")
       expect(result.effectiveCwd).toBe('C:\\Users\\alice')
       expect(result.validationCwd).toBe('\\\\wsl.localhost\\Ubuntu\\home\\alice\\repo')
     } finally {
@@ -266,8 +254,9 @@ describe('resolveWindowsShellLaunchArgs', () => {
       { distro: 'Ubuntu', treatPosixCwdAsWsl: true }
     )
 
-    expect(result.shellArgs).toEqual(expectedWslArgs('/home/alice/repo/subdir', 'Ubuntu'))
-    expect(result.shellArgs[5]).toContain(CODEX_HISTORY_DISABLED_WSL_BASH_FRAGMENT)
+    expect(result.shellArgs).toEqual(['-d', 'Ubuntu', '--', 'sh', '-c', expect.any(String)])
+    expect(result.shellArgs[5]).toContain(CODEX_HISTORY_DISABLED_WSL_SH_FRAGMENT)
+    expect(result.shellArgs[5]).toContain("cd '/home/alice/repo/subdir'")
     expect(result.effectiveCwd).toBe('C:\\Users\\alice')
     expect(result.validationCwd).toBe('\\\\wsl.localhost\\Ubuntu\\home\\alice\\repo\\subdir')
   })

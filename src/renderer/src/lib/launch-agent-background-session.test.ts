@@ -508,7 +508,8 @@ describe('launchAgentBackgroundSession', () => {
 
       expect(mockSpawn.mock.calls[0]?.[0]).toEqual(
         expect.objectContaining({
-          command: "npx codex -c history.persistence=none 'don'\\''t drop quotes'",
+          command:
+            "npx codex '--dangerously-bypass-approvals-and-sandbox' -c history.persistence=none 'don'\\''t drop quotes'",
           startupCommandDelivery: 'shell-ready'
         })
       )
@@ -518,7 +519,7 @@ describe('launchAgentBackgroundSession', () => {
 
       expect(mockWrite).toHaveBeenCalledWith(
         'pty-1',
-        "npx codex -c history.persistence=none 'don'\\''t drop quotes'\r"
+        "npx codex '--dangerously-bypass-approvals-and-sandbox' -c history.persistence=none 'don'\\''t drop quotes'\r"
       )
     } finally {
       vi.useRealTimers()
