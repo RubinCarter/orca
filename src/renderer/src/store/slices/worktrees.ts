@@ -15,7 +15,9 @@ import type {
   RemoveWorktreeResult,
   WorktreeLineage,
   WorkspaceLineage,
-  WorktreeMeta
+  WorkspaceKey,
+  WorktreeMeta,
+  Repo
 } from '../../../../shared/types'
 import type { RuntimeWorktreeListResult } from '../../../../shared/runtime-types'
 import {
@@ -1247,7 +1249,7 @@ function encodePushTargetClearForRuntimeRpc(
 // new `*ByWorktree` map is not silently missed when a worktree id changes. Maps keyed
 // by tab id or file id are deliberately NOT here — tabs and files keep their ids across
 // a worktree rename.
-const WORKTREE_ID_KEYED_MAP_KEYS = [
+export const WORKTREE_ID_KEYED_MAP_KEYS = [
   'worktreeLineageById',
   'tabsByWorktree',
   'deleteStateByWorktreeId',
@@ -1283,6 +1285,36 @@ const WORKTREE_ID_KEYED_MAP_KEYS = [
   'defaultTerminalTabsAppliedByWorktreeId'
 ] as const satisfies readonly (keyof AppState)[]
 
+function migrateWorkspaceLineageForWorktreeIdentity(
+  lineageByChildKey: Record<string, WorkspaceLineage>,
+  oldWorkspaceKey: WorkspaceKey,
+  newWorkspaceKey: WorkspaceKey
+): Record<string, WorkspaceLineage> {
+  let changed = false
+  const next: Record<string, WorkspaceLineage> = {}
+  for (const [childKey, lineage] of Object.entries(lineageByChildKey)) {
+    const nextChildKey = childKey === oldWorkspaceKey ? newWorkspaceKey : childKey
+    const nextLineage =
+      lineage.childWorkspaceKey === oldWorkspaceKey ||
+      lineage.parentWorkspaceKey === oldWorkspaceKey
+        ? {
+            ...lineage,
+            childWorkspaceKey:
+              lineage.childWorkspaceKey === oldWorkspaceKey
+                ? newWorkspaceKey
+                : lineage.childWorkspaceKey,
+            parentWorkspaceKey:
+              lineage.parentWorkspaceKey === oldWorkspaceKey
+                ? newWorkspaceKey
+                : lineage.parentWorkspaceKey
+          }
+        : lineage
+    changed = changed || nextChildKey !== childKey || nextLineage !== lineage
+    next[nextChildKey] = nextLineage
+  }
+  return changed ? next : lineageByChildKey
+}
+
 /**
  * Re-key every worktree-id-keyed map (plus the Set, openFiles[].worktreeId, and
  * the active/renaming pointers) from `oldWorktreeId` to `newWorktreeId` after a
@@ -1301,6 +1333,8 @@ function buildWorktreeRenameState(
   if (oldWorktreeId === newWorktreeId) {
     return {}
   }
+  const oldWorkspaceKey = worktreeWorkspaceKey(oldWorktreeId)
+  const newWorkspaceKey = worktreeWorkspaceKey(newWorktreeId)
   const renamed: Record<string, unknown> = {}
   const renameKey = <T>(
     key: keyof AppState,
@@ -1317,7 +1351,14 @@ function buildWorktreeRenameState(
   }
   const withNewWorktreeId = <T extends { worktreeId: string }>(value: T): T =>
     value.worktreeId === oldWorktreeId ? { ...value, worktreeId: newWorktreeId } : value
+  const withNewLineageWorktreeIds = (lineage: WorktreeLineage): WorktreeLineage => ({
+    ...lineage,
+    worktreeId: lineage.worktreeId === oldWorktreeId ? newWorktreeId : lineage.worktreeId,
+    parentWorktreeId:
+      lineage.parentWorktreeId === oldWorktreeId ? newWorktreeId : lineage.parentWorktreeId
+  })
   const renameValueByKey: Partial<Record<(typeof WORKTREE_ID_KEYED_MAP_KEYS)[number], unknown>> = {
+    worktreeLineageById: withNewLineageWorktreeIds,
     tabsByWorktree: (tabs: { worktreeId: string }[]) => tabs.map(withNewWorktreeId),
     browserTabsByWorktree: (workspaces: { worktreeId: string }[]) =>
       workspaces.map(withNewWorktreeId),
@@ -1335,6 +1376,28 @@ function buildWorktreeRenameState(
   for (const key of WORKTREE_ID_KEYED_MAP_KEYS) {
     renameKey(key, renameValueByKey[key] as ((value: unknown) => unknown) | undefined)
   }
+  const currentLineage =
+    (renamed.worktreeLineageById as Record<string, WorktreeLineage> | undefined) ??
+    s.worktreeLineageById
+  const lineageWithUpdatedParents = Object.values(currentLineage).some(
+    (lineage) => lineage.worktreeId === oldWorktreeId || lineage.parentWorktreeId === oldWorktreeId
+  )
+    ? Object.fromEntries(
+        Object.entries(currentLineage).map(([worktreeId, lineage]) => [
+          worktreeId,
+          withNewLineageWorktreeIds(lineage)
+        ])
+      )
+    : currentLineage
+  if (lineageWithUpdatedParents !== s.worktreeLineageById) {
+    renamed.worktreeLineageById = lineageWithUpdatedParents
+  }
+  const currentWorkspaceLineage = s.workspaceLineageByChildKey ?? {}
+  const workspaceLineageByChildKey = migrateWorkspaceLineageForWorktreeIdentity(
+    currentWorkspaceLineage,
+    oldWorkspaceKey,
+    newWorkspaceKey
+  )
   // Re-key these on rename so a renamed worktree keeps its editor-undo + push/pull
   // state. (Both removal paths — buildWorktreePurgeState and the single
   // removeWorktree reducer — now also purge them on removal.)
@@ -1406,6 +1469,9 @@ function buildWorktreeRenameState(
       : {}),
     ...(sleepingAgentSessionsByPaneKey !== s.sleepingAgentSessionsByPaneKey
       ? { sleepingAgentSessionsByPaneKey }
+      : {}),
+    ...(workspaceLineageByChildKey !== currentWorkspaceLineage
+      ? { workspaceLineageByChildKey }
       : {}),
     ...(s.activeWorktreeId === oldWorktreeId ? { activeWorktreeId: newWorktreeId } : {}),
     // The active workspace key derives from the worktree id, so keep it in sync when the active worktree is renamed.
