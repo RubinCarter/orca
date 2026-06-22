@@ -16685,10 +16685,13 @@ export class OrcaRuntimeService {
         store.removeWorktreeLineage(childId)
         store.removeWorkspaceLineage?.(worktreeWorkspaceKey(childId))
       }
-      if (
+      const parentMissingFromLegacyScan =
         lineage.parentWorktreeId.startsWith(repoPrefix) &&
         !legacyLiveIds.has(lineage.parentWorktreeId)
-      ) {
+      const parentMissingFromCanonicalScan =
+        isRuntimeCanonicalWorktreeIdForRepoHost(repo, lineage.parentWorktreeId) &&
+        !liveIds.has(lineage.parentWorktreeId)
+      if (parentMissingFromLegacyScan || parentMissingFromCanonicalScan) {
         const parentMeta = store.getWorktreeMeta(lineage.parentWorktreeId)
         if (!parentMeta || parentMeta.instanceId === lineage.parentWorktreeInstanceId) {
           // Why: preserving child lineage powers the repair UI, but a missing

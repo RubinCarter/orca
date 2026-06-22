@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { makeWorktreeKey } from '../shared/worktree-id'
 import { loadKnownUsageWorktreesByRepo } from './usage-worktree-metadata'
 
 describe('loadKnownUsageWorktreesByRepo', () => {
@@ -36,7 +37,11 @@ describe('loadKnownUsageWorktreesByRepo', () => {
           'repo-1',
           [
             {
-              worktreeId: 'repo-1::/workspace/repo-a',
+              worktreeId: makeWorktreeKey({
+                hostId: 'local',
+                repoId: 'repo-1',
+                path: '/workspace/repo-a'
+              }),
               path: '/workspace/repo-a',
               displayName: 'Repo A'
             },

@@ -5036,7 +5036,35 @@ describe('migrateWorktreeIdentity', () => {
         return [{ id: 'group1', worktreeId }]
       case 'recentlyClosedEditorTabsByWorktree':
         return [{ id: 'file1', worktreeId }]
-      default:
+      case 'deleteStateByWorktreeId':
+      case 'baseStatusByWorktreeId':
+      case 'remoteBranchConflictByWorktreeId':
+      case 'fileSearchStateByWorktree':
+      case 'activeBrowserTabIdByWorktree':
+      case 'activeFileIdByWorktree':
+      case 'activeTabTypeByWorktree':
+      case 'activeTabIdByWorktree':
+      case 'tabBarOrderByWorktree':
+      case 'pendingReconnectTabByWorktree':
+      case 'rightSidebarTabByWorktree':
+      case 'rightSidebarExplorerViewByWorktree':
+      case 'layoutByWorktree':
+      case 'activeGroupIdByWorktree':
+      case 'gitStatusByWorktree':
+      case 'gitStatusHeadByWorktree':
+      case 'gitStatusHugeByWorktree':
+      case 'gitIgnoredPathsByWorktree':
+      case 'gitConflictOperationByWorktree':
+      case 'trackedConflictPathsByWorktree':
+      case 'gitBranchChangesByWorktree':
+      case 'gitBranchCompareSummaryByWorktree':
+      case 'gitBranchCompareRequestKeyByWorktree':
+      case 'gitBranchCompareRequestStatusHeadByWorktree':
+      case 'remoteStatusesByWorktree':
+      case 'showDotfilesByWorktree':
+      case 'expandedDirs':
+      case 'lastVisitedAtByWorktreeId':
+      case 'defaultTerminalTabsAppliedByWorktreeId':
         return { marker: key }
     }
   }
