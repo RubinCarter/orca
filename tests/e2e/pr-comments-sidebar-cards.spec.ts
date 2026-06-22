@@ -125,7 +125,9 @@ test.describe('PR comments sidebar cards view', () => {
     expect(positions[1]).toBeLessThan(positions[2])
   })
 
-  test('queues an open thread for the agent from the row menu', async ({ orcaPage }) => {
+  test('queues an open thread for the agent from the visible row action and menu fallback', async ({
+    orcaPage
+  }) => {
     const { worktreeId } = await seedPRCommentsSidebarFixture(orcaPage)
     await openChecks(orcaPage, worktreeId)
 
@@ -135,12 +137,32 @@ test.describe('PR comments sidebar cards view', () => {
       hasText: 'Please update this handler before merge.'
     })
     await openThreadCard.hover()
+    const visibleQueueButton = openThreadCard.getByRole('button', { name: 'Queue for agent' })
+    await expect(visibleQueueButton).toBeVisible()
+    await visibleQueueButton.click()
+    await expect(visibleQueueButton).toBeHidden()
+    await expect(
+      orcaPage.getByRole('button', { name: 'Send 1 queued comments to AI' })
+    ).toBeVisible()
+    await expect(orcaPage.getByText('Queued', { exact: true })).toBeVisible()
+
+    await orcaPage.getByRole('button', { name: 'Clear queued comments' }).click()
+    await expect(
+      orcaPage.getByRole('button', { name: 'Send 1 queued comments to AI' })
+    ).toBeHidden()
+    await openThreadCard.hover()
+    await expect(visibleQueueButton).toBeVisible()
+
     const actionsMenu = openThreadCard.getByRole('button', { name: 'More comment actions' })
     await actionsMenu.evaluate((element) => (element as HTMLElement).focus())
     await actionsMenu.press('Enter')
-    await orcaPage.getByRole('menuitem', { name: 'Queue for agent' }).click({ force: true })
+    const queueMenuItem = orcaPage.getByRole('menuitem', { name: 'Queue for agent' })
+    await queueMenuItem.click({ force: true })
+    await expect(queueMenuItem).toBeHidden()
 
-    await expect(orcaPage.getByRole('button', { name: 'Send 1 queued comments' })).toBeVisible()
+    await expect(
+      orcaPage.getByRole('button', { name: 'Send 1 queued comments to AI' })
+    ).toBeVisible()
     await expect(orcaPage.getByText('Queued', { exact: true })).toBeVisible()
 
     const queuedCard = orcaPage.getByTestId('pr-comment-group').filter({

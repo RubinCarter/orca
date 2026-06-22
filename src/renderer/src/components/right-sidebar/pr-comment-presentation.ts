@@ -1,8 +1,7 @@
 import type { PRCommentGroupActionState } from '@/lib/pr-comment-action-state'
 import { cn } from '@/lib/utils'
 
-/** PR comment sidebar typography and layout variants. Tweak here or compare in
- *  docs/design/pr-comments-sidebar.html, then preview in-app via localStorage. */
+/** PR comment sidebar typography and layout variants. */
 export type PRCommentPresentationVariant = 'flat' | 'cards' | 'focus'
 
 export const DEFAULT_PR_COMMENT_PRESENTATION_VARIANT: PRCommentPresentationVariant = 'cards'
@@ -53,6 +52,8 @@ export type PRCommentPresentationClasses = {
   statusBadgeQueued: string
   commentHeaderPrimary: string
   commentHeaderMeta: string
+  /** Indents the card meta row when a selection checkbox precedes the avatar. */
+  commentHeaderMetaWithSelection: string
   groupOpen: string
   groupQueued: string
   groupResolved: string
@@ -164,6 +165,7 @@ export function getPRCommentPresentationClasses(
         'shrink-0 rounded border border-ring/40 bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground',
       commentHeaderPrimary: 'flex min-w-0 items-center gap-1.5',
       commentHeaderMeta: '',
+      commentHeaderMetaWithSelection: '',
       groupOpen: 'border-l-2 border-l-status-success',
       groupQueued: 'ring-1 ring-ring/50',
       groupResolved: ''
@@ -211,7 +213,7 @@ export function getPRCommentPresentationClasses(
       'rounded-full border border-border bg-muted px-1.5 py-px text-[10px] font-semibold tabular-nums text-muted-foreground',
     audienceTabs: 'grid grid-cols-3 rounded-md border border-border bg-background p-0.5',
     audienceTab:
-      'flex h-8 items-center justify-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-muted-foreground transition-colors',
+      'flex h-7 items-center justify-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground transition-colors',
     audienceTabActive: 'bg-muted text-foreground shadow-xs',
     sectionTriageLabel: cn('px-3 pt-1', RESOLVED_SECTION_LABEL),
     statusBadgeOpen:
@@ -225,7 +227,13 @@ export function getPRCommentPresentationClasses(
       metaIndent,
       'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground'
     ),
-    groupOpen: 'border-l-2 border-l-status-success',
+    // Why: checkbox (16px) + gap-2 sits before the avatar row the meta row already indents past.
+    commentHeaderMetaWithSelection: cn(
+      isFocus ? 'pl-[3.5rem]' : 'pl-[3.25rem]',
+      'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground'
+    ),
+    // Why: open state is conveyed by the status badge; a green card rail reads noisy in the sidebar.
+    groupOpen: '',
     groupQueued: 'ring-1 ring-ring/50',
     groupResolved: ''
   }

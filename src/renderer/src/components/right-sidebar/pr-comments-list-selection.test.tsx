@@ -214,7 +214,7 @@ describe('PRCommentsList comment resolution selection', () => {
     )
   })
 
-  it('lets a user queue one eligible comment thread for the agent from the row menu', () => {
+  it('lets a user queue one eligible comment thread for the agent from the visible row action', () => {
     const onResolveSelectedCommentsWithAI = vi.fn()
     renderList({
       comments: [
@@ -231,10 +231,10 @@ describe('PRCommentsList comment resolution selection', () => {
       onResolveSelectedCommentsWithAI
     })
 
-    clickMenuItem('Queue for agent')
+    clickButton('Queue for agent')
 
-    expect(hasButton('Send 1 queued comments')).toBe(true)
-    clickButton('Send 1 queued comments')
+    expect(hasButton('Send 1 queued comments to AI')).toBe(true)
+    clickButton('Send 1 queued comments to AI')
 
     expect(onResolveSelectedCommentsWithAI).toHaveBeenCalledTimes(1)
     const selectedGroups = onResolveSelectedCommentsWithAI.mock.calls[0]?.[0] as PRCommentGroup[]
@@ -242,7 +242,7 @@ describe('PRCommentsList comment resolution selection', () => {
     expect(selectedGroups[0]?.kind === 'thread' ? selectedGroups[0].threadId : '').toBe('thread-1')
   })
 
-  it('lets a user queue one standalone comment for the agent from the row menu', () => {
+  it('lets a user queue one standalone comment for the agent from the visible row action', () => {
     const onResolveSelectedCommentsWithAI = vi.fn()
     renderList({
       comments: [
@@ -255,10 +255,10 @@ describe('PRCommentsList comment resolution selection', () => {
       onResolveSelectedCommentsWithAI
     })
 
-    clickMenuItem('Queue for agent')
+    clickButton('Queue for agent')
 
-    expect(hasButton('Send 1 queued comments')).toBe(true)
-    clickButton('Send 1 queued comments')
+    expect(hasButton('Send 1 queued comments to AI')).toBe(true)
+    clickButton('Send 1 queued comments to AI')
 
     expect(onResolveSelectedCommentsWithAI).toHaveBeenCalledTimes(1)
     const selectedGroups = onResolveSelectedCommentsWithAI.mock.calls[0]?.[0] as PRCommentGroup[]
@@ -269,16 +269,31 @@ describe('PRCommentsList comment resolution selection', () => {
     )
   })
 
+  it('keeps the overflow menu queue action available as a fallback', () => {
+    const onResolveSelectedCommentsWithAI = vi.fn()
+    renderList({
+      comments: [comment({ id: 1, threadId: 'thread-1', path: 'src/a.ts', isResolved: false })],
+      onResolveSelectedCommentsWithAI
+    })
+
+    clickMenuItem('Queue for agent')
+
+    expect(hasButton('Send 1 queued comments to AI')).toBe(true)
+    clickButton('Send 1 queued comments to AI')
+
+    expect(onResolveSelectedCommentsWithAI).toHaveBeenCalledTimes(1)
+  })
+
   it('clears the queued comment list from the header action', () => {
     renderList({
       comments: [comment({ id: 1, threadId: 'thread-1', path: 'src/a.ts', isResolved: false })]
     })
-    clickMenuItem('Queue for agent')
+    clickButton('Queue for agent')
 
-    expect(hasButton('Send 1 queued comments')).toBe(true)
+    expect(hasButton('Send 1 queued comments to AI')).toBe(true)
     clickButton('Clear queued comments')
 
-    expect(hasButton('Send 1 queued comments')).toBe(false)
+    expect(hasButton('Send 1 queued comments to AI')).toBe(false)
     expect(container.querySelector('button[role="checkbox"]')).toBeNull()
   })
 
@@ -286,12 +301,12 @@ describe('PRCommentsList comment resolution selection', () => {
     renderList({
       comments: [comment({ id: 1, threadId: 'thread-1', path: 'src/a.ts', isResolved: false })]
     })
-    clickMenuItem('Queue for agent')
+    clickButton('Queue for agent')
 
     renderList({
       comments: [comment({ id: 1, threadId: 'thread-1', path: 'src/a.ts', isResolved: true })]
     })
 
-    expect(hasButton('Send 1 queued comments')).toBe(false)
+    expect(hasButton('Send 1 queued comments to AI')).toBe(false)
   })
 })

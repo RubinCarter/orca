@@ -1497,12 +1497,7 @@ function CommentMoreMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4}>
         {hasQueue ? (
-          <DropdownMenuItem
-            onSelect={(event) => {
-              event.preventDefault()
-              onQueueForAgent?.()
-            }}
-          >
+          <DropdownMenuItem onSelect={() => onQueueForAgent?.()}>
             <Sparkles />
             {translate(
               'auto.components.right.sidebar.checks.panel.content.f8a2c91d04',
@@ -1551,6 +1546,38 @@ function buildCopyText(comment: PRComment): string {
   const lineRange = formatLineRange(comment)
   const location = lineRange ? `${comment.path}:${lineRange}` : comment.path
   return `File: ${location}\n\n${comment.body}`
+}
+
+function QueueForAgentButton({
+  className,
+  onQueueForAgent
+}: {
+  className?: string
+  onQueueForAgent: () => void
+}): React.JSX.Element {
+  const label = translate(
+    'auto.components.right.sidebar.checks.panel.content.f8a2c91d04',
+    'Queue for agent'
+  )
+  // Why: always-visible row action, but ghost styling keeps it from reading as a card-level CTA.
+  return (
+    <button
+      type="button"
+      className={cn(
+        'inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-[background-color,color,opacity] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+        className
+      )}
+      aria-label={label}
+      title={label}
+      onClick={(event) => {
+        event.stopPropagation()
+        onQueueForAgent()
+      }}
+    >
+      <Sparkles className="size-3 shrink-0" />
+      {translate('auto.components.right.sidebar.checks.panel.content.a7f0c7e8d1', 'Queue')}
+    </button>
+  )
 }
 
 function PRCommentActionBadge({
@@ -1690,14 +1717,11 @@ function CommentRow({
       {comment.author}
     </span>
   )
-  const authorLead = selectionControl ? (
-    <span className="flex shrink-0 items-center">{selectionControl}</span>
-  ) : (
-    authorAvatar
-  )
+  const queueButton =
+    !isReply && onQueueForAgent ? <QueueForAgentButton onQueueForAgent={onQueueForAgent} /> : null
 
-  const commentActions = !editing ? (
-    <div className="flex shrink-0 items-center gap-0.5 can-hover:opacity-0 group-hover/comment:opacity-100 transition-opacity">
+  const hoverActions = !editing ? (
+    <div className="flex items-center gap-0.5 can-hover:opacity-0 group-hover/comment:opacity-100 transition-opacity">
       {showResolve &&
         comment.threadId != null &&
         onResolve &&
@@ -1735,9 +1759,22 @@ function CommentRow({
     </div>
   ) : null
 
+  const commentActions = !editing ? (
+    <div className="flex shrink-0 items-center gap-0.5">
+      {presentation.useCardLayout ? null : queueButton}
+      {hoverActions}
+    </div>
+  ) : null
+
   const cardMetaRow =
     presentation.useCardLayout && !isReply ? (
-      <div className={presentation.commentHeaderMeta}>
+      <div
+        className={
+          selectionControl
+            ? presentation.commentHeaderMetaWithSelection
+            : presentation.commentHeaderMeta
+        }
+      >
         {relativeTime ? <span>{relativeTime}</span> : null}
         {automated ? (
           <span className={presentation.botBadge}>
@@ -1755,6 +1792,12 @@ function CommentRow({
           isQueued={isQueued}
           presentation={presentation}
         />
+        {onQueueForAgent ? (
+          <QueueForAgentButton
+            className="ml-auto can-hover:opacity-0 group-hover/comment:opacity-100 group-focus-within/comment:opacity-100"
+            onQueueForAgent={onQueueForAgent}
+          />
+        ) : null}
       </div>
     ) : null
 
@@ -1762,7 +1805,8 @@ function CommentRow({
     presentation.useCardLayout && !isReply ? (
       <>
         <div className={presentation.commentHeaderPrimary}>
-          {authorLead}
+          {selectionControl}
+          {authorAvatar}
           {authorName}
           {commentActions}
         </div>
@@ -1770,7 +1814,8 @@ function CommentRow({
       </>
     ) : (
       <>
-        {authorLead}
+        {selectionControl}
+        {authorAvatar}
         {authorName}
         {relativeTime ? (
           <span className={presentation.time} aria-hidden={presentation.time === 'hidden'}>
@@ -1803,13 +1848,13 @@ function CommentRow({
   return (
     <div
       className={cn(
-        'group/comment flex items-start gap-2',
+        'group/comment min-w-0',
         presentation.commentRow,
         isReply && presentation.commentRowReply,
         comment.isResolved && presentation.resolvedContainer
       )}
     >
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0">
         <div
           className={cn(
             isReply && presentation.useCardLayout
@@ -2237,6 +2282,7 @@ export function PRCommentsList({
     const isQueued = selectedGroupIds.has(groupId)
     const canQueue =
       canShowResolveWithAI &&
+      !isQueued &&
       isPRCommentGroupQueueableForAI(group) &&
       selectableGroupsById.has(groupId) &&
       !isSelectingForAI
@@ -2357,7 +2403,7 @@ export function PRCommentsList({
                           className="relative"
                           aria-label={translate(
                             'auto.components.right.sidebar.checks.panel.content.d91f2a6c39',
-                            'Send {{value0}} queued comments',
+                            'Send {{value0}} queued comments to AI',
                             { value0: selectedCommentQueueCount }
                           )}
                           disabled={
@@ -2383,7 +2429,7 @@ export function PRCommentsList({
                           ? resolveCommentsWithAIDisabledReason
                           : translate(
                               'auto.components.right.sidebar.checks.panel.content.d91f2a6c39',
-                              'Send {{value0}} queued comments',
+                              'Send {{value0}} queued comments to AI',
                               { value0: selectedCommentQueueCount }
                             )}
                       </TooltipContent>
