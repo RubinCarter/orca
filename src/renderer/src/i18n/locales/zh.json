@@ -2313,7 +2313,7 @@
           "TerminalContextMenu": {
             "b4cdd9314e": "清晰的屏幕",
             "8c17d6786d": "关闭窗格",
-            "copyTerminalId": "复制 Terminal ID",
+            "copyTerminalId": "复制终端 ID",
             "2cf85a6a55": "复制窗格 ID",
             "39809d152f": "设置标题...",
             "06c2b0f043": "均衡窗格大小",
@@ -3800,7 +3800,8 @@
           "1b0a156717": "Agents"
         },
         "WorktreeCardReviewDetailSection": {
-          "reviewHeader": "{{value0}} #{{value1}}"
+          "reviewHeader": "{{value0}} #{{value1}}",
+          "copyLink": "复制链接"
         },
         "WorktreeCardMeta": {
           "3e65e11cc6": "工作区元数据",
@@ -3827,7 +3828,13 @@
           "checkingAutomationAvailability": "正在检查自动化可用性...",
           "automationMissing": "自动化已不可用。",
           "automationRunMissing": "运行历史已不可用。",
-          "automationAvailabilityUnavailable": "无法检查自动化可用性。"
+          "automationAvailabilityUnavailable": "无法检查自动化可用性。",
+          "moreIssueActions": "更多议题操作",
+          "copyLink": "复制链接",
+          "copyLinkSuccess": "{{value0}} 已复制",
+          "copyLinkFailure": "无法复制链接",
+          "issueLinkLabel": "议题链接",
+          "reviewLinkLabel": "{{value0}} 链接"
         },
         "WorktreeCardMetadataStatusBadges": {
           "fe188062a1": "状态：开放",
@@ -6207,15 +6214,15 @@
           "ask_before_closing_running_terminals_description": "在关闭有运行中命令或 agent 的 terminal 前显示确认。",
           "scrollSpeed": {
             "title": "滚动速度",
-            "description": "调整终端回滚、快速修饰键滚动和全屏 TUI 滚轮速度。",
-            "helper": "调整滚轮在回滚和鼠标感知终端应用中的感觉。",
+            "description": "调整普通终端回滚、修饰键快速滚动以及全屏 TUI 滚轮速度。",
+            "helper": "调整滚轮输入在回滚和支持鼠标的终端应用中的手感。",
             "reset": "重置",
-            "normal": "正常",
-            "normalDescription": "回滚滚轮乘数。",
+            "normal": "普通",
+            "normalDescription": "回滚滚轮倍数。",
             "fast": "快速",
-            "fastDescription": "使用修饰键滚动时的额外乘数。",
+            "fastDescription": "按住修饰键滚动时的额外倍数。",
             "tui": "TUI",
-            "tuiDescription": "全屏终端应用的离散滚轮报告。"
+            "tuiDescription": "面向全屏终端应用的离散滚轮报告。"
           }
         },
         "TerminalSettingsPreview": {
@@ -7855,7 +7862,7 @@
             "ask_before_closing_running_terminals_description": "在关闭有运行中命令或 agent 的 terminal 前显示确认。",
             "scrollSpeed": {
               "title": "滚动速度",
-              "description": "调整终端回滚、快速修饰键滚动和全屏 TUI 滚轮速度。"
+              "description": "调整普通终端回滚、修饰键快速滚动以及全屏 TUI 滚轮速度。"
             }
           },
           "windows": {
@@ -9131,7 +9138,10 @@
             "hideEmptySessions": "隐藏空会话",
             "workspaceScope": "工作区",
             "worktreeScope": "工作树",
-            "globalScope": "全局"
+            "globalScope": "全局",
+            "projectScope": "项目",
+            "currentProjectLower": "当前项目",
+            "project": "项目"
           },
           "AiVaultSessionDetails": {
             "updated": "更新时间",

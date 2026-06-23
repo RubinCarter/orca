@@ -3819,7 +3819,8 @@
           "1b0a156717": "Agents"
         },
         "WorktreeCardReviewDetailSection": {
-          "reviewHeader": "{{value0}} #{{value1}}"
+          "reviewHeader": "{{value0}} #{{value1}}",
+          "copyLink": "Copiar enlace"
         },
         "WorktreeCardMeta": {
           "3e65e11cc6": "Metadatos del espacio de trabajo",
@@ -3846,7 +3847,13 @@
           "checkingAutomationAvailability": "Comprobando disponibilidad de la automatización...",
           "automationMissing": "La automatización ya no está disponible.",
           "automationRunMissing": "El historial de ejecuciones ya no está disponible.",
-          "automationAvailabilityUnavailable": "No se pudo comprobar la disponibilidad de la automatización."
+          "automationAvailabilityUnavailable": "No se pudo comprobar la disponibilidad de la automatización.",
+          "moreIssueActions": "Más acciones de incidencia",
+          "copyLink": "Copiar enlace",
+          "copyLinkSuccess": "{{value0}} copiado",
+          "copyLinkFailure": "No se pudo copiar el enlace",
+          "issueLinkLabel": "Enlace de incidencia",
+          "reviewLinkLabel": "Enlace de {{value0}}"
         },
         "WorktreeCardMetadataStatusBadges": {
           "fe188062a1": "Estado: Abierto",
@@ -6221,16 +6228,16 @@
           "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
           "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent.",
           "scrollSpeed": {
-            "title": "Velocidad de Desplazamiento",
-            "description": "Ajusta la velocidad de desplazamiento normal del terminal, el desplazamiento rápido con modificador y la velocidad de la rueda del TUI de pantalla completa.",
-            "helper": "Ajusta cómo se siente la entrada de la rueda en el desplazamiento y en las aplicaciones de terminal sensibles al mouse.",
+            "title": "Velocidad de desplazamiento",
+            "description": "Ajusta el desplazamiento normal del terminal, el desplazamiento rápido con modificador y la velocidad de rueda en TUI de pantalla completa.",
+            "helper": "Ajusta cómo se siente la entrada de la rueda en el historial y en apps de terminal compatibles con mouse.",
             "reset": "Restablecer",
             "normal": "Normal",
-            "normalDescription": "Multiplicador de rueda de desplazamiento.",
+            "normalDescription": "Multiplicador de rueda del historial.",
             "fast": "Rápido",
-            "fastDescription": "Multiplicador adicional al desplazar con una tecla modificadora.",
+            "fastDescription": "Multiplicador adicional al desplazarse con una tecla modificadora.",
             "tui": "TUI",
-            "tuiDescription": "Reportes de rueda discretos para aplicaciones de terminal de pantalla completa."
+            "tuiDescription": "Eventos discretos de rueda para apps de terminal de pantalla completa."
           }
         },
         "TerminalSettingsPreview": {
@@ -7869,8 +7876,8 @@
             "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
             "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent.",
             "scrollSpeed": {
-              "title": "Velocidad de Desplazamiento",
-              "description": "Ajusta la velocidad de desplazamiento normal del terminal, el desplazamiento rápido con modificador y la velocidad de la rueda del TUI de pantalla completa."
+              "title": "Velocidad de desplazamiento",
+              "description": "Ajusta el desplazamiento normal del terminal, el desplazamiento rápido con modificador y la velocidad de rueda en TUI de pantalla completa."
             }
           },
           "windows": {
@@ -9131,7 +9138,10 @@
             "hideEmptySessions": "Hide empty sessions",
             "workspaceScope": "Workspace",
             "worktreeScope": "Worktree",
-            "globalScope": "Global"
+            "globalScope": "Global",
+            "projectScope": "Proyecto",
+            "currentProjectLower": "proyecto actual",
+            "project": "Proyecto"
           },
           "AiVaultSessionDetails": {
             "updated": "Updated",

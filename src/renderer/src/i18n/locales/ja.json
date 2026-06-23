@@ -2313,7 +2313,7 @@
           "TerminalContextMenu": {
             "b4cdd9314e": "クリアスクリーン",
             "8c17d6786d": "ペインを閉じる",
-            "copyTerminalId": "Copy Terminal ID",
+            "copyTerminalId": "ターミナル ID をコピー",
             "2cf85a6a55": "ペインIDのコピー",
             "39809d152f": "タイトルを設定…",
             "06c2b0f043": "ペインのサイズを均等化する",
@@ -2405,9 +2405,9 @@
                     "a29b9faa01": "ペイン ID がコピーされました",
                     "terminal": {
                       "id": {
-                        "copied": "Terminal ID をコピーしました",
+                        "copied": "ターミナル ID をコピーしました",
                         "copy": {
-                          "failed": "Terminal ID をコピーできません"
+                          "failed": "ターミナル ID をコピーできません"
                         }
                       }
                     }
@@ -3800,7 +3800,8 @@
           "1b0a156717": "Agents"
         },
         "WorktreeCardReviewDetailSection": {
-          "reviewHeader": "{{value0}} #{{value1}}"
+          "reviewHeader": "{{value0}} #{{value1}}",
+          "copyLink": "リンクをコピー"
         },
         "WorktreeCardMeta": {
           "3e65e11cc6": "ワークスペースのメタデータ",
@@ -3827,7 +3828,13 @@
           "checkingAutomationAvailability": "自動化の利用可否を確認中...",
           "automationMissing": "自動化は利用できなくなりました。",
           "automationRunMissing": "実行履歴は利用できなくなりました。",
-          "automationAvailabilityUnavailable": "自動化の利用可否を確認できませんでした。"
+          "automationAvailabilityUnavailable": "自動化の利用可否を確認できませんでした。",
+          "moreIssueActions": "その他の課題アクション",
+          "copyLink": "リンクをコピー",
+          "copyLinkSuccess": "{{value0}} をコピーしました",
+          "copyLinkFailure": "リンクをコピーできませんでした",
+          "issueLinkLabel": "課題リンク",
+          "reviewLinkLabel": "{{value0}}リンク"
         },
         "WorktreeCardMetadataStatusBadges": {
           "fe188062a1": "状態: オープン",
@@ -6244,15 +6251,15 @@
           "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent.",
           "scrollSpeed": {
             "title": "スクロール速度",
-            "description": "通常の端末スクロールバック、高速修飾キースクロール、フルスクリーンTUIのホイール速度を調整します。",
-            "helper": "スクロールバックやマウス対応端末アプリでのホイール入力の感覚を調整します。",
+            "description": "通常のターミナルスクロールバック、修飾キーでの高速スクロール、全画面 TUI のホイール速度を調整します。",
+            "helper": "ホイール入力の感触をスクロールバックとマウス対応のターミナルアプリで調整します。",
             "reset": "リセット",
             "normal": "通常",
-            "normalDescription": "スクロールバックホイール乗数。",
+            "normalDescription": "スクロールバックのホイール倍率。",
             "fast": "高速",
-            "fastDescription": "修飾キーでのスクロール時の追加乗数。",
+            "fastDescription": "修飾キーを押しながらスクロールするときの追加倍率。",
             "tui": "TUI",
-            "tuiDescription": "フルスクリーン端末アプリの離散ホイールレポート。"
+            "tuiDescription": "全画面ターミナルアプリ向けの離散的なホイール通知。"
           }
         },
         "TerminalSettingsPreview": {
@@ -7892,7 +7899,7 @@
             "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent.",
             "scrollSpeed": {
               "title": "スクロール速度",
-              "description": "通常の端末スクロールバック、高速修飾キースクロール、フルスクリーンTUIのホイール速度を調整します。"
+              "description": "通常のターミナルスクロールバック、修飾キーでの高速スクロール、全画面 TUI のホイール速度を調整します。"
             }
           },
           "windows": {
@@ -9131,7 +9138,10 @@
             "hideEmptySessions": "Hide empty sessions",
             "workspaceScope": "ワークスペース",
             "worktreeScope": "Worktree",
-            "globalScope": "Global"
+            "globalScope": "Global",
+            "projectScope": "プロジェクト",
+            "currentProjectLower": "現在のプロジェクト",
+            "project": "プロジェクト"
           },
           "AiVaultSessionDetails": {
             "updated": "Updated",
