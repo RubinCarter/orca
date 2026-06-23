@@ -1324,7 +1324,7 @@ function GHStatusCell({
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className={cn(duplicatePickerOpen ? 'w-[360px]' : 'w-72', 'p-1')}
+        className={cn(duplicatePickerOpen ? 'w-[360px]' : 'w-56', 'p-1')}
         align="start"
         onClick={(e) => e.stopPropagation()}
       >
@@ -1442,22 +1442,12 @@ function GHStatusCell({
                 setOpen(false)
               }}
               className={cn(
-                'flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent',
+                'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[12px] hover:bg-accent',
                 localState === 'closed' && 'bg-accent/50'
               )}
             >
-              <CheckCircle2 className="mt-0.5 size-4 text-primary" />
-              <span className="min-w-0">
-                <span className="block text-[12px] font-medium">
-                  {translate('auto.components.TaskPage.closeAsCompleted', 'Close as completed')}
-                </span>
-                <span className="block text-[11px] text-muted-foreground">
-                  {translate(
-                    'auto.components.TaskPage.closeAsCompletedDescription',
-                    'Done, closed, fixed, resolved'
-                  )}
-                </span>
-              </span>
+              <CheckCircle2 className="size-4 text-muted-foreground" />
+              {translate('auto.components.TaskPage.closeAsCompleted', 'Close as completed')}
             </button>
             <button
               type="button"
@@ -1465,20 +1455,10 @@ function GHStatusCell({
                 handleStateChange('closed', { stateReason: 'not_planned' })
                 setOpen(false)
               }}
-              className="flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[12px] hover:bg-accent"
             >
-              <Ban className="mt-0.5 size-4 text-muted-foreground" />
-              <span className="min-w-0">
-                <span className="block text-[12px] font-medium">
-                  {translate('auto.components.TaskPage.closeAsNotPlanned', 'Close as not planned')}
-                </span>
-                <span className="block text-[11px] text-muted-foreground">
-                  {translate(
-                    'auto.components.TaskPage.closeAsNotPlannedDescription',
-                    "Won't fix, can't repro, stale"
-                  )}
-                </span>
-              </span>
+              <Ban className="size-4 text-muted-foreground" />
+              {translate('auto.components.TaskPage.closeAsNotPlanned', 'Close as not planned')}
             </button>
             <button
               type="button"
@@ -1487,21 +1467,13 @@ function GHStatusCell({
                 setDuplicateSearch('')
                 setDuplicateError(null)
               }}
-              className="flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[12px] hover:bg-accent"
             >
-              <Copy className="mt-0.5 size-4 text-muted-foreground" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[12px] font-medium">
-                  {translate('auto.components.TaskPage.closeAsDuplicate', 'Close as duplicate')}
-                </span>
-                <span className="block text-[11px] text-muted-foreground">
-                  {translate(
-                    'auto.components.TaskPage.closeAsDuplicateDescription',
-                    'Duplicate of another issue in this repository'
-                  )}
-                </span>
+              <Copy className="size-4 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">
+                {translate('auto.components.TaskPage.closeAsDuplicate', 'Close as duplicate')}
               </span>
-              <ChevronRight className="mt-1 size-3.5 text-muted-foreground" />
+              <ChevronRight className="size-3.5 text-muted-foreground" />
             </button>
           </>
         )}
