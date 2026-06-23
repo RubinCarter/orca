@@ -4,15 +4,25 @@
 // unit-testable in isolation.
 
 import type { RuntimeWorktreeAgentRow } from '../../../src/shared/runtime-types'
+import type { WorkspaceStatusDefinition } from '../../../src/shared/types'
+import {
+  DEFAULT_MOBILE_WORKSPACE_STATUSES,
+  getMobileWorkspaceStatus,
+  getMobileWorkspaceStatusGroupKey
+} from './mobile-workspace-statuses'
 import type { MobileGroupMode, MobileSortMode } from './workspace-view-settings'
 
 export type Worktree = {
+  sectionListKey?: string
   workspaceKind?: 'git' | 'folder-workspace'
   worktreeId: string
   repoId: string
   repo: string
   branch: string
   displayName: string
+  workspaceStatus?: string
+  sortOrder?: number
+  manualOrder?: number
   // Why: on-disk worktree directory path. Needed by NewWorktreeModal so the
   // marine-creature fallback dedupes against the actual filesystem basenames
   // (matching the desktop's collision check), not against displayName which
@@ -47,7 +57,19 @@ export type FilterState = {
   hideDefaultBranch: boolean
 }
 
-export type Section = { title: string; icon?: 'pin'; data: Worktree[] }
+export type Section = { key: string; title: string; icon?: 'pin'; data: Worktree[] }
+
+function makeSection(key: string, title: string, data: Worktree[], icon?: 'pin'): Section {
+  return {
+    key,
+    title,
+    ...(icon ? { icon } : {}),
+    data: data.map((worktree) => ({
+      ...worktree,
+      sectionListKey: `${key}:${worktree.worktreeId}`
+    }))
+  }
+}
 
 export function getWorktreeStatus(
   w: Worktree
@@ -104,26 +126,27 @@ function isDefaultBranchWorkspace(w: Worktree): boolean {
   return branch === 'main' || branch === 'master'
 }
 
-export const WORKSPACE_STATUS_LABELS: Record<ReturnType<typeof getWorktreeStatus>, string> = {
-  permission: 'Needs Permission',
-  working: 'Working',
-  done: 'Done',
-  active: 'Active',
-  inactive: 'Inactive'
+function getManualSortRank(worktree: Worktree): number | null {
+  const rank = worktree.manualOrder ?? worktree.sortOrder
+  return typeof rank === 'number' && Number.isFinite(rank) ? rank : null
 }
 
-export const WORKSPACE_STATUS_ORDER: ReturnType<typeof getWorktreeStatus>[] = [
-  'permission',
-  'working',
-  'done',
-  'active',
-  'inactive'
-]
-
 export function sortWorktrees(worktrees: Worktree[], mode: MobileSortMode): Worktree[] {
-  // 'manual' keeps the server (worktree.ps) order untouched.
   if (mode === 'manual') {
-    return worktrees
+    return [...worktrees].sort((a, b) => {
+      const aRank = getManualSortRank(a)
+      const bRank = getManualSortRank(b)
+      if (aRank !== null && bRank !== null && aRank !== bRank) {
+        return bRank - aRank
+      }
+      if (aRank !== null && bRank === null) {
+        return -1
+      }
+      if (aRank === null && bRank !== null) {
+        return 1
+      }
+      return 0
+    })
   }
   return [...worktrees].sort((a, b) => {
     if (mode === 'name') {
@@ -221,33 +244,39 @@ export function buildSections(
   search: string,
   groupMode: MobileGroupMode,
   pinnedIds: Set<string>,
-  repoIdsByName: ReadonlyMap<string, string> = new Map()
+  repoIdsByName: ReadonlyMap<string, string> = new Map(),
+  workspaceStatuses: readonly WorkspaceStatusDefinition[] = DEFAULT_MOBILE_WORKSPACE_STATUSES
 ): Section[] {
   const filtered = filterWorktrees(worktrees, filters, search)
   const sorted = sortWorktrees(filtered, sortMode)
 
   const pinned = sorted.filter((w) => isWorktreePinned(w, pinnedIds))
   const unpinned = sorted.filter((w) => !isWorktreePinned(w, pinnedIds))
-  const active = unpinned.filter(isWorktreeActive)
-  const inactive = unpinned.filter((w) => !isWorktreeActive(w))
+  // Why: mobile shows pinned workspaces once in the pinned section; duplicating
+  // them in status/project sections makes the phone list harder to scan.
+  const canonicalGroupWorktrees = unpinned
+  const active = canonicalGroupWorktrees.filter(isWorktreeActive)
+  const inactive = canonicalGroupWorktrees.filter((w) => !isWorktreeActive(w))
 
   const sections: Section[] = []
   if (pinned.length > 0) {
-    sections.push({ title: 'Pinned', icon: 'pin', data: pinned })
+    sections.push(makeSection('pinned', 'Pinned', pinned, 'pin'))
   }
 
   if (groupMode === 'none') {
     if (active.length > 0) {
       // Why: without explicit grouping, mobile's primary workflow is jumping
       // back into running sessions before browsing the full worktree archive.
-      sections.push({ title: 'Active', data: active })
+      sections.push(makeSection('all-active', 'Active', active))
     }
     if (inactive.length > 0) {
-      sections.push({ title: pinned.length > 0 || active.length > 0 ? 'All' : '', data: inactive })
+      sections.push(
+        makeSection('all', pinned.length > 0 || active.length > 0 ? 'All' : '', inactive)
+      )
     }
   } else if (groupMode === 'repo') {
     const byRepo = new Map<string, Worktree[]>()
-    for (const w of unpinned) {
+    for (const w of canonicalGroupWorktrees) {
       const key = w.repo || 'Unknown'
       const list = byRepo.get(key)
       if (list) {
@@ -273,12 +302,13 @@ export function buildSections(
       }
     }
     for (const [repo, items] of byRepo) {
-      sections.push({ title: repo, data: items })
+      const key = `repo:${repoIdsByName.get(repo) ?? repo}`
+      sections.push(makeSection(key, repo, items))
     }
   } else if (groupMode === 'workspaceStatus') {
-    const byStatus = new Map<ReturnType<typeof getWorktreeStatus>, Worktree[]>()
-    for (const w of unpinned) {
-      const key = getWorktreeStatus(w)
+    const byStatus = new Map<string, Worktree[]>()
+    for (const w of canonicalGroupWorktrees) {
+      const key = getMobileWorkspaceStatus(w, workspaceStatuses)
       const list = byStatus.get(key)
       if (list) {
         list.push(w)
@@ -286,15 +316,15 @@ export function buildSections(
         byStatus.set(key, [w])
       }
     }
-    for (const status of WORKSPACE_STATUS_ORDER) {
-      const items = byStatus.get(status)
+    for (const status of workspaceStatuses) {
+      const items = byStatus.get(status.id)
       if (items && items.length > 0) {
-        sections.push({ title: WORKSPACE_STATUS_LABELS[status], data: items })
+        sections.push(makeSection(getMobileWorkspaceStatusGroupKey(status.id), status.label, items))
       }
     }
   } else if (groupMode === 'prStatus') {
     const byGroup = new Map<PRGroupKey, Worktree[]>()
-    for (const w of unpinned) {
+    for (const w of canonicalGroupWorktrees) {
       const key = getPRGroupKey(w)
       const list = byGroup.get(key)
       if (list) {
@@ -306,7 +336,7 @@ export function buildSections(
     for (const groupKey of PR_GROUP_ORDER) {
       const items = byGroup.get(groupKey)
       if (items && items.length > 0) {
-        sections.push({ title: PR_GROUP_LABELS[groupKey], data: items })
+        sections.push(makeSection(`pr:${groupKey}`, PR_GROUP_LABELS[groupKey], items))
       }
     }
   }

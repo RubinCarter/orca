@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_MOBILE_WORKSPACE_STATUSES } from './mobile-workspace-statuses'
 import {
   applyDesktopViewSettings,
   groupModeFromDesktop,
@@ -13,7 +14,8 @@ const base: MobileViewState = {
   hideSleeping: false,
   hideDefaultBranch: false,
   filterRepoIds: [],
-  collapsedGroups: []
+  collapsedGroups: [],
+  workspaceStatuses: DEFAULT_MOBILE_WORKSPACE_STATUSES
 }
 
 describe('group mode mapping', () => {
@@ -47,12 +49,10 @@ describe('applyDesktopViewSettings', () => {
       filterRepoIds: ['repo-1']
     })
     expect(next).toEqual({
+      ...base,
       groupMode: 'prStatus',
-      sortMode: 'recent', // unchanged (sortBy absent)
       hideSleeping: true,
-      hideDefaultBranch: false, // unchanged
-      filterRepoIds: ['repo-1'],
-      collapsedGroups: []
+      filterRepoIds: ['repo-1']
     })
   })
 

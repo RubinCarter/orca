@@ -26,6 +26,9 @@ function areWorktreesEqual(left: Worktree, right: Worktree): boolean {
     left.repo === right.repo &&
     left.branch === right.branch &&
     left.displayName === right.displayName &&
+    (left.workspaceStatus ?? null) === (right.workspaceStatus ?? null) &&
+    (left.sortOrder ?? null) === (right.sortOrder ?? null) &&
+    (left.manualOrder ?? null) === (right.manualOrder ?? null) &&
     left.path === right.path &&
     (left.isArchived ?? false) === (right.isArchived ?? false) &&
     (left.isMainWorktree ?? false) === (right.isMainWorktree ?? false) &&
