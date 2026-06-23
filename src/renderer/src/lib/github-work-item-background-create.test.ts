@@ -1,0 +1,347 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { WorktreeCreationRequest } from '@/lib/pending-worktree-creation'
+import type { GitHubWorkItem, Repo } from '../../../shared/types'
+
+vi.mock('@/lib/tui-agent-startup', () => ({
+  buildAgentDraftLaunchPlan: vi.fn(() => null),
+  buildAgentStartupPlan: vi.fn(() => ({
+    agent: 'codex',
+    launchCommand: 'codex',
+    expectedProcess: 'codex',
+    followupPrompt: null,
+    launchConfig: { kind: 'shell', command: 'codex' }
+  }))
+}))
+
+vi.mock('@/lib/telemetry', () => ({
+  tuiAgentToAgentKind: (agent: string) => agent
+}))
+
+import { buildAgentDraftLaunchPlan, buildAgentStartupPlan } from '@/lib/tui-agent-startup'
+import { createGitHubWorkItemWorkspaceInBackground } from './github-work-item-background-create'
+
+const repo: Repo = {
+  id: 'repo-1',
+  path: '/repo',
+  displayName: 'orca',
+  badgeColor: 'blue',
+  addedAt: 1
+}
+
+function makeIssue(overrides: Partial<GitHubWorkItem> = {}): GitHubWorkItem {
+  return {
+    id: 'I_42',
+    repoId: 'repo-1',
+    type: 'issue',
+    number: 42,
+    title: 'Make issue workspace creation async',
+    url: 'https://github.com/stablyai/orca/issues/42',
+    state: 'open',
+    author: null,
+    labels: [],
+    assignees: [],
+    createdAt: '2026-06-22T00:00:00Z',
+    updatedAt: '2026-06-22T00:00:00Z',
+    commentsCount: 0,
+    ...overrides
+  } as GitHubWorkItem
+}
+
+function makeStore(overrides: Partial<ReturnType<typeof baseStore>> = {}) {
+  return { ...baseStore(), ...overrides }
+}
+
+function baseStore() {
+  return {
+    repos: [repo],
+    settings: {
+      activeRuntimeEnvironmentId: null,
+      defaultTuiAgent: 'codex' as const,
+      disabledTuiAgents: []
+    },
+    ensureDetectedAgents: vi.fn().mockResolvedValue([]),
+    ensureRemoteDetectedAgents: vi.fn().mockResolvedValue([])
+  }
+}
+
+function makeDeps(store = makeStore()) {
+  return {
+    getStore: () => store,
+    hasPendingCreate: vi.fn(() => true),
+    resolveSetupDecision: vi.fn().mockResolvedValue({ kind: 'decided', decision: 'inherit' }),
+    resolvePrStartPoint: vi.fn(),
+    confirmHooks: vi.fn().mockResolvedValue('run'),
+    beginBackgroundCreate: vi.fn(() => 'creation-1'),
+    continueBackgroundCreate: vi.fn(() => true),
+    removePendingCreate: vi.fn(),
+    toastError: vi.fn()
+  }
+}
+
+describe('createGitHubWorkItemWorkspaceInBackground', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('starts a background issue workspace without opening the composer', async () => {
+    const deps = makeDeps()
+    const openModalFallback = vi.fn()
+
+    const result = await createGitHubWorkItemWorkspaceInBackground(
+      {
+        item: makeIssue(),
+        repoId: 'repo-1',
+        telemetrySource: 'sidebar',
+        openModalFallback
+      },
+      deps
+    )
+
+    expect(result).toEqual({ kind: 'background-started' })
+    expect(openModalFallback).not.toHaveBeenCalled()
+    expect(deps.beginBackgroundCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoId: 'repo-1',
+        name: 'issue-42-make-issue-workspace',
+        displayName: 'Issue 42 Make Issue Workspace',
+        linkedIssue: 42,
+        telemetrySource: 'sidebar',
+        setupDecision: 'inherit',
+        agent: null
+      })
+    )
+    expect(deps.continueBackgroundCreate).toHaveBeenCalledWith(
+      'creation-1',
+      expect.objectContaining({
+        repoId: 'repo-1',
+        name: 'issue-42-make-issue-workspace',
+        displayName: 'Issue 42 Make Issue Workspace',
+        linkedIssue: 42,
+        telemetrySource: 'sidebar',
+        setupDecision: 'inherit',
+        agent: null,
+        startupPlan: null,
+        quickPrompt: '',
+        quickTelemetry: null
+      })
+    )
+  })
+
+  it('shows the pending workspace before async preflight resolves', async () => {
+    let resolveSetupDecision: ((value: { kind: 'decided'; decision: 'inherit' }) => void) | null =
+      null
+    const deps = makeDeps()
+    deps.resolveSetupDecision.mockImplementation(
+      () =>
+        new Promise<{ kind: 'decided'; decision: 'inherit' }>((resolve) => {
+          resolveSetupDecision = resolve
+        })
+    )
+
+    const pending = createGitHubWorkItemWorkspaceInBackground(
+      {
+        item: makeIssue(),
+        repoId: 'repo-1',
+        openModalFallback: vi.fn()
+      },
+      deps
+    )
+
+    expect(deps.beginBackgroundCreate).toHaveBeenCalledTimes(1)
+    expect(deps.continueBackgroundCreate).not.toHaveBeenCalled()
+
+    expect(resolveSetupDecision).not.toBeNull()
+    resolveSetupDecision!({ kind: 'decided', decision: 'inherit' })
+    await pending
+
+    expect(deps.continueBackgroundCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the preferred quick agent when one is available', async () => {
+    const store = makeStore({
+      ensureDetectedAgents: vi.fn().mockResolvedValue(['codex'])
+    })
+    const deps = makeDeps(store)
+
+    await createGitHubWorkItemWorkspaceInBackground(
+      {
+        item: makeIssue(),
+        repoId: 'repo-1',
+        openModalFallback: vi.fn()
+      },
+      deps
+    )
+
+    const continueCall = deps.continueBackgroundCreate.mock.calls[0] as unknown[] | undefined
+    expect(continueCall).toBeDefined()
+    const request = continueCall?.[1] as WorktreeCreationRequest
+    expect(request.agent).toBe('codex')
+    expect(request.startupPlan?.launchCommand).toBe('codex')
+    expect(request.startup).toBeUndefined()
+    expect(request.quickTelemetry).toEqual({
+      agent_kind: 'codex',
+      launch_source: 'new_workspace_composer',
+      request_kind: 'new'
+    })
+    expect(buildAgentStartupPlan).toHaveBeenCalled()
+  })
+
+  it('stops before opening the composer when the staged create is cancelled during setup preflight', async () => {
+    let resolveSetupDecision: ((value: { kind: 'needs-modal' }) => void) | null = null
+    const deps = makeDeps()
+    deps.resolveSetupDecision.mockImplementation(
+      () =>
+        new Promise<{ kind: 'needs-modal' }>((resolve) => {
+          resolveSetupDecision = resolve
+        })
+    )
+    const openModalFallback = vi.fn()
+
+    const pending = createGitHubWorkItemWorkspaceInBackground(
+      {
+        item: makeIssue(),
+        repoId: 'repo-1',
+        openModalFallback
+      },
+      deps
+    )
+
+    deps.hasPendingCreate.mockReturnValue(false)
+    expect(resolveSetupDecision).not.toBeNull()
+    resolveSetupDecision!({ kind: 'needs-modal' })
+
+    expect(await pending).toEqual({ kind: 'background-started' })
+    expect(openModalFallback).not.toHaveBeenCalled()
+    expect(deps.removePendingCreate).not.toHaveBeenCalled()
+    expect(deps.continueBackgroundCreate).not.toHaveBeenCalled()
+  })
+
+  it('stops before hook trust and agent detection when the staged create is cancelled', async () => {
+    let resolveSetupDecision: ((value: { kind: 'decided'; decision: 'inherit' }) => void) | null =
+      null
+    const deps = makeDeps()
+    deps.resolveSetupDecision.mockImplementation(
+      () =>
+        new Promise<{ kind: 'decided'; decision: 'inherit' }>((resolve) => {
+          resolveSetupDecision = resolve
+        })
+    )
+
+    const pending = createGitHubWorkItemWorkspaceInBackground(
+      {
+        item: makeIssue(),
+        repoId: 'repo-1',
+        openModalFallback: vi.fn()
+      },
+      deps
+    )
+
+    deps.hasPendingCreate.mockReturnValue(false)
+    expect(resolveSetupDecision).not.toBeNull()
+    resolveSetupDecision!({ kind: 'decided', decision: 'inherit' })
+
+    expect(await pending).toEqual({ kind: 'background-started' })
+    expect(deps.confirmHooks).not.toHaveBeenCalled()
+    expect(deps.continueBackgroundCreate).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the composer when setup policy requires an explicit choice', async () => {
+    const deps = makeDeps()
+    deps.resolveSetupDecision.mockResolvedValueOnce({ kind: 'needs-modal' })
+    const openModalFallback = vi.fn()
+
+    const result = await createGitHubWorkItemWorkspaceInBackground(
+      {
+        item: makeIssue(),
+        repoId: 'repo-1',
+        openModalFallback
+      },
+      deps
+    )
+
+    expect(result).toEqual({ kind: 'fallback', reason: 'setup-ask' })
+    expect(openModalFallback).toHaveBeenCalledTimes(1)
+    expect(deps.removePendingCreate).toHaveBeenCalledWith('creation-1')
+    expect(deps.continueBackgroundCreate).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the composer when PR start point cannot be resolved', async () => {
+    const deps = makeDeps()
+    deps.resolvePrStartPoint.mockRejectedValueOnce(new Error('No PR head'))
+    const openModalFallback = vi.fn()
+
+    const result = await createGitHubWorkItemWorkspaceInBackground(
+      {
+        item: makeIssue({ type: 'pr', number: 7, url: 'https://github.com/stablyai/orca/pull/7' }),
+        repoId: 'repo-1',
+        openModalFallback
+      },
+      deps
+    )
+
+    expect(result).toEqual({ kind: 'fallback', reason: 'pr-start-point' })
+    expect(deps.toastError).toHaveBeenCalledWith('No PR head')
+    expect(openModalFallback).toHaveBeenCalledTimes(1)
+    expect(deps.removePendingCreate).toHaveBeenCalledWith('creation-1')
+    expect(deps.continueBackgroundCreate).not.toHaveBeenCalled()
+  })
+
+  it('includes resolved PR start-point data in the background request', async () => {
+    const deps = makeDeps()
+    deps.resolvePrStartPoint.mockResolvedValueOnce({
+      baseBranch: 'feature/from-pr',
+      pushTarget: { remote: 'origin', branch: 'feature/from-pr' },
+      branchNameOverride: 'feature/from-pr',
+      compareBaseRef: 'main'
+    })
+
+    await createGitHubWorkItemWorkspaceInBackground(
+      {
+        item: makeIssue({ type: 'pr', number: 7, url: 'https://github.com/stablyai/orca/pull/7' }),
+        repoId: 'repo-1',
+        openModalFallback: vi.fn()
+      },
+      deps
+    )
+
+    expect(deps.continueBackgroundCreate).toHaveBeenCalledWith(
+      'creation-1',
+      expect.objectContaining({
+        linkedPR: 7,
+        baseBranch: 'feature/from-pr',
+        pushTarget: { remote: 'origin', branch: 'feature/from-pr' },
+        branchNameOverride: 'feature/from-pr',
+        compareBaseRef: 'main'
+      })
+    )
+  })
+
+  it('prefers native draft startup when the agent supports it', async () => {
+    vi.mocked(buildAgentDraftLaunchPlan).mockReturnValueOnce({
+      agent: 'codex',
+      launchCommand: 'codex --prompt-file',
+      expectedProcess: 'codex',
+      launchConfig: { agentCommand: 'codex', agentArgs: '--prompt-file', agentEnv: {} }
+    })
+    const store = makeStore({
+      ensureDetectedAgents: vi.fn().mockResolvedValue(['codex'])
+    })
+    const deps = makeDeps(store)
+
+    await createGitHubWorkItemWorkspaceInBackground(
+      {
+        item: makeIssue(),
+        repoId: 'repo-1',
+        openModalFallback: vi.fn()
+      },
+      deps
+    )
+
+    const continueCall = deps.continueBackgroundCreate.mock.calls[0] as unknown[] | undefined
+    expect(continueCall).toBeDefined()
+    const request = continueCall?.[1] as WorktreeCreationRequest
+    expect(request.startupPlan?.launchCommand).toBe('codex --prompt-file')
+    expect(request.startup?.command).toBe('codex --prompt-file')
+    expect(buildAgentStartupPlan).not.toHaveBeenCalled()
+  })
+})

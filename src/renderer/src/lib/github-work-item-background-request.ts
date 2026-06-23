@@ -1,0 +1,226 @@
+import type { useAppStore } from '@/store'
+import {
+  buildAgentDraftLaunchPlan,
+  buildAgentStartupPlan,
+  type AgentStartupPlan
+} from '@/lib/tui-agent-startup'
+import { resolveQuickCreateLinkedWorkItemPrompt } from '@/lib/linked-work-item-context'
+import { pickQuickWorkspaceAgent } from '@/lib/quick-workspace-agent-selection'
+import type { WorktreeCreationRequest } from '@/lib/pending-worktree-creation'
+import { CLIENT_PLATFORM, getWorkspaceIntentName, getWorkspaceSeedName } from '@/lib/new-workspace'
+import { getLocalRepoProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
+import { resolveSourceControlLaunchPlatform } from '@/lib/source-control-launch-platform'
+import {
+  resolveTuiAgentLaunchArgs,
+  resolveTuiAgentLaunchEnv
+} from '../../../shared/tui-agent-launch-defaults'
+import { tuiAgentToAgentKind } from '@/lib/telemetry'
+import type { GitHubWorkItem, GlobalSettings, Repo, TuiAgent } from '../../../shared/types'
+import type { TaskSourceContext, WorkspaceRunContext } from '../../../shared/task-source-context'
+import type { AgentStartedTelemetry } from '@/lib/worktree-activation'
+import { getRepoExecutionHostId } from '../../../shared/execution-host'
+import { projectHostSetupProjectionFromRepos } from '../../../shared/project-host-setup-projection'
+
+export type GitHubWorkItemBackgroundStoreSnapshot = {
+  repos: readonly Repo[]
+  settings:
+    | Partial<
+        Pick<
+          GlobalSettings,
+          | 'activeRuntimeEnvironmentId'
+          | 'defaultTuiAgent'
+          | 'disabledTuiAgents'
+          | 'agentCmdOverrides'
+          | 'agentDefaultArgs'
+          | 'agentDefaultEnv'
+        >
+      >
+    | null
+    | undefined
+  ensureDetectedAgents: ReturnType<typeof useAppStore.getState>['ensureDetectedAgents']
+  ensureRemoteDetectedAgents: ReturnType<typeof useAppStore.getState>['ensureRemoteDetectedAgents']
+}
+
+export type BuildInitialGitHubWorkItemRequestArgs = {
+  item: GitHubWorkItem
+  repoId: string
+  taskSourceContext?: TaskSourceContext | null
+  workspaceRunContext?: WorkspaceRunContext | null
+  telemetrySource?: WorktreeCreationRequest['telemetrySource']
+}
+
+export function buildGitHubWorkItemBackendStartup(
+  agent: TuiAgent | null,
+  startupPlan: AgentStartupPlan | null,
+  quickTelemetry: AgentStartedTelemetry | null
+): WorktreeCreationRequest['startup'] {
+  if (!agent || !startupPlan || startupPlan.draftPrompt || startupPlan.followupPrompt) {
+    return undefined
+  }
+  return {
+    command: startupPlan.launchCommand,
+    ...(startupPlan.env ? { env: startupPlan.env } : {}),
+    launchConfig: startupPlan.launchConfig,
+    launchAgent: agent,
+    ...(startupPlan.startupCommandDelivery
+      ? { startupCommandDelivery: startupPlan.startupCommandDelivery }
+      : {}),
+    ...(quickTelemetry ? { telemetry: quickTelemetry } : {})
+  }
+}
+
+function getWorkspaceRunContextForRepo(
+  repo: Repo,
+  provided: WorkspaceRunContext | null | undefined
+): WorkspaceRunContext | null {
+  if (provided) {
+    return provided
+  }
+  const projection = projectHostSetupProjectionFromRepos([repo])
+  const project = projection.projects[0]
+  const setup = projection.setups[0]
+  if (!project || !setup) {
+    return null
+  }
+  return {
+    kind: 'workspace-run',
+    projectId: project.id,
+    hostId: getRepoExecutionHostId(repo),
+    projectHostSetupId: setup.id,
+    repoId: repo.id,
+    path: repo.path
+  }
+}
+
+export async function resolvePreferredQuickAgentForGitHubWorkItem(
+  store: GitHubWorkItemBackgroundStoreSnapshot,
+  repo: Repo
+): Promise<TuiAgent | null> {
+  const detectedAgents = repo.connectionId
+    ? await store.ensureRemoteDetectedAgents(repo.connectionId)
+    : await store.ensureDetectedAgents()
+  return pickQuickWorkspaceAgent(
+    store.settings?.defaultTuiAgent,
+    detectedAgents,
+    store.settings?.disabledTuiAgents
+  )
+}
+
+export function buildGitHubWorkItemStartupPlan(args: {
+  agent: TuiAgent | null
+  item: GitHubWorkItem
+  repo: Repo
+  store: GitHubWorkItemBackgroundStoreSnapshot
+}): {
+  startupPlan: AgentStartupPlan | null
+  quickPrompt: string
+  quickTelemetry: AgentStartedTelemetry | null
+} {
+  const { agent, item, repo, store } = args
+  if (!agent) {
+    return { startupPlan: null, quickPrompt: '', quickTelemetry: null }
+  }
+  const { prompt: quickPrompt, draftPrompt } = resolveQuickCreateLinkedWorkItemPrompt(item, '', {
+    cliAvailable: false
+  })
+  const projectRuntime = repo.connectionId
+    ? undefined
+    : getLocalRepoProjectExecutionRuntimeContext(
+        store as ReturnType<typeof useAppStore.getState>,
+        repo.id,
+        CLIENT_PLATFORM
+      )
+  const platform = resolveSourceControlLaunchPlatform({
+    connectionId: repo.connectionId,
+    worktreePath: repo.path,
+    projectRuntime
+  })
+  const draftLaunchPlan = draftPrompt
+    ? buildAgentDraftLaunchPlan({
+        agent,
+        draft: draftPrompt,
+        cmdOverrides: store.settings?.agentCmdOverrides ?? {},
+        agentArgs: resolveTuiAgentLaunchArgs(agent, store.settings?.agentDefaultArgs),
+        agentEnv: resolveTuiAgentLaunchEnv(agent, store.settings?.agentDefaultEnv),
+        platform
+      })
+    : null
+  const startupPlan = draftLaunchPlan
+    ? {
+        agent: draftLaunchPlan.agent,
+        launchCommand: draftLaunchPlan.launchCommand,
+        expectedProcess: draftLaunchPlan.expectedProcess,
+        followupPrompt: null,
+        launchConfig: draftLaunchPlan.launchConfig,
+        ...(draftLaunchPlan.startupCommandDelivery
+          ? { startupCommandDelivery: draftLaunchPlan.startupCommandDelivery }
+          : {}),
+        ...(draftLaunchPlan.env ? { env: draftLaunchPlan.env } : {})
+      }
+    : buildAgentStartupPlan({
+        agent,
+        prompt: quickPrompt,
+        cmdOverrides: store.settings?.agentCmdOverrides ?? {},
+        agentArgs: resolveTuiAgentLaunchArgs(agent, store.settings?.agentDefaultArgs),
+        agentEnv: resolveTuiAgentLaunchEnv(agent, store.settings?.agentDefaultEnv),
+        platform,
+        allowEmptyPromptLaunch: true
+      })
+  if (startupPlan && draftPrompt && !draftLaunchPlan) {
+    startupPlan.draftPrompt = draftPrompt
+  }
+  return {
+    startupPlan,
+    quickPrompt,
+    quickTelemetry: {
+      agent_kind: tuiAgentToAgentKind(agent),
+      launch_source: 'new_workspace_composer',
+      request_kind: 'new'
+    }
+  }
+}
+
+function getGitHubWorkItemName(item: GitHubWorkItem): { seedName: string; displayName?: string } {
+  const intent =
+    item.number !== null
+      ? getWorkspaceIntentName({
+          sourceText: item.title,
+          workItem: { type: item.type, number: item.number, title: item.title }
+        })
+      : null
+  return {
+    seedName: getWorkspaceSeedName({
+      explicitName: intent?.seedName ?? '',
+      prompt: '',
+      linkedIssueNumber: item.type === 'issue' ? item.number : null,
+      linkedPR: item.type === 'pr' ? item.number : null
+    }),
+    ...(intent?.displayName ? { displayName: intent.displayName } : {})
+  }
+}
+
+export function buildInitialGitHubWorkItemRequest(
+  args: BuildInitialGitHubWorkItemRequestArgs,
+  repo: Repo
+): WorktreeCreationRequest {
+  const { seedName, displayName } = getGitHubWorkItemName(args.item)
+  const workspaceRunContext = getWorkspaceRunContextForRepo(repo, args.workspaceRunContext)
+  return {
+    repoId: args.repoId,
+    worktreeCreateProgressMode: repo.connectionId ? 'indeterminate' : 'stepped',
+    ...(args.taskSourceContext ? { taskSourceContext: args.taskSourceContext } : {}),
+    ...(workspaceRunContext ? { workspaceRunContext } : {}),
+    name: seedName,
+    ...(displayName ? { displayName } : {}),
+    ...(args.item.type === 'issue' && args.item.number ? { linkedIssue: args.item.number } : {}),
+    ...(args.item.type === 'pr' && args.item.number ? { linkedPR: args.item.number } : {}),
+    ...(args.telemetrySource ? { telemetrySource: args.telemetrySource } : {}),
+    setupDecision: 'inherit',
+    agent: null,
+    pendingFirstAgentMessageRename: false,
+    note: '',
+    startupPlan: null,
+    quickPrompt: '',
+    quickTelemetry: null
+  }
+}
