@@ -30,9 +30,14 @@ describe('GitHub workspace creation source boundaries', () => {
   })
 
   it('keeps project-view GitHub actions on the direct start-work path for issue #4756', () => {
-    const section = sourceBetween(PROJECT_VIEW_SOURCE, 'void launchWorkItemDirect({', '})\n    },')
+    const section = sourceBetween(
+      PROJECT_VIEW_SOURCE,
+      '// Why: issue #4756 keeps project-view actions on the direct',
+      'openModalFallback: () => {'
+    )
 
     expect(PROJECT_VIEW_SOURCE).toContain('issue #4756')
+    expect(section).toContain('void launchWorkItemDirect({')
     expect(section).toContain("launchSource: 'task_page'")
     expect(section).not.toContain('createGitHubWorkItemWorkspaceInBackground')
   })

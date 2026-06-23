@@ -84,6 +84,8 @@ export async function createGitHubWorkItemWorkspaceInBackground(
   try {
     const repoOwnerSettings = getSettingsForRepoRuntimeOwner(store, args.repoId)
     const setupResolution = await deps.resolveSetupDecision(args.repoId, repo, repoOwnerSettings)
+    // Why: once the staged row disappears, the user already cancelled or moved
+    // on, so every later preflight await must exit without reopening UI.
     if (!deps.hasPendingCreate(creationId)) {
       return { kind: 'background-started' }
     }

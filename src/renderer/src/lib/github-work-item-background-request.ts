@@ -54,6 +54,8 @@ export function buildGitHubWorkItemBackendStartup(
   startupPlan: AgentStartupPlan | null,
   quickTelemetry: AgentStartedTelemetry | null
 ): WorktreeCreationRequest['startup'] {
+  // Why: draft/followup launches still need the renderer to finish terminal
+  // setup, so only self-contained startup plans can move into createWorktree.
   if (!agent || !startupPlan || startupPlan.draftPrompt || startupPlan.followupPrompt) {
     return undefined
   }
