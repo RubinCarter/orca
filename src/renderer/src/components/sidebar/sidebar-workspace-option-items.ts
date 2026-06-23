@@ -172,6 +172,8 @@ export function getWorktreeCardPropertyOptions({
     id: 'branch',
     properties: ['branch'],
     get label() {
+      // Why: new-card project groups can contain folder workspaces, so the
+      // branch setting copy must describe both repo and folder identity.
       return newCardStyle && hasProjectGroups
         ? translate(
             'auto.components.sidebar.SidebarWorkspaceOptionsMenu.folderPathIdentity',

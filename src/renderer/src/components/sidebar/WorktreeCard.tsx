@@ -362,6 +362,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const folderWorkspaceId =
     workspaceScope?.type === 'folder' ? workspaceScope.folderWorkspaceId : null
   const isFolder = repo ? isFolderRepo(repo) : folderWorkspaceId !== null
+  // Why: project groups are the product gate for folder workspaces, so folder
+  // paths stay hidden from identity surfaces until that capability exists.
   const hasProjectGroups = projectGroups.length > 0
   const branchIdentityDisplay = !isFolder && branch.length > 0 ? branch : undefined
   const folderPathIdentityDisplay =
