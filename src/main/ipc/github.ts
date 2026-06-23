@@ -163,6 +163,19 @@ function assertRegisteredRepo(args: string | RepoScopedArgs, store: Store): Repo
   return repo
 }
 
+function resolveVisiblePRRefreshRepo(
+  candidate: GitHubPRRefreshCandidate,
+  store: Store
+): Repo | null {
+  try {
+    return assertRegisteredRepo(candidate.repoPath, store)
+  } catch {
+    // Why: visible PR refresh is best-effort background maintenance; one stale
+    // renderer candidate must not reject the whole visible batch.
+    return null
+  }
+}
+
 function repoConnectionId(repo: Repo): string | null {
   return repo.connectionId ?? null
 }
@@ -300,18 +313,22 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
           clearVisiblePRRefreshWindow(senderId)
         })
       }
-      const candidates = args.candidates.map((candidate) => {
-        const repo = assertRegisteredRepo(candidate.repoPath, store)
+      const candidates: GitHubPRRefreshCandidate[] = []
+      for (const candidate of args.candidates) {
+        const repo = resolveVisiblePRRefreshRepo(candidate, store)
+        if (!repo) {
+          continue
+        }
         const localGitOptions = localGitOptionArgs(store, repo)[0]
-        return {
+        candidates.push({
           ...candidate,
           repoPath: repo.path,
           repoId: repo.id,
           ...(localGitOptions ? { localGitOptions } : {}),
           connectionId: repo.connectionId ?? candidate.connectionId,
           connectionState: repo.connectionId ? 'connected' : candidate.connectionState
-        }
-      })
+        })
+      }
       reportVisiblePRRefreshCandidates(candidates, args.generation, senderId)
       return true
     }

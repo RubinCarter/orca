@@ -64,12 +64,15 @@ const BACKGROUND_BUDGET_MAX = 20
 const POST_PUSH_DELAY_MS = 2_500
 const BACKOFF_BASE_MS = 60_000
 const BACKOFF_MAX_MS = 15 * 60_000
+const ACTIVE_BURST_WINDOW_MS = 30_000
+const ACTIVE_BURST_MAX = 3
 
 let sequence = 0
 let draining = false
 let drainTimer: ReturnType<typeof setTimeout> | null = null
 const queue = new Map<string, QueueEntry>()
 const backgroundStarts: number[] = []
+const activeStarts: number[] = []
 const errorBackoff = new Map<string, { failures: number; retryAt: number }>()
 let lastBackgroundStartAt = 0
 const visibleByWindow = new Map<number, { generation: number; keys: Set<string> }>()
@@ -439,6 +442,27 @@ function nextBudgetDelay(): number {
   return Math.max(spacingDelay, windowDelay)
 }
 
+function pruneActiveStarts(now: number): void {
+  while (activeStarts.length > 0 && now - activeStarts[0] >= ACTIVE_BURST_WINDOW_MS) {
+    activeStarts.shift()
+  }
+}
+
+function nextActiveBurstDelay(): number {
+  const now = Date.now()
+  pruneActiveStarts(now)
+  if (activeStarts.length < ACTIVE_BURST_MAX) {
+    return 0
+  }
+  return Math.max(1, ACTIVE_BURST_WINDOW_MS - (now - activeStarts[0]))
+}
+
+function noteActiveStart(): void {
+  const now = Date.now()
+  pruneActiveStarts(now)
+  activeStarts.push(now)
+}
+
 function scheduleDrain(delay = 0): void {
   if (drainTimer) {
     clearTimeout(drainTimer)
@@ -475,6 +499,12 @@ async function drainQueue(): Promise<void> {
       const waitMs = next.dueAt - Date.now()
       if (waitMs > 0) {
         scheduleDrain(waitMs)
+        return
+      }
+
+      const activeBurstDelay = next.reason === 'active' ? nextActiveBurstDelay() : 0
+      if (activeBurstDelay > 0) {
+        scheduleDrain(activeBurstDelay)
         return
       }
 
@@ -537,6 +567,11 @@ async function drainQueue(): Promise<void> {
         }
         if (isBudgetedQueueEntry(next)) {
           noteBackgroundStart()
+        }
+        if (next.reason === 'active') {
+          // Why: activation is high priority, but tab/worktree churn can enqueue
+          // many distinct active refreshes that each probe local Git.
+          noteActiveStart()
         }
         for (const bucket of buckets) {
           noteRateLimitSpend(bucket)
