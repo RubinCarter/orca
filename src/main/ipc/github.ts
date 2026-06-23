@@ -277,7 +277,7 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
   ipcMain.handle(
     'gh:enqueuePRRefresh',
     (
-      _event,
+      event,
       args: {
         candidate: GitHubPRRefreshCandidate
         reason: GitHubPRRefreshReason
@@ -296,7 +296,8 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
           connectionState: repo.connectionId ? 'connected' : args.candidate.connectionState
         },
         args.reason,
-        args.priority ?? 0
+        args.priority ?? 0,
+        event.sender.id
       )
       return true
     }
