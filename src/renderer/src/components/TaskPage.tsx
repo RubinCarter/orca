@@ -230,7 +230,10 @@ import {
   type TaskPageJiraLoadError
 } from '@/components/task-page-jira-load-state'
 import { deriveTaskPagePRCheckSummary } from '@/components/task-page-pr-check-summary'
-import { presentGitHubPRMergeState } from '@/components/github-pr-merge-state'
+import {
+  presentGitHubPRMergeState,
+  type GitHubPRMergeStatePresentation
+} from '@/components/github-pr-merge-state'
 import { buildJiraCreateTextAdf } from '@/components/jira-create-adf'
 import {
   GITHUB_PR_MERGE_METHOD_LABELS,
@@ -2016,18 +2019,34 @@ function getChecksLabel(item: GitHubWorkItem): string {
   return `${summary.passed}/${summary.total} passed`
 }
 
-function getChecksTone(item: GitHubWorkItem): string {
+const PR_LIST_NEUTRAL_PILL_TONE =
+  'border-border/60 bg-background/70 text-muted-foreground hover:text-foreground'
+
+function getChecksIconTone(item: GitHubWorkItem): string {
   const state = item.checksSummary?.state
   if (state === 'success') {
-    return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+    return 'text-emerald-500'
   }
   if (state === 'failure') {
-    return 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-200'
+    return 'text-rose-500'
   }
   if (state === 'pending') {
-    return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200'
+    return 'text-amber-500'
   }
-  return 'border-border/60 bg-background/70 text-muted-foreground'
+  return 'text-muted-foreground'
+}
+
+function getMergeIconTone(presentation: GitHubPRMergeStatePresentation): string {
+  if (presentation.tone.includes('emerald')) {
+    return 'text-emerald-500'
+  }
+  if (presentation.tone.includes('rose')) {
+    return 'text-rose-500'
+  }
+  if (presentation.tone.includes('amber')) {
+    return 'text-amber-500'
+  }
+  return 'text-muted-foreground'
 }
 
 function sameOptionalGitHubOwnerRepo(
@@ -2094,6 +2113,8 @@ function PRReviewCell({
   const [localReviewRequests, setLocalReviewRequests] = useState<GitHubAssignableUser[]>(
     () => item.reviewRequests ?? []
   )
+  const [reviewerPickerSide, setReviewerPickerSide] = useState<'top' | 'bottom'>('bottom')
+  const [reviewerPickerMaxHeight, setReviewerPickerMaxHeight] = useState<number | null>(null)
   const [reviewRequestsSource, setReviewRequestsSource] = useState(() => ({
     itemId: item.id,
     repoId: item.repoId,
@@ -2116,6 +2137,7 @@ function PRReviewCell({
     [repoOwnerSettings, sourceContext]
   )
   const reviewerInputRef = useRef<HTMLInputElement | null>(null)
+  const reviewerTriggerRef = useRef<HTMLButtonElement | null>(null)
   const reviewerInputFocusFrameRef = useRef<number | null>(null)
 
   const cancelReviewerInputFocusFrame = useCallback((): void => {
@@ -2410,6 +2432,16 @@ function PRReviewCell({
   }
 
   const handleReviewerPickerOpenChange = (nextOpen: boolean): void => {
+    if (nextOpen) {
+      const rect = reviewerTriggerRef.current?.getBoundingClientRect()
+      const gap = 8
+      const availableBelow = rect ? window.innerHeight - rect.bottom - gap : 0
+      const availableAbove = rect ? rect.top - gap : 0
+      const nextSide = availableBelow < 240 && availableAbove > availableBelow ? 'top' : 'bottom'
+      const available = nextSide === 'top' ? availableAbove : availableBelow
+      setReviewerPickerSide(nextSide)
+      setReviewerPickerMaxHeight(Math.max(180, Math.min(360, available || 360)))
+    }
     setOpen(nextOpen)
     if (nextOpen) {
       cancelReviewerInputFocusFrame()
@@ -2478,6 +2510,7 @@ function PRReviewCell({
     <Popover open={open} onOpenChange={handleReviewerPickerOpenChange}>
       <PopoverTrigger asChild>
         <button
+          ref={reviewerTriggerRef}
           type="button"
           onClick={(event) => event.stopPropagation()}
           className={cn(
@@ -2509,8 +2542,12 @@ function PRReviewCell({
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[330px] overflow-hidden rounded-md border-border/70 p-0"
+        className="flex w-[330px] flex-col overflow-hidden rounded-md border-border/70 p-0"
         align="start"
+        side={reviewerPickerSide}
+        sideOffset={6}
+        avoidCollisions={false}
+        style={{ maxHeight: reviewerPickerMaxHeight ? `${reviewerPickerMaxHeight}px` : undefined }}
         onClick={(event) => event.stopPropagation()}
         onOpenAutoFocus={(event) => {
           event.preventDefault()
@@ -2562,7 +2599,7 @@ function PRReviewCell({
             }}
           />
         </div>
-        <div className="max-h-[300px] overflow-y-auto scrollbar-sleek">
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
           {reviewerMetadata.loading ? (
             <div className="px-3 py-2 text-[13px] text-muted-foreground">
               {translate('auto.components.TaskPage.0eacf48491', 'Loading…')}
@@ -2678,10 +2715,10 @@ function PRChecksCell({
           }}
           className={cn(
             'inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition hover:brightness-110',
-            getChecksTone(item)
+            PR_LIST_NEUTRAL_PILL_TONE
           )}
         >
-          <Icon className="size-3" />
+          <Icon className={cn('size-3', getChecksIconTone(item))} />
           <span className="truncate">{getChecksLabel(item)}</span>
         </button>
       </TooltipTrigger>
@@ -2853,13 +2890,13 @@ function PRMergeCell({
               onClick={(event) => event.stopPropagation()}
               className={cn(
                 'inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition hover:brightness-110',
-                mergePresentation.tone
+                PR_LIST_NEUTRAL_PILL_TONE
               )}
             >
               {merging ? (
-                <LoaderCircle className="size-3 animate-spin" />
+                <LoaderCircle className="size-3 animate-spin text-muted-foreground" />
               ) : (
-                <GitMerge className="size-3" />
+                <GitMerge className={cn('size-3', getMergeIconTone(mergePresentation))} />
               )}
               <span className="truncate">{mergePresentation.label}</span>
               <ChevronDown className="size-2.5 opacity-60" />
