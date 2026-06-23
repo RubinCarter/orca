@@ -1703,7 +1703,10 @@
         "settingsBadge": "Settings",
         "actionBadge": "Action",
         "paletteHostBadge": "Host: {{value0}}",
-        "workspaceTabMissing": "Tab no longer exists"
+        "workspaceTabMissing": "Tab no longer exists",
+        "projectsGroupsHeader": "Projects & Groups",
+        "projectBadge": "Project",
+        "repoGroupBadge": "Repo group"
       },
       "github": {
         "pr": {
@@ -3960,7 +3963,8 @@
           "f94466bc39": "{{value0}} of {{value1}} contained project{{value2}} remained after deleting the group.",
           "groupDeleteFailed": "Failed to delete group",
           "groupDeleteFailedDesc": "Something went wrong while deleting the group. No projects were removed.",
-          "failedNestWorkspace": "Failed to nest workspace"
+          "failedNestWorkspace": "Failed to nest workspace",
+          "sidebarRowMissing": "Target no longer exists"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "Cancel",
@@ -10399,7 +10403,8 @@
           "4cc7b83ffe": "Filter files...",
           "21783df79f": "Collapse file tree",
           "481e63ca52": "Files",
-          "d5ac717d65": "uncommitted"
+          "d5ac717d65": "uncommitted",
+          "39b6b9e4e4": "Committed on Branch"
         },
         "CombinedDiffViewer": {
           "35cc27aeb2": "in Source Control",
@@ -11052,6 +11057,14 @@
                 "trashWorktree": "trash worktree",
                 "addQuickCommand": "add quick command",
                 "newQuickCommand": "new quick command"
+              }
+            }
+          },
+          "palette": {
+            "project": {
+              "results": {
+                "repoGroup": "Repo group",
+                "project": "Project"
               }
             }
           }

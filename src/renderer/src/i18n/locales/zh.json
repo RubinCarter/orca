@@ -1703,7 +1703,10 @@
         "settingsBadge": "设置",
         "actionBadge": "操作",
         "paletteHostBadge": "主机：{{value0}}",
-        "workspaceTabMissing": "标签页不再存在"
+        "workspaceTabMissing": "标签页不再存在",
+        "projectsGroupsHeader": "Projects & Groups",
+        "projectBadge": "Project",
+        "repoGroupBadge": "Repo group"
       },
       "github": {
         "pr": {
@@ -3927,7 +3930,8 @@
           "7a8b9c0d1e": "Update required",
           "hostAuthNeeded": "Authentication needed",
           "hostDisconnected": "Disconnected",
-          "failedNestWorkspace": "无法嵌套工作区"
+          "failedNestWorkspace": "无法嵌套工作区",
+          "sidebarRowMissing": "Target no longer exists"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "取消",
@@ -10399,7 +10403,8 @@
           "4cc7b83ffe": "搜索文件...",
           "21783df79f": "折叠文件树",
           "481e63ca52": "文件",
-          "d5ac717d65": "未提交"
+          "d5ac717d65": "未提交",
+          "39b6b9e4e4": "Committed on Branch"
         },
         "CombinedDiffViewer": {
           "35cc27aeb2": "在源代码控制中",
@@ -11052,6 +11057,14 @@
                 "trashWorktree": "垃圾工作树",
                 "addQuickCommand": "添加快捷命令",
                 "newQuickCommand": "新的快速命令"
+              }
+            }
+          },
+          "palette": {
+            "project": {
+              "results": {
+                "repoGroup": "Repo group",
+                "project": "Project"
               }
             }
           }

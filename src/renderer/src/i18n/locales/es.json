@@ -1703,7 +1703,10 @@
         "settingsBadge": "Ajustes",
         "actionBadge": "Acción",
         "paletteHostBadge": "Host: {{value0}}",
-        "workspaceTabMissing": "La pestaña ya no existe"
+        "workspaceTabMissing": "La pestaña ya no existe",
+        "projectsGroupsHeader": "Projects & Groups",
+        "projectBadge": "Project",
+        "repoGroupBadge": "Repo group"
       },
       "github": {
         "pr": {
@@ -3946,7 +3949,8 @@
           "7a8b9c0d1e": "Update required",
           "hostAuthNeeded": "Authentication needed",
           "hostDisconnected": "Disconnected",
-          "failedNestWorkspace": "No se pudo anidar el espacio de trabajo"
+          "failedNestWorkspace": "No se pudo anidar el espacio de trabajo",
+          "sidebarRowMissing": "Target no longer exists"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "Cancelar",
@@ -10399,7 +10403,8 @@
           "4cc7b83ffe": "Filtrar archivos...",
           "21783df79f": "Contraer árbol de archivos",
           "481e63ca52": "Archivos",
-          "d5ac717d65": "no comprometido"
+          "d5ac717d65": "no comprometido",
+          "39b6b9e4e4": "Committed on Branch"
         },
         "CombinedDiffViewer": {
           "35cc27aeb2": "en control de fuente",
@@ -11052,6 +11057,14 @@
                 "trashWorktree": "árbol de trabajo de basura",
                 "addQuickCommand": "agregar comando rápido",
                 "newQuickCommand": "nuevo comando rápido"
+              }
+            }
+          },
+          "palette": {
+            "project": {
+              "results": {
+                "repoGroup": "Repo group",
+                "project": "Project"
               }
             }
           }

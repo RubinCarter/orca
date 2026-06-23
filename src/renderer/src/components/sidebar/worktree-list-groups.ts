@@ -173,11 +173,18 @@ function buildProjectGroupingIndex(model?: ProjectGroupingModel): ProjectGroupin
   }
 }
 
+export type ProjectHeaderRevealTarget = {
+  key: string
+  label: string
+  repo?: Repo
+  projectId?: string
+}
+
 function getProjectGroupingForRepo(
   repoId: string,
   repoMap: Map<string, Repo>,
   projectIndex: ProjectGroupingIndex | null
-): { key: string; label: string; repo?: Repo; projectId?: string } {
+): ProjectHeaderRevealTarget {
   const repo = repoMap.get(repoId)
   const setup = projectIndex?.setupByRepoId.get(repoId)
   const project = setup ? projectIndex?.projectById.get(setup.projectId) : undefined
@@ -205,6 +212,14 @@ function getProjectGroupingForRepo(
     repo,
     projectId: project.id
   }
+}
+
+export function getProjectHeaderRevealTarget(
+  repoId: string,
+  repoMap: Map<string, Repo>,
+  projectGrouping?: ProjectGroupingModel
+): ProjectHeaderRevealTarget {
+  return getProjectGroupingForRepo(repoId, repoMap, buildProjectGroupingIndex(projectGrouping))
 }
 
 function addRepoIdToGroup(group: WorktreeGroupEntry, repoId: string): void {

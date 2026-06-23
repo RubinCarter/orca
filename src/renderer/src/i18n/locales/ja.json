@@ -1703,7 +1703,10 @@
         "settingsBadge": "設定",
         "actionBadge": "操作",
         "paletteHostBadge": "Host: {{value0}}",
-        "workspaceTabMissing": "タブはもう存在しません"
+        "workspaceTabMissing": "タブはもう存在しません",
+        "projectsGroupsHeader": "Projects & Groups",
+        "projectBadge": "Project",
+        "repoGroupBadge": "Repo group"
       },
       "github": {
         "pr": {
@@ -3927,7 +3930,8 @@
           "7a8b9c0d1e": "Update required",
           "hostAuthNeeded": "Authentication needed",
           "hostDisconnected": "Disconnected",
-          "failedNestWorkspace": "ワークスペースをネストできませんでした"
+          "failedNestWorkspace": "ワークスペースをネストできませんでした",
+          "sidebarRowMissing": "Target no longer exists"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "キャンセル",
@@ -10399,7 +10403,8 @@
           "4cc7b83ffe": "ファイルをフィルタリング...",
           "21783df79f": "ファイルツリーを折りたたむ",
           "481e63ca52": "ファイル",
-          "d5ac717d65": "commit されていない"
+          "d5ac717d65": "commit されていない",
+          "39b6b9e4e4": "Committed on Branch"
         },
         "CombinedDiffViewer": {
           "35cc27aeb2": "ソース管理内",
@@ -11052,6 +11057,14 @@
                 "trashWorktree": "ゴミ箱ワークツリー",
                 "addQuickCommand": "クイックコマンドを追加",
                 "newQuickCommand": "新規クイックコマンド"
+              }
+            }
+          },
+          "palette": {
+            "project": {
+              "results": {
+                "repoGroup": "Repo group",
+                "project": "Project"
               }
             }
           }
