@@ -5,7 +5,8 @@ const WINDOWS_CONTROL_TERMINATION_EXIT_CODES = new Set([0xc000013a, 0x40010004])
 const RECOVERABLE_CHILD_PROCESS_TYPES = new Set(['gpu'])
 const RECOVERABLE_UTILITY_SERVICE_NAMES = new Set([
   'audio.mojom.AudioService',
-  'network.mojom.NetworkService'
+  'network.mojom.NetworkService',
+  'video_capture.mojom.VideoCaptureService'
 ])
 const RECOVERABLE_CHILD_PROCESS_REASONS = new Set(['abnormal-exit', 'crashed', 'killed'])
 const NON_RECOVERABLE_RENDERER_REASONS = new Set(['integrity-failure', 'launch-failed'])
@@ -60,8 +61,8 @@ export function shouldRecordProcessGoneCrash({
   exitCode: number | null
   expectedTeardown: ExpectedTeardownScope
 }): boolean {
-  // Why: GPU, Network Service, and Audio Service exits are recoverable Chromium
-  // child-process churn; treating them as app crashes creates noisy user prompts.
+  // Why: GPU and named Chromium utility service exits are recoverable child
+  // process churn; treating them as app crashes creates noisy user prompts.
   if (isRecoverableChromiumChildProcess({ source, processType, serviceName, reason })) {
     return false
   }

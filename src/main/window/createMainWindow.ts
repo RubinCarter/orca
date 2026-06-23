@@ -41,6 +41,11 @@ import {
 import { getMainE2EConfig } from '../e2e-config'
 import { buildEditableContextMenuTemplate } from './editable-context-menu'
 import { clearTrustedUIRendererWebContentsId, setTrustedUIRendererWebContentsId } from '../ipc/ui'
+import {
+  createRendererRecoveryGuard,
+  type RendererRecoveryEventName,
+  type RendererRecoverySummary
+} from './renderer-recovery-guard'
 
 function forceRepaint(window: BrowserWindow): void {
   if (window.isDestroyed()) {
@@ -121,7 +126,12 @@ type CreateMainWindowOptions = {
   onQuitAborted?: () => void
   onRendererProcessGone?: (
     details: Electron.RenderProcessGoneDetails,
-    webContentsId: number
+    webContentsId: number,
+    recoverySummary: RendererRecoverySummary
+  ) => void
+  onRendererRecoveryEvent?: (
+    name: RendererRecoveryEventName,
+    summary: RendererRecoverySummary
   ) => void
   /** Returns true when a renderer loss should be reported as a crash. Why:
    *  intentional reload/update/quit paths can emit crash-like `killed`
@@ -608,23 +618,33 @@ export function createMainWindow(
   }
   let rendererProcessGone = false
   let rendererRecoveryTimer: ReturnType<typeof setTimeout> | null = null
+  const rendererRecoveryGuard = createRendererRecoveryGuard({
+    onEvent: opts?.onRendererRecoveryEvent
+  })
   const clearRendererRecoveryTimer = (): void => {
     if (rendererRecoveryTimer) {
       clearTimeout(rendererRecoveryTimer)
       rendererRecoveryTimer = null
     }
   }
-  const scheduleRendererRecovery = (details: Electron.RenderProcessGoneDetails): void => {
-    if (
-      rendererRecoveryTimer ||
-      !details ||
-      !isCrashReportReason(details.reason) ||
-      windowClosing ||
-      opts?.getIsQuitting?.() ||
-      opts?.shouldRecoverRenderer?.(details, rendererWebContentsId) === false ||
-      mainWindow.isDestroyed()
-    ) {
-      return
+  const shouldAttemptRendererRecovery = (details: Electron.RenderProcessGoneDetails): boolean =>
+    Boolean(
+      details &&
+      isCrashReportReason(details.reason) &&
+      !windowClosing &&
+      !opts?.getIsQuitting?.() &&
+      opts?.shouldRecoverRenderer?.(details, rendererWebContentsId) !== false &&
+      !mainWindow.isDestroyed()
+    )
+  const scheduleRendererRecovery = (
+    details: Electron.RenderProcessGoneDetails
+  ): RendererRecoverySummary | null => {
+    if (rendererRecoveryTimer || !shouldAttemptRendererRecovery(details)) {
+      return null
+    }
+    const recoveryDecision = rendererRecoveryGuard.canScheduleAutomaticRecovery()
+    if (!recoveryDecision.allowed) {
+      return recoveryDecision.summary
     }
     rendererRecoveryTimer = setTimeout(() => {
       rendererRecoveryTimer = null
@@ -641,6 +661,7 @@ export function createMainWindow(
       // back to a usable window instead of needing a full relaunch.
       loadMainWindow(mainWindow)
     }, 250)
+    return recoveryDecision.summary
   }
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     rendererProcessGone = true
@@ -648,24 +669,38 @@ export function createMainWindow(
     resetTerminalInputFocus()
     resetFloatingTerminalInputFocus()
     resetShortcutRecorderFocus()
+    if (!details) {
+      return
+    }
+    // Why: expected reload/update teardown should not consume automatic
+    // recovery budget; otherwise manual reloads can suppress the next real crash.
+    let recoverySummary = rendererRecoveryGuard.getSummary()
+    if (shouldAttemptRendererRecovery(details)) {
+      rendererRecoveryGuard.recordProcessGone({
+        reason: details.reason,
+        exitCode: details.exitCode ?? null
+      })
+      recoverySummary = scheduleRendererRecovery(details) ?? rendererRecoveryGuard.getSummary()
+    }
     // Why: macOS can report BrowserWindow teardown as renderer `killed`/SIGKILL
     // after a confirmed close; that is window lifecycle noise, not a crash.
     if (
       !windowClosing &&
       opts?.shouldRecordRendererCrash?.(details, rendererWebContentsId) !== false
     ) {
-      opts?.onRendererProcessGone?.(details, rendererWebContentsId)
+      opts?.onRendererProcessGone?.(details, rendererWebContentsId, recoverySummary)
     }
     if (!windowClosing) {
       console.error('[window] Renderer process gone; close confirmation will be bypassed', details)
     }
-    scheduleRendererRecovery(details)
   })
   mainWindow.webContents.on('destroyed', () => {
     resetMarkdownEditorFocus()
     resetTerminalInputFocus()
     resetFloatingTerminalInputFocus()
     resetShortcutRecorderFocus()
+    clearRendererRecoveryTimer()
+    rendererRecoveryGuard.dispose()
   })
   mainWindow.webContents.on('did-start-navigation', (_e, _url, _isInPlace, isMainFrame) => {
     if (isMainFrame) {
@@ -678,6 +713,9 @@ export function createMainWindow(
   mainWindow.webContents.on('did-finish-load', () => {
     rendererProcessGone = false
     clearRendererRecoveryTimer()
+    // Why: a load that crashes immediately is still part of the loop; only a
+    // stable main-frame period resets automatic recovery dampening.
+    rendererRecoveryGuard.onStableLoad()
   })
 
   const doubleTapDetector = new ModifierDoubleTapDetector()
@@ -1004,6 +1042,8 @@ export function createMainWindow(
       // would otherwise make the post-update relaunch come up at minWidth ×
       // minHeight (issue surfaced in v1.3.26-rc2).
       windowClosing = true
+      clearRendererRecoveryTimer()
+      rendererRecoveryGuard.dispose()
       if (boundsTimer) {
         clearTimeout(boundsTimer)
         boundsTimer = null
@@ -1015,6 +1055,8 @@ export function createMainWindow(
       // window:close-requested. Let Cmd+Q / OS close complete instead of
       // trapping the user in a blank, unquittable window.
       windowClosing = true
+      clearRendererRecoveryTimer()
+      rendererRecoveryGuard.dispose()
       if (boundsTimer) {
         clearTimeout(boundsTimer)
         boundsTimer = null
@@ -1121,6 +1163,7 @@ export function createMainWindow(
     floatingTerminalInputFocused = false
     shortcutRecorderFocused = false
     clearRendererRecoveryTimer()
+    rendererRecoveryGuard.dispose()
     ipcMain.removeListener(trafficLightChannel, onSyncTrafficLights)
     ipcMain.removeListener(minimizeChannel, onMinimize)
     ipcMain.removeListener(maximizeChannel, onMaximize)
