@@ -4898,7 +4898,11 @@
           "70bb30feb1": "잠시 후에 편집기 및 편집 가능한 diff 변경 사항을 자동으로 저장합니다.",
           "0df2e4fd12": "자동 저장 파일",
           "d21136d9ef": "Orca가 파일 편집을 유지하는 방법을 구성합니다.",
-          "45c6e85c4d": "편집기"
+          "45c6e85c4d": "편집기",
+          "8f1afdfbd8": "Diff Word Wrap",
+          "4aa4d9fb73": "Wrap long lines in diff editors instead of requiring horizontal scrolling.",
+          "bf16ef0af2": "Off",
+          "3f6892f307": "On"
         },
         "AdvancedNetworkSettingsSection": {
           "3e431564b5": "로컬호스트, 127.0.0.1, *.internal",
@@ -10437,7 +10441,9 @@
           "8368d256ec": "결합 브랜치",
           "8f68ad9ca9": "{{value0}} AI {{value1}} 표시",
           "724a13568d": "{{value0}}에서",
-          "6094135eec": "대 {{value0}}"
+          "6094135eec": "대 {{value0}}",
+          "a4420ca1f7": "Wrap On",
+          "dde325ddfe": "Wrap Off"
         },
         "ConflictComponents": {
           "f338288514": "충돌 콘텐츠 로드 중...",
@@ -10519,7 +10525,10 @@
           "c98ce191da": "이 차이점에는 열 수 있는 수정된 측면 파일이 없습니다.",
           "9b80bbe1de": "파일 탭 열기",
           "f0fd4174b5": "풍부한 markdown 편집을 사용하려면 파일 탭을 엽니다.",
-          "a10d9b8337": "파일 열기"
+          "a10d9b8337": "파일 열기",
+          "5f7e4a8d1a": "Toggle word wrap",
+          "c58f037afd": "Turn off word wrap",
+          "9e6a37c5f2": "Turn on word wrap"
         },
         "EditorPanelMarkdownActionsMenu": {
           "3e0ce48c24": "PDF로 내보내기",

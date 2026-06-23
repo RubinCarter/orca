@@ -2550,6 +2550,7 @@ export type GlobalSettings = {
    *  ~/.orca/keybindings.json; main migrates this once when present. */
   keybindings?: KeybindingOverrides
   diffDefaultView: 'inline' | 'side-by-side'
+  diffWordWrap: boolean
   combinedDiffFileTreeVisibleByDefault: boolean
   notifications: NotificationSettings
   /** When true, a countdown timer is shown after a Claude agent becomes idle,

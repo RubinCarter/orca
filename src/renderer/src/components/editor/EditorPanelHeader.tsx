@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Columns2, Eye, FileText, ListTree, Rows2 } from 'lucide-react'
+import { Columns2, Eye, FileText, ListTree, Rows2, WrapText } from 'lucide-react'
 import { useAppStore } from '@/store'
 import type { OpenFile } from '@/store/slices/editor'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -83,6 +83,8 @@ export function EditorPanelHeader({
 }: EditorPanelHeaderProps): React.JSX.Element {
   const diffComments = useAppStore((s) => s.getDiffComments(activeFile.worktreeId))
   const activeGroupId = useAppStore((s) => s.activeGroupIdByWorktree[activeFile.worktreeId])
+  const diffWordWrap = useAppStore((s) => s.settings?.diffWordWrap === true)
+  const updateSettings = useAppStore((s) => s.updateSettings)
   const fileDiffComments = useMemo(
     () => diffComments.filter((comment) => comment.filePath === activeFile.relativePath),
     [activeFile.relativePath, diffComments]
@@ -193,6 +195,39 @@ export function EditorPanelHeader({
                 : translate(
                     'auto.components.editor.EditorPanelHeader.e836faacfa',
                     'Switch to side-by-side diff'
+                  )}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+      {isDiffSurface && (
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={`p-1 rounded hover:bg-accent hover:text-foreground transition-colors flex-shrink-0 ${
+                  diffWordWrap ? 'bg-accent text-foreground' : 'text-muted-foreground'
+                }`}
+                onClick={() => void updateSettings({ diffWordWrap: !diffWordWrap })}
+                aria-label={translate(
+                  'auto.components.editor.EditorPanelHeader.5f7e4a8d1a',
+                  'Toggle word wrap'
+                )}
+                aria-pressed={diffWordWrap}
+              >
+                <WrapText size={14} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              {diffWordWrap
+                ? translate(
+                    'auto.components.editor.EditorPanelHeader.c58f037afd',
+                    'Turn off word wrap'
+                  )
+                : translate(
+                    'auto.components.editor.EditorPanelHeader.9e6a37c5f2',
+                    'Turn on word wrap'
                   )}
             </TooltipContent>
           </Tooltip>

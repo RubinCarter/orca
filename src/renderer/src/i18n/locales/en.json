@@ -4913,7 +4913,11 @@
           "70bb30feb1": "Save editor and editable diff changes automatically after a short pause.",
           "0df2e4fd12": "Auto Save Files",
           "d21136d9ef": "Configure how Orca persists file edits.",
-          "45c6e85c4d": "Editor"
+          "45c6e85c4d": "Editor",
+          "8f1afdfbd8": "Diff Word Wrap",
+          "4aa4d9fb73": "Wrap long lines in diff editors instead of requiring horizontal scrolling.",
+          "bf16ef0af2": "Off",
+          "3f6892f307": "On"
         },
         "AdvancedNetworkSettingsSection": {
           "3e431564b5": "localhost, 127.0.0.1, *.internal",
@@ -10437,7 +10441,9 @@
           "8368d256ec": "combined-branch",
           "8f68ad9ca9": "Show {{value0}} AI {{value1}}",
           "724a13568d": " in {{value0}}",
-          "6094135eec": " vs {{value0}}"
+          "6094135eec": " vs {{value0}}",
+          "a4420ca1f7": "Wrap On",
+          "dde325ddfe": "Wrap Off"
         },
         "ConflictComponents": {
           "f338288514": "Loading conflict contents...",
@@ -10519,7 +10525,10 @@
           "c98ce191da": "This diff has no modified-side file to open",
           "9b80bbe1de": "Open file tab",
           "f0fd4174b5": "Open file tab to use rich markdown editing",
-          "a10d9b8337": "Open file"
+          "a10d9b8337": "Open file",
+          "5f7e4a8d1a": "Toggle word wrap",
+          "c58f037afd": "Turn off word wrap",
+          "9e6a37c5f2": "Turn on word wrap"
         },
         "EditorPanelMarkdownActionsMenu": {
           "3e0ce48c24": "Export as PDF",
