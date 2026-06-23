@@ -222,6 +222,7 @@ import {
 import {
   buildTaskPageGitHubCloseUpdate,
   getTaskPageGitHubDuplicateCandidates,
+  getTaskPageGitHubDuplicateTargetErrorMessage,
   validateTaskPageGitHubDuplicateTarget,
   type TaskPageGitHubCloseAction
 } from '@/components/task-page-github-status-actions'
@@ -1130,6 +1131,8 @@ function GHStatusCell({
       updateLocalState(newState)
       patchWorkItem(item.id, { state: newState }, item.repoId, { sourceContext })
       const target = getActiveRuntimeTarget(sourceSettings)
+      // Why: issue rows can be sourced by owner/repo URL instead of the local
+      // repo context; slug-aware writes preserve close reasons and duplicates.
       const updatePromise = parsedOwnerRepo
         ? target.kind === 'environment'
           ? callRuntimeRpc<{ ok?: boolean; error?: { message?: string } | string }>(
@@ -1232,27 +1235,7 @@ function GHStatusCell({
         item.number
       )
       if (!validation.ok) {
-        setDuplicateError(
-          validation.reason === 'missing'
-            ? translate(
-                'auto.components.TaskPage.duplicateIssueMissing',
-                'Enter an issue number in this repository.'
-              )
-            : validation.reason === 'not_integer'
-              ? translate(
-                  'auto.components.TaskPage.duplicateIssueNotInteger',
-                  'Use a whole issue number.'
-                )
-              : validation.reason === 'not_positive'
-                ? translate(
-                    'auto.components.TaskPage.duplicateIssueNotPositive',
-                    'Use a positive issue number.'
-                  )
-                : translate(
-                    'auto.components.TaskPage.duplicateIssueSameIssue',
-                    'Choose a different issue.'
-                  )
-        )
+        setDuplicateError(getTaskPageGitHubDuplicateTargetErrorMessage(validation, translate))
         return
       }
       setDuplicateError(null)
@@ -1266,27 +1249,7 @@ function GHStatusCell({
   const handleDuplicateSearchSubmit = useCallback(() => {
     const validation = validateTaskPageGitHubDuplicateTarget(duplicateSearch, item.number)
     if (!validation.ok) {
-      setDuplicateError(
-        validation.reason === 'missing'
-          ? translate(
-              'auto.components.TaskPage.duplicateIssueMissing',
-              'Enter an issue number in this repository.'
-            )
-          : validation.reason === 'not_integer'
-            ? translate(
-                'auto.components.TaskPage.duplicateIssueNotInteger',
-                'Use a whole issue number.'
-              )
-            : validation.reason === 'not_positive'
-              ? translate(
-                  'auto.components.TaskPage.duplicateIssueNotPositive',
-                  'Use a positive issue number.'
-                )
-              : translate(
-                  'auto.components.TaskPage.duplicateIssueSameIssue',
-                  'Choose a different issue.'
-                )
-      )
+      setDuplicateError(getTaskPageGitHubDuplicateTargetErrorMessage(validation, translate))
       return
     }
     closeAsDuplicate(validation.duplicateOf)
@@ -1311,6 +1274,7 @@ function GHStatusCell({
         <button
           type="button"
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
           className={cn(
             'group/status inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition hover:brightness-125 hover:ring-1 hover:ring-white/10',
             localState === 'closed'
@@ -1331,6 +1295,7 @@ function GHStatusCell({
         className={cn(duplicatePickerOpen ? 'w-[360px]' : 'w-56', 'p-1')}
         align="start"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
       >
         {duplicatePickerOpen ? (
           <div>

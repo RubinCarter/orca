@@ -199,6 +199,7 @@ import { getSettingsForRepoRuntimeOwner } from '@/lib/repo-runtime-owner'
 import {
   buildTaskPageGitHubCloseUpdate,
   getTaskPageGitHubDuplicateCandidates,
+  getTaskPageGitHubDuplicateTargetErrorMessage,
   validateTaskPageGitHubDuplicateTarget,
   type TaskPageGitHubCloseAction
 } from '@/components/task-page-github-status-actions'
@@ -363,6 +364,8 @@ function getStateTone(item: GitHubWorkItem): string {
     return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
   }
   if (item.state === 'closed') {
+    // Why: closed issues can mean completed/resolved; keep them neutral instead
+    // of using destructive red, which is reserved for PR closed-without-merge.
     return 'border-ring/50 bg-primary/10 text-foreground'
   }
   return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
@@ -4815,27 +4818,6 @@ function GitHubLabelsSettingsLink({
   )
 }
 
-function getDuplicateTargetErrorMessage(
-  validation: Exclude<
-    ReturnType<typeof validateTaskPageGitHubDuplicateTarget>,
-    { ok: true; duplicateOf: number }
-  >
-): string {
-  return validation.reason === 'missing'
-    ? translate(
-        'auto.components.TaskPage.duplicateIssueMissing',
-        'Enter an issue number in this repository.'
-      )
-    : validation.reason === 'not_integer'
-      ? translate('auto.components.TaskPage.duplicateIssueNotInteger', 'Use a whole issue number.')
-      : validation.reason === 'not_positive'
-        ? translate(
-            'auto.components.TaskPage.duplicateIssueNotPositive',
-            'Use a positive issue number.'
-          )
-        : translate('auto.components.TaskPage.duplicateIssueSameIssue', 'Choose a different issue.')
-}
-
 function GHEditSection({
   item,
   repoPath,
@@ -5064,7 +5046,7 @@ function GHEditSection({
         item.number
       )
       if (!validation.ok) {
-        setDuplicateError(getDuplicateTargetErrorMessage(validation))
+        setDuplicateError(getTaskPageGitHubDuplicateTargetErrorMessage(validation, translate))
         return
       }
       setDuplicateError(null)
@@ -5078,7 +5060,7 @@ function GHEditSection({
   const handleDuplicateSearchSubmit = useCallback(() => {
     const validation = validateTaskPageGitHubDuplicateTarget(duplicateSearch, item.number)
     if (!validation.ok) {
-      setDuplicateError(getDuplicateTargetErrorMessage(validation))
+      setDuplicateError(getTaskPageGitHubDuplicateTargetErrorMessage(validation, translate))
       return
     }
     closeAsDuplicate(validation.duplicateOf)

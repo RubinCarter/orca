@@ -4,10 +4,9 @@ import type {
   GitHubWorkItem
 } from '../../../shared/types'
 
-export type TaskPageGitHubCloseAction = {
-  stateReason: GitHubIssueCloseReason
-  duplicateOf?: number
-}
+export type TaskPageGitHubCloseAction =
+  | { stateReason: Exclude<GitHubIssueCloseReason, 'duplicate'> }
+  | { stateReason: 'duplicate'; duplicateOf: number }
 
 export type TaskPageGitHubDuplicateValidation =
   | { ok: true; duplicateOf: number }
@@ -16,13 +15,20 @@ export type TaskPageGitHubDuplicateValidation =
       reason: 'missing' | 'not_integer' | 'not_positive' | 'same_issue'
     }
 
+export type TaskPageGitHubDuplicateValidationError = Extract<
+  TaskPageGitHubDuplicateValidation,
+  { ok: false }
+>
+
+type TranslateDuplicateError = (key: string, fallback: string) => string
+
 export function buildTaskPageGitHubCloseUpdate(
   action: TaskPageGitHubCloseAction
 ): GitHubIssueUpdate {
   return {
     state: 'closed',
     stateReason: action.stateReason,
-    ...(action.duplicateOf !== undefined ? { duplicateOf: action.duplicateOf } : {})
+    ...(action.stateReason === 'duplicate' ? { duplicateOf: action.duplicateOf } : {})
   }
 }
 
@@ -45,6 +51,34 @@ export function validateTaskPageGitHubDuplicateTarget(
     return { ok: false, reason: 'same_issue' }
   }
   return { ok: true, duplicateOf }
+}
+
+export function getTaskPageGitHubDuplicateTargetErrorMessage(
+  validation: TaskPageGitHubDuplicateValidationError,
+  translate: TranslateDuplicateError
+): string {
+  switch (validation.reason) {
+    case 'missing':
+      return translate(
+        'auto.components.TaskPage.duplicateIssueMissing',
+        'Enter an issue number in this repository.'
+      )
+    case 'not_integer':
+      return translate(
+        'auto.components.TaskPage.duplicateIssueNotInteger',
+        'Use a whole issue number.'
+      )
+    case 'not_positive':
+      return translate(
+        'auto.components.TaskPage.duplicateIssueNotPositive',
+        'Use a positive issue number.'
+      )
+    case 'same_issue':
+      return translate(
+        'auto.components.TaskPage.duplicateIssueSameIssue',
+        'Choose a different issue.'
+      )
+  }
 }
 
 export function getTaskPageGitHubDuplicateCandidates(

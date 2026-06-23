@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildTaskPageGitHubCloseUpdate,
   getTaskPageGitHubDuplicateCandidates,
+  getTaskPageGitHubDuplicateTargetErrorMessage,
   validateTaskPageGitHubDuplicateTarget
 } from './task-page-github-status-actions'
 import type { GitHubWorkItem } from '../../../shared/types'
@@ -36,6 +37,18 @@ describe('TaskPage GitHub status actions', () => {
       ok: true,
       duplicateOf: 34
     })
+  })
+
+  it('maps duplicate validation failures to localized messages', () => {
+    const t = (_key: string, fallback: string): string => fallback
+    const validation = validateTaskPageGitHubDuplicateTarget('same', 12)
+
+    expect(validation.ok).toBe(false)
+    if (!validation.ok) {
+      expect(getTaskPageGitHubDuplicateTargetErrorMessage(validation, t)).toBe(
+        'Use a whole issue number.'
+      )
+    }
   })
 
   it('filters duplicate candidates to other matching issues', () => {
