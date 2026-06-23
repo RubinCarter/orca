@@ -6204,7 +6204,19 @@
           "ab20575a8a": "끄기",
           "ab3a1f9068": "wsl.exe",
           "ask_before_closing_running_terminals_title": "실행 중인 Terminals을 닫기 전에 확인",
-          "ask_before_closing_running_terminals_description": "실행 중인 명령이나 agent가 있는 terminal을 닫기 전에 확인 창을 표시합니다."
+          "ask_before_closing_running_terminals_description": "실행 중인 명령이나 agent가 있는 terminal을 닫기 전에 확인 창을 표시합니다.",
+          "scrollSpeed": {
+            "title": "스크롤 속도",
+            "description": "일반 터미널 스크롤백, 빠른 수정자 스크롤링 및 전체 화면 TUI 휠 속도를 조정합니다.",
+            "helper": "스크롤백 및 마우스 인식 터미널 앱에서 휠 입력이 느껴지는 방식을 조정합니다.",
+            "reset": "재설정",
+            "normal": "보통",
+            "normalDescription": "스크롤백 휠 배율.",
+            "fast": "빠름",
+            "fastDescription": "수정자 키로 스크롤할 때 추가 배율.",
+            "tui": "TUI",
+            "tuiDescription": "전체 화면 터미널 앱의 이산 휠 보고."
+          }
         },
         "TerminalSettingsPreview": {
           "a63953a48a": "{{value0}} 테마 미리보기",
@@ -7840,7 +7852,11 @@
               "keyword_custom": "custom"
             },
             "ask_before_closing_running_terminals_title": "실행 중인 Terminals을 닫기 전에 확인",
-            "ask_before_closing_running_terminals_description": "실행 중인 명령이나 agent가 있는 terminal을 닫기 전에 확인을 표시합니다."
+            "ask_before_closing_running_terminals_description": "실행 중인 명령이나 agent가 있는 terminal을 닫기 전에 확인을 표시합니다.",
+            "scrollSpeed": {
+              "title": "스크롤 속도",
+              "description": "일반 터미널 스크롤백, 빠른 수정자 스크롤링 및 전체 화면 TUI 휠 속도를 조정합니다."
+            }
           },
           "windows": {
             "search": {

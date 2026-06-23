@@ -6241,7 +6241,19 @@
           "ab20575a8a": "オフ",
           "ab3a1f9068": "wsl.exe",
           "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
-          "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent."
+          "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent.",
+          "scrollSpeed": {
+            "title": "スクロール速度",
+            "description": "通常の端末スクロールバック、高速修飾キースクロール、フルスクリーンTUIのホイール速度を調整します。",
+            "helper": "スクロールバックやマウス対応端末アプリでのホイール入力の感覚を調整します。",
+            "reset": "リセット",
+            "normal": "通常",
+            "normalDescription": "スクロールバックホイール乗数。",
+            "fast": "高速",
+            "fastDescription": "修飾キーでのスクロール時の追加乗数。",
+            "tui": "TUI",
+            "tuiDescription": "フルスクリーン端末アプリの離散ホイールレポート。"
+          }
         },
         "TerminalSettingsPreview": {
           "a63953a48a": "{{value0}} テーマのプレビュー",
@@ -7877,7 +7889,11 @@
             "0fe0073f0c": "新規ペインとライブ アップデートのデフォルトの terminal フォント サイズ。",
             "5930244899": "フォントサイズ",
             "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
-            "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent."
+            "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent.",
+            "scrollSpeed": {
+              "title": "スクロール速度",
+              "description": "通常の端末スクロールバック、高速修飾キースクロール、フルスクリーンTUIのホイール速度を調整します。"
+            }
           },
           "windows": {
             "search": {

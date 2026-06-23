@@ -1,0 +1,800 @@
+auto.App.5096cbbc86: Orca
+auto.App.d54e66004c: terminal
+auto.components.GitHubItemDialog.136542c9ba: :L{{value0}}
+auto.components.GitHubItemDialog.88fd82474d: page
+auto.components.GitHubItemDialog.924c2fe05e: destructive
+auto.components.GitHubItemDialog.b1157c78ff: sheet
+auto.components.GitHubItemDialog.bd7be7b1fd: comment L
+auto.components.GitHubItemDialog.d1c0dad471: -L{{value0}}
+auto.components.Landing.6ca6ff404e: ORCA
+auto.components.LinearIssueMarkdownDescriptionEditor.d9c47069ef: Markdown
+auto.components.LinearIssueWorkspace.65239a714b: Linear
+auto.components.LinearIssueWorkspace.af6e02c44a: page
+auto.components.LinearIssueWorkspace.f5a6b38a14: sheet
+auto.components.NewWorkspaceComposerCard.01d1e8f601: Agent
+auto.components.NewWorkspaceComposerCard.0e587e31fb: yaml
+auto.components.NewWorkspaceComposerCard.cloneDestinationPlaceholder: /parent/directory/on/host
+auto.components.NewWorkspaceComposerCard.cloneUrlPlaceholder: https://github.com/owner/repo.git
+auto.components.NewWorkspaceComposerCard.setupHostExistingFolderPlaceholder: /path/to/project/on/host
+auto.components.NewWorkspaceComposerCard.setupKindGit: Git repo
+auto.components.PullRequestPage.19f19560d5: destructive
+auto.components.PullRequestPage.34b9f7c264: :L{{value0}}
+auto.components.PullRequestPage.61a8c69a33: page
+auto.components.PullRequestPage.791ddede19: comment L
+auto.components.PullRequestPage.84fc40769a: -L{{value0}}
+auto.components.QuickOpen.5d80dc39bb: ripgrep
+auto.components.ShortcutKeyCombo.07eb4985a1: Double-tap {{value0}}
+auto.components.StarNagCard.cd8c34aac1: gh
+auto.components.TaskPage.11a828abf8: GitLab
+auto.components.TaskPage.163df31e0e: https://example.atlassian.net
+auto.components.TaskPage.171b7739d8: mrs
+auto.components.TaskPage.38139edb52: github
+auto.components.TaskPage.40eaf2c27c: Details
+auto.components.TaskPage.8675cd6188: Linear
+auto.components.TaskPage.9cd11ba218: Jira
+auto.components.TaskPage.a0544fb653: MR !{{value0}}
+auto.components.TaskPage.acef77f7ca: GitHub
+auto.components.TaskPage.bbec4717ee: mr
+auto.components.TaskPage.cd171f3391: ...
+auto.components.TaskPage.e224d76876: MR
+auto.components.TaskPage.eb10c32872: ID
+auto.components.Terminal.5b2c1a9e44: No agent CLI detected — install one or pick a default agent in Settings.
+auto.components.Terminal.e57db40c11: Could not build launch command for {{value0}}.
+auto.components.activity.ActivityPrototypePage.f6396e1f85: Agent
+auto.components.activity.ActivityTitlebarControls.d6a8de3934: agents
+auto.components.agent.AgentSettingsDialog.fc0268e4ed: Agents
+auto.components.automations.AutomationDetail.29baf8f4c2: Source
+auto.components.automations.AutomationDetail.2df8970cd5: Agent
+auto.components.automations.AutomationEditorDialog.57b722cbba: Agent
+auto.components.automations.AutomationEditorDialogHeader.6f309eef8d: Orca
+auto.components.automations.AutomationEditorDialogHeader.7e35393632: Hermes
+auto.components.automations.AutomationPrecheckFields.99a577306c: gh pr list --json number -q '.[0].number'
+auto.components.automations.AutomationProjectCombobox.addProject: Add project
+auto.components.automations.AutomationProjectCombobox.adding: Adding project…
+auto.components.automations.AutomationProjectCombobox.chooseHost: Choose automation host
+auto.components.automations.AutomationProjectCombobox.empty: No projects/folders match your search.
+auto.components.automations.AutomationProjectCombobox.search: Search projects/folders...
+auto.components.automations.AutomationsPage.53f06f0ad5: Retry source
+auto.components.automations.AutomationsPage.a21f6c33ad: Automation source refreshed.
+auto.components.automations.ExternalAutomationManagers.5524365227: OpenClaw
+auto.components.automations.ExternalAutomationManagers.766abf833c: Hermes
+auto.components.browser.pane.BrowserPane.09a9489aa5: Show
+auto.components.browser.pane.BrowserPane.0c79b7634d: Could not open the downloaded file. It may have been moved or deleted.
+auto.components.browser.pane.BrowserPane.397d9dc923: Could not show the downloaded file. It may have been moved or deleted.
+auto.components.browser.pane.BrowserPane.39c04fed61: Downloading paused
+auto.components.browser.pane.BrowserPane.4bb7424d6b: Canceled
+auto.components.browser.pane.BrowserPane.5c3d530a68: Downloaded
+auto.components.browser.pane.BrowserPane.6e776f9ef9: Download failed
+auto.components.browser.pane.BrowserPane.756bfc25c9: Open
+auto.components.browser.pane.BrowserPane.8aec5bc044: idle
+auto.components.browser.pane.BrowserPane.9f6f2e8c19: The downloaded file path is unavailable.
+auto.components.crash.report.CrashReportDialog.b082f27490: Attach recent diagnostic logs
+auto.components.crash.report.CrashReportDialog.b2e36f53a1: Failed to send crash report. Diagnostic ticket {{value0}} was uploaded but not linked.
+auto.components.crash.report.CrashReportDialog.e59f0b9427: Sends a capped redacted log bundle with the report.
+auto.components.crash.report.CrashReportDialog.ead6fc0510: No automatic crash report was captured. You can still send details and include recent diagnostic logs when available.
+auto.components.editor.CheckRunDetailsPanel.066fedd446: Failed jobs
+auto.components.editor.CheckRunDetailsPanel.07eccfa397: No details are available for this check.
+auto.components.editor.CheckRunDetailsPanel.1f2b980522: Loading check details…
+auto.components.editor.CheckRunDetailsPanel.2dd5ddabc4: workflow #
+auto.components.editor.CheckRunDetailsPanel.2f6d8a1c45: Timed out
+auto.components.editor.CheckRunDetailsPanel.49731703ea: Jobs
+auto.components.editor.CheckRunDetailsPanel.5a1c8e3d67: Neutral
+auto.components.editor.CheckRunDetailsPanel.7b3e9d4f12: Skipped
+auto.components.editor.CheckRunDetailsPanel.834cb3f23d: Fix with AI
+auto.components.editor.CheckRunDetailsPanel.91a4c7e2b0: Cancelled
+auto.components.editor.CheckRunDetailsPanel.a54ae21c6f: Status:
+auto.components.editor.CheckRunDetailsPanel.a916648574: Open details
+auto.components.editor.CheckRunDetailsPanel.b3e7f9a1c2: Check fix context unavailable
+auto.components.editor.CheckRunDetailsPanel.c8f1a2d4e7: Choose the agent and edit the full command input before launch.
+auto.components.editor.CheckRunDetailsPanel.d098e5529a: Output
+auto.components.editor.CheckRunDetailsPanel.d5a8c2f1b9: Start the default AI agent to fix this check
+auto.components.editor.CheckRunDetailsPanel.e2b4d7c8a1: Choose an agent for this check
+auto.components.editor.CheckRunDetailsPanel.ee07b33924: unknown
+auto.components.editor.CheckRunDetailsPanel.f1c9e3a6d4: Choose agent to fix check
+auto.components.editor.CheckRunDetailsPanel.f2fe8a4e8f: Annotations
+auto.components.editor.CheckRunDetailsPanel.fd46a70f1a: Started
+auto.components.editor.EditorContent.6c4f1a8d2e: Check details are unavailable.
+auto.components.editor.IpynbViewer.1833dbbc43: Markdown
+auto.components.editor.IpynbViewer.329764e9fc: BETA
+auto.components.editor.IpynbViewer.ba149053d5: markdown
+auto.components.editor.MarkdownTableOfContentsPanel.8f4d2c1a9b: Resize table of contents
+auto.components.editor.MonacoEditor.largePasteTooLarge: Paste is too large.
+auto.components.editor.RichMarkdownCodeBlock.026653f21f: CSS
+auto.components.editor.RichMarkdownCodeBlock.2391f9cda9: Python
+auto.components.editor.RichMarkdownCodeBlock.3009f722b9: SQL
+auto.components.editor.RichMarkdownCodeBlock.36536ad539: Java
+auto.components.editor.RichMarkdownCodeBlock.4227cf50fe: Bash
+auto.components.editor.RichMarkdownCodeBlock.4daed43ae3: C++
+auto.components.editor.RichMarkdownCodeBlock.5ef5605cb7: XML
+auto.components.editor.RichMarkdownCodeBlock.706fd85738: GraphQL
+auto.components.editor.RichMarkdownCodeBlock.74eab1d9b2: YAML
+auto.components.editor.RichMarkdownCodeBlock.78eba32de4: JSON
+auto.components.editor.RichMarkdownCodeBlock.88d777bc07: TypeScript
+auto.components.editor.RichMarkdownCodeBlock.89d6cc14fb: Mermaid
+auto.components.editor.RichMarkdownCodeBlock.96182a2f64: Ruby
+auto.components.editor.RichMarkdownCodeBlock.983b9576b4: Markdown
+auto.components.editor.RichMarkdownCodeBlock.9e384d48dc: Swift
+auto.components.editor.RichMarkdownCodeBlock.a209c57063: JavaScript
+auto.components.editor.RichMarkdownCodeBlock.bcb236e2d8: Kotlin
+auto.components.editor.RichMarkdownCodeBlock.e72e6b03f4: Rust
+auto.components.editor.RichMarkdownCodeBlock.edfcc64182: Go
+auto.components.editor.UntitledFileRenameDialog.2d7d39dc63: .md
+auto.components.editor.check.run.details.fix.with.ai.1a8c4e2b90: Select a workspace before launching an AI action.
+auto.components.editor.check.run.details.fix.with.ai.2ef90c9819: Started an AI agent for this check.
+auto.components.editor.check.run.details.fix.with.ai.4f2d9a8c17: Select a repository before launching an AI action.
+auto.components.editor.check.run.details.fix.with.ai.7c3e1b5d42: Open a PR or MR before launching an AI fix.
+auto.components.editor.check.run.details.fix.with.ai.9b2f6d4a81: This check is not failing.
+auto.components.editor.richMarkdownLargeTextPaste.tooLarge: Paste is too large.
+auto.components.emulator.pane.MobileEmulatorAgentSetupGuideSteps.5c59ea96ca: Mobile emulator Orca CLI skill setup
+auto.components.emulator.pane.MobileEmulatorAgentSetupGuideSteps.bff5341ac3: Mobile emulator Orca CLI skill install terminal
+auto.components.emulator.pane.useEmulatorScreenKeyboard.pasteTargetUnavailable: Emulator keyboard paste failed because the device is not ready.
+auto.components.emulator.pane.useEmulatorScreenKeyboard.pasteTooLarge: Paste is too large for emulator keyboard input.
+auto.components.emulator.pane.useEmulatorScreenKeyboard.unsupportedPasteText: Emulator keyboard paste supports US keyboard text only.
+auto.components.feature.tips.CliFeatureTipVisual.badb4fc342: >
+auto.components.feature.wall.AiCommitPrSettingsCard.29d119fe95: Agent
+auto.components.feature.wall.BrowserAnimatedVisual.04096318ab: Terminal 1
+auto.components.feature.wall.BrowserAnimatedVisual.051c97d15a: .pp-card[data-card="starter"] .pp-cta
+auto.components.feature.wall.BrowserAnimatedVisual.6e4616d039: Claude
+auto.components.feature.wall.BrowserAnimatedVisual.d8856b604a: div.pricing-grid > div.card.starter:nth-of-type(1) > a.cta
+auto.components.feature.wall.BrowserAnimatedVisual.f2034c4930: >
+auto.components.feature.wall.ComputerUseAnimatedVisual.94787f01f8: Claude Code
+auto.components.feature.wall.ComputerUseAnimatedVisual.99a8624bcb: >
+auto.components.feature.wall.ConnectIntegrationsList.33b650af52: Connect where your team tracks work. Orca starts workspaces with the issue title, link, and context already attached.
+auto.components.feature.wall.ConnectIntegrationsList.3dddb2d565: connected for tasks
+auto.components.feature.wall.ConnectIntegrationsList.5b3577a492: connected for review status
+auto.components.feature.wall.ConnectIntegrationsList.code_host_tasks_caption: Your code host's issues also work as tasks.
+auto.components.feature.wall.ConnectIntegrationsList.code_host_tasks_summary: issues available as tasks · add Linear or Jira if your team plans work there
+auto.components.feature.wall.ConnectIntegrationsList.list_end: , and 
+auto.components.feature.wall.ConnectIntegrationsList.list_mid: , 
+auto.components.feature.wall.ConnectIntegrationsList.list_pair:  and 
+auto.components.feature.wall.ConnectIntegrationsList.review_step_description: Connect a review provider so Orca can show PR or MR status, checks, and reviews.
+auto.components.feature.wall.ConnectIntegrationsList.review_step_title: See PR status while agents work
+auto.components.feature.wall.ConnectIntegrationsList.task_step_title: Start agents on your tasks without leaving Orca
+auto.components.feature.wall.FeatureTourPreview.1170621527: >
+auto.components.feature.wall.FeatureTourPreview.47f16ecf34: Ship several things at once. Each workspace keeps its branch, terminal, and agent activity together.
+auto.components.feature.wall.FeatureTourPreview.5d6ee181b6: Open any workspace to return to its terminal, then split panes for tests, logs, and agents.
+auto.components.feature.wall.FeatureTourPreview.70aa182266: Hand off a goal and walk away. A coordinator agent fans out and ships parallel PRs.
+auto.components.feature.wall.FeatureTourPreview.771d8881c2: claude
+auto.components.feature.wall.FeatureTourPreview.ac51c061e2: codex
+auto.components.feature.wall.FeatureTourPreview.b1f17bcc74: PR 1/3
+auto.components.feature.wall.FeatureTourPreview.cfdfd4d6b4: PR 2/3
+auto.components.feature.wall.FeatureTourPreview.ec4a73f5e6: PR 3/3
+auto.components.feature.wall.FeatureTourPreview.f10c14dd9d: Skip the tab-switching. Pick from your GitHub or Linear backlog and start a workspace in one click.
+auto.components.feature.wall.FeatureTourPreview.fc0cc0b267: GH #1842
+auto.components.feature.wall.FeatureTourWorkspaceCard.2f33dc932b: claude
+auto.components.feature.wall.FeatureTourWorkspaceCard.a23ed9da7f: codex
+auto.components.feature.wall.ReviewNotesAnimatedVisual.09094f25e2: Claude Code
+auto.components.feature.wall.ReviewNotesAnimatedVisual.5dbd27c4c2: Codex
+auto.components.feature.wall.ReviewPRViewAnimatedVisual.a6c8b9e32f: Checks passed
+auto.components.feature.wall.ReviewPRViewAnimatedVisual.f4d5e1a7b2: 3 checks
+auto.components.feature.wall.ReviewShipAnimatedVisual.a079083a6c: Commit
+auto.components.feature.wall.WorkbenchAnimatedVisual.000106adfe: claude
+auto.components.feature.wall.WorkbenchAnimatedVisual.932c4b3a97: >
+auto.components.feature.wall.WorkbenchAnimatedVisual.b85eab49dd: src/auth/session.ts
+auto.components.feature.wall.agents.orchestration.StatusesPage.2f549fc0ba: src/auth/session.test.ts
+auto.components.feature.wall.agents.orchestration.UsagePage.6a4b1d3c38: Codex
+auto.components.feature.wall.connect.integration.step.0f47ff17c6: Change
+auto.components.feature.wall.connect.integration.step.5538eb6743: Done
+auto.components.feature.wall.connect.integration.step.close_step: Close
+auto.components.feature.wall.connect.integration.step.open_step: Open
+auto.components.feature.wall.review.animated.visual.notes.styles.db6691aa0a: .ravs-window { position: absolute; inset: 0; --ravs-soft-surface: color-mix(in srgb, var(--foreground) 2%, var(--card)); --ravs-soft-fill: color-mix(in srgb, var(--foreground) 6%, transparent); --ravs-panel-border: color-mix(in srgb, var(--foreground) 18%, var(--border)); --ravs-emphasis-border: color-mix(in srgb, var(--foreground) 44%, var(--border)); --ravs-floating-shadow: 0 14px 30px rgb(0 0 0 / 0.22), 0 2px 6px rgb(0 0 0 / 0.12); background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); } .ravs-difftoolbar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--ravs-soft-surface); font-size: 11px; color: var(--muted-foreground); } .ravs-diff-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--foreground); } .ravs-ai-chip { margin-left: auto; display: inline-flex; align-items: stretch; overflow: hidden; border-radius: 6px; border: 1px solid var(--border); background: var(--ravs-soft-surface); opacity: 0; transform: translateY(-2px); transition: opacity 320ms ease, transform 320ms ease; } .ravs-ai-chip.is-visible { opacity: 1; transform: none; } .ravs-ai-chip .ravs-count-btn, .ravs-ai-chip .ravs-send-btn { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; font-size: 11px; color: var(--muted-foreground); background: transparent; line-height: 1; } .ravs-ai-chip .ravs-count-btn { border-right: 1px solid var(--border); } .ravs-ai-chip .ravs-send-btn { padding: 3px 7px; position: relative; } .ravs-send-glow { position: absolute; inset: 0; background: rgba(34, 197, 94, 0.18); opacity: 0; transition: opacity 280ms ease; pointer-events: none; } .ravs-ai-chip .ravs-send-btn.is-flash .ravs-send-glow { opacity: 1; } .ravs-count-num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--foreground); font-weight: 600; } .ravs-diffbody { flex: 1; min-height: 0; position: relative; background: var(--editor-surface, var(--card)); } .ravs-diffscroll { position: absolute; inset: 0; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.55; color: var(--foreground); padding: 4px 0 8px; transition: opacity 240ms ease; } .ravs-diffscroll.is-hidden { opacity: 0; pointer-events: none; } .ravs-term { position: absolute; inset: 0; background: var(--editor-surface, var(--card)); color: var(--foreground); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.45; overflow: hidden; display: flex; flex-direction: column; opacity: 0; pointer-events: none; transition: opacity 240ms ease; z-index: 4; } .ravs-term.is-visible { opacity: 1; } .ravs-term-body { flex: 1; min-height: 0; padding: 10px 12px; overflow: hidden; display: flex; flex-direction: column; gap: 6px; } .ravs-term-line { white-space: pre-wrap; word-break: break-word; line-height: 1.45; } .ravs-term-muted { color: var(--muted-foreground); } .ravs-term-glyph { color: rgb(217 119 6); margin-right: 6px; } .ravs-term-check { color: rgb(16 185 129); font-weight: 700; margin-right: 6px; } .ravs-term-spinner { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 999px; border: 1.5px solid color-mix(in srgb, var(--foreground) 20%, transparent); border-top-color: var(--foreground); vertical-align: -1px; animation: ravs-term-spin 0.9s linear infinite; } @keyframes ravs-term-spin { to { transform: rotate(360deg) } } .ravs-hunk-header { display: grid; grid-template-columns: 36px 36px 16px minmax(0,1fr); align-items: center; padding: 1px 8px 1px 0; background: rgba(99, 102, 241, 0.06); color: var(--muted-foreground); font-size: 10.5px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); } .ravs-hunk-header .ravs-text { grid-column: 4 / -1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: rgb(99 102 241); font-size: 10.5px; } .ravs-diff-line { display: grid; grid-template-columns: 36px 36px 16px minmax(0,1fr); align-items: stretch; position: relative; } .ravs-ln { text-align: right; padding: 0 6px 0 0; color: var(--muted-foreground); font-size: 10.5px; user-select: none; opacity: 0.85; } .ravs-marker { text-align: center; color: var(--muted-foreground); font-weight: 700; opacity: 0.7; } .ravs-text-cell { padding-right: 8px; white-space: pre; overflow: hidden; } .ravs-tok-kw { color: #a855f7; } .ravs-tok-id { color: #2563eb; } .ravs-tok-str { color: #16a34a; } .ravs-diff-line.is-add { background: color-mix(in srgb, var(--git-decoration-added) 14%, transparent); } .ravs-diff-line.is-add .ravs-marker { color: color-mix(in srgb, var(--git-decoration-added) 72%, transparent); opacity: 1; } .ravs-diff-line.is-rem { background: color-mix(in srgb, var(--git-decoration-deleted) 14%, transparent); } .ravs-diff-line.is-rem .ravs-marker { color: color-mix(in srgb, var(--git-decoration-deleted) 72%, transparent); opacity: 1; } .ravs-add-note-btn { position: absolute; left: 4px; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid color-mix(in srgb, currentColor 22%, var(--border)); border-radius: 4px; background: var(--ravs-soft-fill); color: var(--foreground); z-index: 5; opacity: 0; box-shadow: 0 1px 2px rgb(0 0 0 / 0.14); pointer-events: none; transition: opacity 160ms ease; } .ravs-add-note-btn.is-visible { opacity: 1; } .ravs-note-row { padding: 4px 8px 4px 0; max-height: 0; overflow: hidden; opacity: 0; transition: max-height 360ms cubic-bezier(.4,0,.2,1), opacity 280ms ease 60ms, padding 360ms cubic-bezier(.4,0,.2,1); } .ravs-note-row.is-visible { max-height: 90px; opacity: 1; } .ravs-note-card { margin: 0 12px; position: relative; border: 1px solid var(--ravs-panel-border); border-left: 3px solid var(--ravs-emphasis-border); border-radius: 6px; background-color: var(--card); padding: 5px 8px 5px 10px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.16); } .ravs-note-meta { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-foreground); } .ravs-note-body { font-size: 11.5px; color: var(--foreground); line-height: 1.35; margin-top: 2px; } .ravs-popover { position: absolute; left: 12px; right: 12px; max-width: none; z-index: 20; padding: 8px 10px; border: 1px solid var(--ravs-panel-border); border-left: 3px solid var(--ravs-emphasis-border); border-radius: 6px; background-color: var(--card); color: var(--foreground); box-shadow: var(--ravs-floating-shadow); display: flex; flex-direction: column; gap: 6px; opacity: 0; transform: translateY(-4px) scale(0.985); pointer-events: none; transition: opacity 180ms ease, transform 180ms ease; } .ravs-popover.is-visible { opacity: 1; transform: none; pointer-events: auto; } .ravs-pop-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-foreground); } .ravs-pop-input { min-height: 38px; max-height: 80px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--editor-surface, var(--card)); font-size: 12px; line-height: 1.4; color: var(--foreground); white-space: pre-wrap; word-break: break-word; overflow: hidden; } .ravs-pop-footer { display: flex; justify-content: flex-end; gap: 6px; } .ravs-pop-btn { font-size: 11px; font-weight: 500; padding: 4px 9px; border-radius: 5px; line-height: 1; border: 1px solid transparent; display: inline-flex; align-items: center; gap: 5px; } .ravs-pop-btn.is-cancel { color: var(--muted-foreground); background: transparent; } .ravs-pop-btn.is-add { color: var(--primary-foreground); background: var(--primary); } .ravs-send-menu { position: absolute; z-index: 30; right: 8px; top: 6px; min-width: 200px; background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); border-radius: 8px; padding: 4px; box-shadow: var(--ravs-floating-shadow); opacity: 0; transform: translateY(-4px) scale(0.985); pointer-events: none; transition: opacity 180ms ease, transform 180ms ease; } .ravs-send-menu.is-visible { opacity: 1; transform: none; pointer-events: auto; } .ravs-menu-section { padding: 4px 8px 2px; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); } .ravs-menu-row { display: grid; grid-template-columns: 16px minmax(0,1fr); align-items: center; gap: 8px; padding: 6px 8px; border-radius: 5px; font-size: 12px; color: var(--popover-foreground); } .ravs-menu-row.is-hot { background: var(--accent); box-shadow: inset 0 0 0 1px var(--border); } .ravs-cursor { position: absolute; z-index: 40; pointer-events: none; transition: transform 600ms cubic-bezier(.45,.05,.2,1), opacity 200ms ease; transform: translate(-30px, 220px); opacity: 0; } .ravs-cursor.is-visible { opacity: 1; } .ravs-cursor .ravs-ripple { position: absolute; left: -6px; top: -6px; width: 28px; height: 28px; border-radius: 999px; border: 2px solid color-mix(in srgb, var(--foreground) 52%, transparent); opacity: 0; } .ravs-cursor.is-clicking .ravs-ripple { animation: ravs-ripple 460ms ease-out forwards; } @keyframes ravs-ripple { 0% { transform: scale(0.4); opacity: 0.9; } 100% { transform: scale(1.4); opacity: 0; } } .ravs-caret { display: inline-block; width: 1.5px; height: 1em; background: currentColor; vertical-align: -2px; margin-left: 1px; animation: ravs-caret-blink 1.05s steps(1) infinite; } @keyframes ravs-caret-blink { 0%, 50% { opacity: 1 } 51%, 100% { opacity: 0 } }
+auto.components.feature.wall.review.animated.visual.pr.view.styles.fc9a23c83d: .ravpr-stage { position: absolute; inset: 0; overflow: hidden; } .ravpr-stack { position: absolute; inset: 0; display: flex; justify-content: flex-end; padding: 4px 34px 4px 2px; overflow: hidden; } .ravpr-sidebar, .ravpr-card { position: absolute; top: 4px; right: 2px; width: 464px; height: calc(100% - 8px); background: var(--card, #fff); border: 1px solid var(--border); border-radius: 10px; color: var(--foreground, #18181b); overflow: hidden; box-shadow: 0 1px 2px rgba(24,24,27,0.04); } .ravpr-sidebar { opacity: 0; transition: opacity 220ms ease; } .ravpr-sidebar.is-visible { opacity: 1; } .ravpr-sidebar.is-hiding { opacity: 0; } .ravpr-card { display: flex; flex-direction: column; min-width: 0; opacity: 0; transition: opacity 260ms ease; } .ravpr-card.is-visible { opacity: 1; } .ravpr-tabs { position: relative; display: flex; align-items: center; gap: 14px; height: 36px; padding: 0 14px; background: rgba(24,24,27,0.015); color: var(--muted-foreground, #71717a); } .ravpr-tab { position: relative; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted-foreground, #71717a); } .ravpr-tab.is-active, .ravpr-tab.is-hovered { color: var(--foreground, #18181b); } .ravpr-tab.is-active::after { content: ''; position: absolute; left: -5px; right: -5px; bottom: -10px; height: 1px; background: var(--foreground, #18181b); } .ravpr-tooltip { position: absolute; top: 34px; left: 106px; z-index: 6; padding: 7px 11px; border-radius: 8px; background: var(--card, #fff); color: var(--foreground, #18181b); font-size: 12px; line-height: 1; box-shadow: 0 8px 22px rgba(0,0,0,0.22); opacity: 0; transform: translateY(-3px); pointer-events: none; transition: opacity 160ms ease, transform 160ms ease; } .ravpr-tooltip.is-visible { opacity: 1; transform: translateY(0); } .ravpr-explorer { padding: 10px 12px 12px; } .ravpr-heading { color: var(--muted-foreground, #71717a); font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; } .ravpr-file-list { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; } .ravpr-file { display: grid; grid-template-columns: 14px minmax(0,1fr) 22px; align-items: center; gap: 8px; min-height: 28px; padding: 4px 6px; border-radius: 6px; } .ravpr-file.is-active { background: rgba(24,24,27,0.06); box-shadow: inset 0 0 0 1px rgba(24,24,27,0.06); } .ravpr-file-icon { width: 12px; height: 12px; border-radius: 3px; background: rgba(24,24,27,0.14); } .ravpr-file-name { height: 8px; border-radius: 999px; background: rgba(24,24,27,0.14); } .ravpr-file-status { width: 14px; height: 8px; border-radius: 999px; background: rgba(24,24,27,0.12); } .ravpr-body { padding: 10px 12px 18px; display: flex; flex-direction: column; gap: 5px; min-height: 0; } .ravpr-number-row { display: flex; align-items: center; gap: 7px; } .ravpr-number { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 700; } .ravpr-open { display: inline-flex; align-items: center; justify-content: center; height: 18px; padding: 0 7px; border-radius: 5px; background: rgba(16,185,129,0.10); border: 1px solid rgba(16,185,129,0.28); color: rgb(4 120 87); font-size: 9px; font-weight: 700; line-height: 1; } .ravpr-title { font-size: 12px; font-weight: 600; line-height: 1.35; color: var(--foreground, #18181b); margin-bottom: 2px; } .ravpr-merge { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; min-height: 30px; flex: 0 0 30px; border-radius: 7px; background: rgb(22 163 74); color: #fff; font-size: 11.5px; font-weight: 700; margin-bottom: 2px; box-shadow: 0 1px 2px rgba(22,163,74,0.18); transition: box-shadow 220ms ease, filter 220ms ease; } .ravpr-merge.is-ready { box-shadow: 0 0 0 3px rgba(34,197,94,0.22), 0 1px 2px rgba(22,163,74,0.18); } .ravpr-section-row, .ravpr-check-row { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 7px; padding: 5px 0; font-size: 11.5px; color: var(--foreground, #18181b); } .ravpr-check-row { padding: 5px 7px; font-size: 10.5px; } .ravpr-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ravpr-meta, .ravpr-check-state { color: var(--muted-foreground, #71717a); font-size: 10.5px; } .ravpr-check-state { font-size: 10px; } .ravpr-ring { display: inline-block; width: 14px; height: 14px; border-radius: 999px; border: 2px solid rgba(245,158,11,0.35); border-top-color: rgb(245 158 11); animation: ravpr-spin 1.1s linear infinite; } .ravpr-check { width: 15px; height: 15px; border-radius: 999px; display: none; align-items: center; justify-content: center; background: rgba(34,197,94,0.14); color: rgb(22 163 74); } .ravpr-section-row.is-done .ravpr-ring, .ravpr-check-row.is-done .ravpr-ring { display: none; } .ravpr-section-row.is-done .ravpr-check, .ravpr-check-row.is-done .ravpr-check { display: inline-flex; } .ravpr-reveal { display: flex; flex-direction: column; gap: 3px; opacity: 0; transform: translateY(4px); transition: opacity 260ms ease, transform 260ms ease; pointer-events: none; } .ravpr-reveal.is-visible { opacity: 1; transform: translateY(0); pointer-events: auto; } .ravpr-check-list, .ravpr-comment-list { display: flex; flex-direction: column; gap: 4px; min-height: 0; } .ravpr-comment-card { border: 1px solid var(--border); border-radius: 8px; background: var(--card, #fff); overflow: hidden; opacity: 0; transform: translateY(4px); transition: opacity 260ms ease, transform 260ms ease; } .ravpr-comment-card.is-visible { opacity: 1; transform: translateY(0); } .ravpr-comment-head { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 7px; padding: 5px 7px; background: rgba(24,24,27,0.015); } .ravpr-avatar { width: 16px; height: 16px; border-radius: 999px; background: rgba(24,24,27,0.16); } .ravpr-author { width: 78px; height: 8px; border-radius: 999px; background: rgba(24,24,27,0.18); } .ravpr-comment-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9.5px; color: var(--muted-foreground, #71717a); } .ravpr-comment-body { padding: 5px 7px 6px; font-size: 11px; line-height: 1.32; color: var(--foreground, #18181b); } .ravpr-comment-body code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; padding: 1px 4px; border-radius: 4px; background: rgba(24,24,27,0.06); } .ravpr-cursor { position: absolute; z-index: 40; pointer-events: none; transition: transform 600ms cubic-bezier(.45,.05,.2,1), opacity 200ms ease; transform: translate(-30px, 220px); opacity: 0; } .ravpr-cursor.is-visible { opacity: 1; } .ravpr-ripple { position: absolute; left: -6px; top: -6px; width: 28px; height: 28px; border-radius: 999px; border: 2px solid rgba(24,24,27,0.5); opacity: 0; } .ravpr-cursor.is-clicking .ravpr-ripple { animation: ravpr-ripple 460ms ease-out forwards; } @keyframes ravpr-ripple { 0% { transform: scale(0.4); opacity: 0.9; } 100% { transform: scale(1.4); opacity: 0; } } @keyframes ravpr-spin { to { transform: rotate(360deg); } }
+auto.components.feature.wall.review.animated.visual.shared.9deecb021c: Claude
+auto.components.feature.wall.review.animated.visual.shared.e7894927a2: Codex
+auto.components.feature.wall.review.animated.visual.ship.styles.90cdcd2ecc: .ravs-ship-root { position: absolute; inset: 0; } .ravs-ship-stack { position: absolute; inset: 0; display: grid; grid-template-columns: 232px minmax(0,1fr); gap: 14px; padding: 4px 2px; /* Why: cards size to their content rather than stretch to the parent's full height, so the two cards don't show empty space below their content. */ align-items: start; } /* Source Control mini-sidebar — ahead-count header, commit textarea + split Commit button, then a CHANGES section with file rows. The file rows are the surface the "reading" pulse animates over. */ .ravs-sc-card { display: flex; flex-direction: column; background: var(--card, #fff); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: 0 1px 2px rgba(24,24,27,0.04); } /* Both card headers share the same fixed height so the SC card and PR dialog align across the top edge regardless of header content. */ .ravs-sc-header, .ravs-pr-head { height: 36px; box-sizing: border-box; } .ravs-sc-header { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid var(--border); } .ravs-sc-ahead { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; color: var(--foreground, #18181b); } .ravs-sc-ahead svg { color: var(--muted-foreground, #71717a); } .ravs-sc-commit-area { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; } .ravs-sc-textarea { position: relative; border: 1px solid var(--border); border-radius: 6px; background: var(--editor-surface, var(--card)); padding: 6px 26px 6px 8px; min-height: 56px; font-size: 12px; line-height: 1.45; color: var(--foreground, #18181b); white-space: pre-wrap; word-break: break-word; overflow: hidden; } .ravs-sc-textarea .ravs-placeholder { color: rgba(113,113,122,0.7); } .ravs-sc-sparkle { position: absolute; right: 6px; top: 6px; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--muted-foreground, #71717a); background: transparent; transition: color 160ms ease, background 160ms ease; } .ravs-sc-sparkle.is-scanning { color: rgb(109 40 217); background: color-mix(in srgb, rgb(139 92 246) 18%, transparent); } .ravs-sc-split { display: flex; align-items: stretch; } /* Why: Commit + Create PR are surrounding chrome — the violet AI affordances are the focal points. Render them as quiet secondary buttons so they don't compete with the sparkle/scan signals. */ .ravs-sc-split .ravs-primary { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 10px; background: var(--secondary, #f5f5f5); color: var(--secondary-foreground, #171717); font-size: 11px; font-weight: 500; border-radius: 6px 0 0 6px; border: 1px solid var(--border); transition: background 240ms ease, border-color 240ms ease, color 240ms ease; } .ravs-sc-split .ravs-chev { display: inline-flex; align-items: center; justify-content: center; width: 22px; background: var(--secondary, #f5f5f5); color: var(--muted-foreground, #71717a); border-radius: 0 6px 6px 0; border: 1px solid var(--border); border-left: 1px solid var(--border); transition: background 240ms ease, border-color 240ms ease, color 240ms ease; } /* Why: when AI has filled the commit message, tint the Commit button green to signal "ready to commit". Uses the same success-green family as the PR flash so the two beats rhyme. Mix is intentionally strong (~28%) — at 14% it disappeared next to the violet sparkle and PR flash, so users only saw the PR change color. */ .ravs-sc-split.is-ready .ravs-primary, .ravs-sc-split.is-ready .ravs-chev { background: color-mix(in srgb, rgb(34 197 94) 28%, var(--secondary, #f5f5f5)); border-color: rgb(34 197 94); color: rgb(21 128 61); transition: background 220ms ease, border-color 220ms ease, color 220ms ease; } .ravs-sc-split.is-ready .ravs-chev { border-left-color: rgba(34, 197, 94, 0.55); } .ravs-sc-changes-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground, #71717a); } .ravs-sc-changes-count { color: var(--foreground, #18181b); font-weight: 600; margin-left: 2px; } .ravs-sc-view-all { font-size: 10px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--muted-foreground, #71717a); } .ravs-sc-files { display: flex; flex-direction: column; padding: 2px 6px 8px; flex: 1; min-height: 0; overflow: hidden; } .ravs-sc-file { display: grid; grid-template-columns: 14px minmax(0,1fr) 12px; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px; font-size: 11px; line-height: 1.35; color: var(--foreground, #18181b); position: relative; transition: background 220ms ease; } .ravs-sc-ficon { color: rgb(180 83 9); display: inline-flex; } .ravs-sc-fname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ravs-sc-fmark { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; text-align: right; color: rgb(180 83 9); } .ravs-sc-file.is-reading { background: color-mix(in srgb, rgb(139 92 246) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, rgb(139 92 246) 28%, transparent); } /* PR dialog — matches the .ravs-sc-card chrome (same border, radius, elevation) so the two cards read as one design language. */ .ravs-pr-dialog { background: var(--card, #fff); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 2px rgba(24,24,27,0.04); display: flex; flex-direction: column; min-width: 0; overflow: hidden; } .ravs-pr-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--border); } .ravs-pr-title-text { font-size: 11px; font-weight: 500; color: var(--foreground, #18181b); } /* Icon-only AI-assist chip — mirrors .ravs-sc-sparkle so the affordance reads identically across both cards. */ .ravs-pr-gen-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border-radius: 4px; color: var(--muted-foreground, #71717a); background: transparent; border: 0; cursor: pointer; transition: color 160ms ease, background 160ms ease; } .ravs-pr-gen-btn:hover { background: rgba(24,24,27,0.06); color: var(--foreground, #18181b); } .ravs-pr-gen-btn.is-scanning { color: rgb(109 40 217); background: color-mix(in srgb, rgb(139 92 246) 18%, transparent); } .ravs-pr-body { display: flex; flex-direction: column; gap: 8px; padding: 10px; } .ravs-pr-field { display: flex; flex-direction: column; gap: 4px; } .ravs-pr-field-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground, #71717a); } .ravs-pr-base { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--foreground, #18181b); background: var(--editor-surface, var(--card)); align-self: flex-start; } .ravs-pr-base svg { color: var(--muted-foreground, #71717a); } .ravs-pr-input { position: relative; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--editor-surface, var(--card)); min-height: 28px; font-size: 12px; line-height: 1.45; color: var(--foreground, #18181b); white-space: pre-wrap; word-break: break-word; overflow: hidden; } .ravs-pr-input.is-body { min-height: 50px; font-size: 11px; line-height: 1.4; } .ravs-pr-input .ravs-placeholder { color: rgba(113,113,122,0.7); } .ravs-pr-footer { display: flex; align-items: center; gap: 6px; justify-content: flex-end; margin-top: 2px; } .ravs-pr-btn { font-size: 11px; font-weight: 500; padding: 5px 10px; border-radius: 6px; line-height: 1; border: 1px solid transparent; outline: none; } .ravs-pr-btn:focus, .ravs-pr-btn:focus-visible { outline: none; } /* Cancel reads as a quiet ghost button so it doesn't compete with the affirmative Create PR action. */ .ravs-pr-btn.is-outline { background: transparent; color: var(--muted-foreground, #71717a); border-color: transparent; } .ravs-pr-btn.is-outline:hover { background: rgba(24,24,27,0.05); color: var(--foreground, #18181b); } /* Quiet secondary fill — see the .ravs-sc-split note above. The flash ring still uses success-green so the "PR created" beat reads. The Create-PR button is slightly larger than Cancel so the affirmative action remains the bigger target. */ .ravs-pr-btn.is-solid { background: var(--secondary, #f5f5f5); color: var(--secondary-foreground, #171717); border-color: var(--border); font-size: 12px; padding: 7px 14px; transition: background 220ms ease, border-color 220ms ease, color 220ms ease, box-shadow 220ms ease; } .ravs-pr-btn.is-solid.is-ready { background: color-mix(in srgb, rgb(34 197 94) 28%, var(--secondary, #f5f5f5)); border-color: rgb(34 197 94); color: rgb(21 128 61); } .ravs-pr-btn.is-solid.is-flash { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.30); } .ravs-cursor { position: absolute; z-index: 40; pointer-events: none; transition: transform 600ms cubic-bezier(.45,.05,.2,1), opacity 200ms ease; transform: translate(-30px, 220px); opacity: 0; } .ravs-cursor.is-visible { opacity: 1; } .ravs-cursor .ravs-ripple { position: absolute; left: -6px; top: -6px; width: 28px; height: 28px; border-radius: 999px; border: 2px solid rgba(24,24,27,0.5); opacity: 0; } .ravs-cursor.is-clicking .ravs-ripple { animation: ravs-ripple 460ms ease-out forwards; } @keyframes ravs-ripple { 0% { transform: scale(0.4); opacity: 0.9; } 100% { transform: scale(1.4); opacity: 0; } } .ravs-caret { display: inline-block; width: 1.5px; height: 1em; background: currentColor; vertical-align: -2px; margin-left: 1px; animation: ravs-caret-blink 1.05s steps(1) infinite; } @keyframes ravs-caret-blink { 0%, 50% { opacity: 1 } 51%, 100% { opacity: 0 } }
+auto.components.floating.terminal.FloatingTerminalPanel.25d7817f79: terminal
+auto.components.floating.terminal.FloatingTerminalWindowControls.1e502f1284: Open
+auto.components.github.GitHubMarkdownComposer.f24783f470: https://...
+auto.components.github.PRFilterDropdowns.19bb6f115f: reviewed-by
+auto.components.github.github.rate.limit.display.01f7323e58: GraphQL API
+auto.components.github.github.rate.limit.display.1daf0f22a9: GraphQL
+auto.components.github.github.rate.limit.display.bb227706a6: REST
+auto.components.github.github.rate.limit.display.c392c749a6: REST API
+auto.components.github.project.ProjectCell.d0d0e13a5a: PR
+auto.components.github.project.ProjectCell.ffeff79861: PULL_REQUEST
+auto.components.github.project.ProjectRow.c3b81ddea2: DRAFT_ISSUE
+auto.components.gitlab.gitlab.rate.limit.display.0a891e8935: REST API
+auto.components.gitlab.gitlab.rate.limit.display.budget_scope_prefix: Budget scope
+auto.components.jira.connect.dialog.2849ddb295: Atlassian email
+auto.components.jira.connect.dialog.3d81bf3ab3: API token
+auto.components.jira.connect.dialog.4a2ab52781: Verifying…
+auto.components.jira.connect.dialog.70fcd360c4: https://example.atlassian.net
+auto.components.jira.connect.dialog.7b3967c12f: Atlassian API token
+auto.components.jira.connect.dialog.8090504a3e: Create a token in
+auto.components.jira.connect.dialog.8388bdea2b: Connect Jira site
+auto.components.jira.connect.dialog.d785c42b8b: Use a Jira Cloud site URL, Atlassian email, and API token to browse issues.
+auto.components.jira.connect.dialog.e176f9d0c5: Jira Cloud site URL
+auto.components.jira.connect.dialog.e91b9a4073: you@example.com
+auto.components.jira.connect.dialog.fdd26d81cc: Atlassian account settings
+auto.components.linear.api.key.dialog.edec49dfae: lin_api_...
+auto.components.linear.project.view.surfaces.7b147907dc: Linear
+auto.components.mobile.MobileHero.5410d55d79: Orca Mobile
+auto.components.mobile.MobileHero.a8fb43cf1c: Continue
+auto.components.mobile.slides.HomeSlide.19c212e25e: MacBook Pro
+auto.components.mobile.slides.HomeSlide.5d94e8ddcc: Orca
+auto.components.mobile.slides.HomeSlide.d047197480: GitHub · Linear
+auto.components.mobile.slides.TerminalSlide.21b67dfc92: Bash
+auto.components.mobile.slides.TerminalSlide.2c10d43745: claude
+auto.components.mobile.slides.TerminalSlide.4b3666f9a9: src/cache/worktree-cache.test.ts
+auto.components.mobile.slides.TerminalSlide.817090af40: Ctrl+C
+auto.components.mobile.slides.TerminalSlide.d39445686a: src/transport/host-store.test.ts
+auto.components.mobile.slides.WorktreeListSlide.22971156df: Repo
+auto.components.mobile.slides.WorktreeListSlide.b4271864bd: MacBook Pro
+auto.components.new.workspace.ProjectCombobox.empty: No projects match your search.
+auto.components.new.workspace.ProjectCombobox.search: Search projects...
+auto.components.new.workspace.ProjectHostSetupCombobox.empty: No hosts are ready for this project.
+auto.components.new.workspace.ProjectHostSetupCombobox.placeholder: Choose host
+auto.components.new.workspace.SmartWorkspaceNameField.0a180280bd: GitHub
+auto.components.new.workspace.SmartWorkspaceNameField.2cfc6be192: GitLab
+auto.components.new.workspace.SmartWorkspaceNameField.7a47af0565: Linear
+auto.components.onboarding.AgentStep.yoloPermissionsInfo: Agent permission info
+auto.components.onboarding.AgentStep.yoloPermissionsLabel: Yolo / Dangerously skip permissions
+auto.components.onboarding.AgentStep.yoloPermissionsTooltip: Skip permission checks for agents for less interruptions
+auto.components.onboarding.IntegrationsStep.217beb0658: GitHub
+auto.components.onboarding.IntegrationsStep.27743304b1: Linear
+auto.components.onboarding.OnboardingFlow.35bbaf5ae0: notifications
+auto.components.onboarding.OnboardingFlow.984338477a: theme
+auto.components.onboarding.OnboardingFlow.a249f81538: Orca
+auto.components.onboarding.RepoStep.2ebbc26343: /home/user/project
+auto.components.onboarding.RepoStep.7ec3f48820: /home/user
+auto.components.onboarding.RepoStep.955134915e: git@github.com:org/repo.git
+auto.components.onboarding.ThemeStep.ab2a583a97: Cursor
+auto.components.onboarding.WindowsTerminalStep.gitBash: Git Bash
+auto.components.onboarding.WindowsTerminalStep.powerShell: PowerShell
+auto.components.onboarding.WindowsTerminalStep.wsl: WSL
+auto.components.pet.pet.models.a84d5677ff: OpenCode
+auto.components.repo.RepoCombobox.3639fd9da2: SSH
+auto.components.repo.repo.icon.07012dc113: Agent
+auto.components.repo.repo.icon.31826b712e: API
+auto.components.repo.repo.icon.3eba7387ab: Terminal
+auto.components.repo.repo.icon.b1b8d99fc4: AI
+auto.components.right.sidebar.AiVaultPanel.localWorkspacesOnly: Resume from history is only available in local workspaces.
+auto.components.right.sidebar.AiVaultPanel.openWorkspaceBeforeResuming: Open a workspace before resuming a session.
+auto.components.right.sidebar.AiVaultPanel.resumeCommandCopied: Resume command copied
+auto.components.right.sidebar.AiVaultPanel.valueCopied: {{value0}} copied
+auto.components.right.sidebar.AiVaultPanelControls.agent: Agent
+auto.components.right.sidebar.AiVaultPanelControls.agents: Agents
+auto.components.right.sidebar.ChecksPanel.e56c42122e: destructive
+auto.components.right.sidebar.FileExplorerRow.2de3b21934: markdown
+auto.components.right.sidebar.GitHistoryGraphSvg.47eff48230: HEAD
+auto.components.right.sidebar.GitHistoryPanel.62e685d5ec: idle
+auto.components.right.sidebar.GitHistoryPanel.d836037d02: Commits
+auto.components.right.sidebar.HostedReviewActions.59b4dccf70: destructive
+auto.components.right.sidebar.PortsPanel.57d930fa45: PID
+auto.components.right.sidebar.SourceControl.e59bca888a: markdown
+auto.components.right.sidebar.SourceControl.e8a1c4b203: vs
+auto.components.right.sidebar.SourceControlAgentActionDialogForm.15c5d85706: Agent
+auto.components.right.sidebar.SourceControlAgentActionDialogForm.1bb611240f: Use {basePrompt} for Orca's default prompt.
+auto.components.right.sidebar.SourceControlAgentActionDialogForm.23280cbab1: This template does not include {basePrompt}, so the agent will not receive Orca's default prompt.
+auto.components.right.sidebar.SourceControlAgentActionDialogForm.6cefcdfba1: You can change it later in Source Control AI settings.
+auto.components.right.sidebar.SourceControlAgentActionDialogForm.74168d7ada: idle
+auto.components.right.sidebar.SourceControlAgentActionDialogForm.c29f9cf266: Save this prompt and don't show this review next time
+auto.components.right.sidebar.SourceControlAgentActionDialogForm.d8f40128ee: {basePrompt} is Orca's default prompt.
+auto.components.right.sidebar.SourceControlTextGenerationDialogForm.9c14186dd2: Agent
+auto.components.right.sidebar.checks.panel.content.084c516efb: Copy commands
+auto.components.right.sidebar.checks.panel.content.1e53e45072: Copied
+auto.components.right.sidebar.checks.panel.content.5bc9bda2af: Run from this worktree
+auto.components.right.sidebar.checks.panel.content.5e6e5a13fa: View
+auto.components.right.sidebar.checks.panel.content.6fa7f8723f: commit
+auto.components.right.sidebar.checks.panel.content.7c1f0a2b11: Open
+auto.components.right.sidebar.checks.panel.content.8a621a2c4f: Grouped
+auto.components.right.sidebar.checks.panel.content.a7f0c7e8d1: Queue
+auto.components.right.sidebar.checks.panel.content.b13f85d75c: Timeline
+auto.components.right.sidebar.checks.panel.content.b4e8a1c902: Queued
+auto.components.right.sidebar.checks.panel.content.b8c4e2a1f7: View full logs
+auto.components.right.sidebar.checks.panel.content.c3a8e5d710: Needs review · {{value0}}
+auto.components.right.sidebar.checks.panel.content.d7a2f9c401: Send unresolved {{value0}} comments
+auto.components.right.sidebar.checks.panel.content.e87fb3d929: Copy mergeability refresh commands
+auto.components.right.sidebar.checks.panel.content.e8b4c1a903: Resolved · {{value0}}
+auto.components.right.sidebar.checks.panel.content.f5bc5c4cf1: The hosting provider reports conflicts, but local Git did not reproduce them. Refresh the review or push the branch to recalculate mergeability.
+auto.components.right.sidebar.checks.panel.content.f5cf324efa: Comment display options
+auto.components.right.sidebar.checks.panel.content.f8a2c91d04: Queue for agent
+auto.components.right.sidebar.index.aiVaultSessionHistory: Agents
+auto.components.right.sidebar.pull.policy.notice.body: This branch has local and remote commits. Run one command in this worktree or on the SSH host, then try Pull or Sync again.
+auto.components.right.sidebar.pull.policy.notice.copied: Copied
+auto.components.right.sidebar.pull.policy.notice.copyAria: Copy {{value0}} pull policy command
+auto.components.right.sidebar.pull.policy.notice.copyCommand: Copy command
+auto.components.right.sidebar.pull.policy.notice.diverged: Diverged
+auto.components.right.sidebar.pull.policy.notice.fastForwardOnly: Fast-forward only
+auto.components.right.sidebar.pull.policy.notice.fastForwardOnlyDescription: Only pull when no merge or rebase is needed.
+auto.components.right.sidebar.pull.policy.notice.merge: Merge
+auto.components.right.sidebar.pull.policy.notice.mergeDescription: Create a merge commit when local and remote both changed.
+auto.components.right.sidebar.pull.policy.notice.rebase: Rebase
+auto.components.right.sidebar.pull.policy.notice.rebaseDescription: Replay local commits on top of the remote branch.
+auto.components.right.sidebar.pull.policy.notice.title: Pull needs a policy
+auto.components.right.sidebar.source.control.dropdown.items.04d709801d: Fetch from remote without merging
+auto.components.right.sidebar.source.control.dropdown.items.2b8e6595fd: Commit
+auto.components.right.sidebar.source.control.primary.action.a5d1f7b036: Publish commits before creating a {{value0}}.
+auto.components.right.sidebar.source.control.primary.action.b6e2a8c147: Push commits before creating a {{value0}}.
+auto.components.right.sidebar.source.control.primary.action.b8e4f2a901: Wait for the remote operation to finish.
+auto.components.right.sidebar.source.control.primary.action.c7f3b9d258: Sync this branch before creating a {{value0}}.
+auto.components.right.sidebar.source.control.primary.action.c9f3a1b802: Resolve conflicts before creating a {{value0}}.
+auto.components.right.sidebar.source.control.primary.action.d2a8c4e703: No changes on this branch to include in a {{value0}}.
+auto.components.right.sidebar.source.control.primary.action.d8a4c0e369: Authenticate before creating a {{value0}}.
+auto.components.right.sidebar.source.control.primary.action.e3b9d5f814: Cannot create a {{value0}} from the default branch.
+auto.components.right.sidebar.source.control.primary.action.e9b5d1f470: Check out a branch before creating a {{value0}}.
+auto.components.right.sidebar.source.control.primary.action.ed93b4f14f: Commit
+auto.components.right.sidebar.source.control.primary.action.f0c6e2a581: This branch is not ready for a {{value0}} yet.
+auto.components.right.sidebar.source.control.primary.action.f4c0e6a925: Commit changes before creating a {{value0}}.
+auto.components.right.sidebar.source.control.primary.action.h3i4j5k607: Checking whether this branch can create a {{value0}}…
+auto.components.right.sidebar.useFileDeletion.23e98f192f: This permanently deletes the file on the remote host. This cannot be undone.
+auto.components.right.sidebar.useFileDeletion.7fb9435c86: This permanently deletes the directory and its contents on the remote host. This cannot be undone.
+auto.components.right.sidebar.useFileDeletion.a76c74f105: destructive
+auto.components.settings.AccountsPane.0c64dc2a64: Gemini
+auto.components.settings.AccountsPane.26ef4b55be: Claude
+auto.components.settings.AccountsPane.4ac10b4d08: OpenCode Go
+auto.components.settings.AccountsPane.8619f9afa9: WSL
+auto.components.settings.AccountsPane.8951c5309f: auth=Fe26.2**…
+auto.components.settings.AccountsPane.922b51e02d: Fe26.2**…
+auto.components.settings.AccountsPane.ae3b21eb6c: opencode.ai/workspace/wrk_…/go
+auto.components.settings.AccountsPane.b11078a9c2: wsl
+auto.components.settings.AccountsPane.ef91cfa06b: Codex
+auto.components.settings.AdvancedNetworkSettingsSection.476f302aca: http://proxy.example.com:8080
+auto.components.settings.AgentLocationSetting.43663b5e69: WSL
+auto.components.settings.AgentLocationSetting.f97b986b7f: wsl
+auto.components.settings.AgentsPane.024bd95089: agents
+auto.components.settings.AgentsPane.agentPermissionsYolo: Yolo
+auto.components.settings.AutoRenameBranchFromWorkSetting.1626524572: Nautilus
+auto.components.settings.BrowserHomePageSetting.37a30c5bfd: https://google.com
+auto.components.settings.BrowserPane.4af9a17947: kagi
+auto.components.settings.CliSection.c5c0f2641d: Orca CLI
+auto.components.settings.CliSkillRuntimeSetup.04325573f8: WSL
+auto.components.settings.CliSkillRuntimeSetup.7c776ff9d8: wsl
+auto.components.settings.CommitMessageAiPane.4ec89c319e: agent
+auto.components.settings.CommitMessageAiPane.ca433708cb: commit
+auto.components.settings.ComputerUsePane.4b65070096: darwin
+auto.components.settings.DefaultWindowsProjectRuntimeSetting.windows: Windows
+auto.components.settings.DefaultWindowsProjectRuntimeSetting.wsl: WSL
+auto.components.settings.GeneralEditorSettingsSection.a5db1d3975: ms
+auto.components.settings.GeneralUpdateSettingsSection.7173352632: idle
+auto.components.settings.GitPane.2cde9044a8: graphql
+auto.components.settings.GitPane.32dca11189: github
+auto.components.settings.GitPane.3ae3de8898: master
+auto.components.settings.GitPane.895d3f70b8: gh
+auto.components.settings.GitPane.e71ce09c42: orca
+auto.components.settings.GitPane.ffba483bae: main
+auto.components.settings.IntegrationsPane.264a9b6128: Linear
+auto.components.settings.IntegrationsPane.44cde4aa01: ORCA_BITBUCKET_API_TOKEN
+auto.components.settings.IntegrationsPane.4ab9b96925: Gitea
+auto.components.settings.IntegrationsPane.513abfe47d: GitLab
+auto.components.settings.IntegrationsPane.5ee6ef6405: ORCA_AZURE_DEVOPS_TOKEN
+auto.components.settings.IntegrationsPane.5efce6953d: Azure DevOps
+auto.components.settings.IntegrationsPane.6193444689: ORCA_GITEA_API_BASE_URL
+auto.components.settings.IntegrationsPane.6e0ff3403e: ORCA_BITBUCKET_ACCESS_TOKEN
+auto.components.settings.IntegrationsPane.70c5f74f36: GitHub
+auto.components.settings.IntegrationsPane.8489c0aa49: Bitbucket
+auto.components.settings.IntegrationsPane.8f960935c1: ORCA_AZURE_DEVOPS_ACCESS_TOKEN
+auto.components.settings.IntegrationsPane.ae6b7f5f40: ORCA_AZURE_DEVOPS_API_BASE_URL
+auto.components.settings.IntegrationsPane.b8a7efb3f6: ORCA_BITBUCKET_EMAIL
+auto.components.settings.IntegrationsPane.e678d89e8c: ORCA_GITEA_TOKEN
+auto.components.settings.IntegrationsPane.f36365ed45: gh
+auto.components.settings.KagiSessionLinkForm.e383683485: https://kagi.com/search?token=...
+auto.components.settings.McpConfigSection.9ee215caf6: .mcp.json
+auto.components.settings.MobileNetworkInterfaceSection.1dc87a7fbc: Tailscale
+auto.components.settings.OpenAiTranscriptionKeyDialog.c3380e4ca5: sk-...
+auto.components.settings.OpenInMenuSetting.810ef39b56: cursor
+auto.components.settings.PrivacyPane.afec8b03be: ci
+auto.components.settings.ProjectWindowsRuntimeSetting.cancel: Cancel
+auto.components.settings.ProjectWindowsRuntimeSetting.defaultRuntime: Default ({{value0}})
+auto.components.settings.ProjectWindowsRuntimeSetting.windows: Windows
+auto.components.settings.ProjectWindowsRuntimeSetting.wsl: WSL
+auto.components.settings.ProviderHostScopeControl.scope_label: {{value0}}: {{value1}}
+auto.components.settings.QuickCommandsPane.44923dd982: destructive
+auto.components.settings.QuickCommandsPane.4ccc63da87: Agent
+auto.components.settings.QuickCommandsPane.7784912ed6: repo
+auto.components.settings.RepositoryHooksSection.9b821fa19d: # e.g. echo "Cleaning up $ORCA_WORKSPACE_NAME"
+auto.components.settings.RepositoryHooksSection.a3fc966677: # e.g. pnpm install cp "$ORCA_ROOT_PATH/.env" "$ORCA_WORKTREE_PATH/.env"
+auto.components.settings.RepositoryHooksSection.c85c2c88a2: {{artifact_url}}
+auto.components.settings.RepositoryIconPicker.03ca1a4e9b: example.com
+auto.components.settings.RepositoryPane.addPlannedHostToHost: Add {{host}}
+auto.components.settings.RepositoryPane.cloneDestinationPlaceholder: /destination/on/host
+auto.components.settings.RepositoryPane.creatingPendingSetup: Creating...
+auto.components.settings.RepositoryPane.currentSetup: Current
+auto.components.settings.RepositoryPane.hostSetupStateReady: Ready
+auto.components.settings.RepositoryPane.openSetup: Open
+auto.components.settings.RepositoryPane.removeSetup: Remove
+auto.components.settings.RepositoryPane.setupExistingFolderPathPlaceholder: /path/to/project/on/host
+auto.components.settings.RepositoryPane.setupKindGit: Git repo
+auto.components.settings.RepositorySourceControlAiActionRows.f4310cf63f: Agent
+auto.components.settings.RuntimeEnvironmentsPane.960e901ae4: orca serve --pairing-address <host>
+auto.components.settings.RuntimeEnvironmentsPane.c3d772c514: orca://pair?code=...
+auto.components.settings.Settings.2309068a6f: destructive
+auto.components.settings.Settings.3de4bbb841: Terminal
+auto.components.settings.Settings.8afa676615: Agents
+auto.components.settings.SettingsSidebar.e0900f83e7: SSH
+auto.components.settings.ShortcutRemoveButton.9e29aff18b: Remove {{value0}} shortcut {{value1}}
+auto.components.settings.ShortcutsPane.cb02e00202: Terminal
+auto.components.settings.ShortcutsPane.d8c988dab4: ~/.orca/keybindings.json
+auto.components.settings.SourceControlAiActionRecipeDefaults.926d58e87f: agent
+auto.components.settings.SourceControlAiActionRecipeDefaults.e5b24893ba: commit
+auto.components.settings.SshTargetForm.11bcb4507a: bastion.example.com
+auto.components.settings.TasksPane.09ae2d7c51: Linear
+auto.components.settings.TasksPane.6b23a34f6d: Jira
+auto.components.settings.TasksPane.7c5d7fdc20: GitLab
+auto.components.settings.TasksPane.e14063e727: GitHub
+auto.components.settings.TerminalAppearanceSection.abcb4dd019: Terminal Cursor
+auto.components.settings.TerminalPane.05efc0bada: true
+auto.components.settings.TerminalPane.12e06178fa: MB
+auto.components.settings.TerminalPane.348246b06f: false
+auto.components.settings.TerminalPane.96be03b8eb: PowerShell 7+
+auto.components.settings.TerminalPane.b637dd57a7: WSL
+auto.components.settings.TerminalPane.d26174e1dd: Windows PowerShell
+auto.components.settings.TerminalPane.eb7fc4d98a: PowerShell
+auto.components.settings.TerminalPane.scrollSpeed.description: Tune normal terminal scrollback, fast modifier scrolling, and full-screen TUI wheel speed.
+auto.components.settings.TerminalPane.scrollSpeed.fast: Fast
+auto.components.settings.TerminalPane.scrollSpeed.fastDescription: Extra multiplier while scrolling with a modifier key.
+auto.components.settings.TerminalPane.scrollSpeed.helper: Adjust how wheel input feels in scrollback and in mouse-aware terminal apps.
+auto.components.settings.TerminalPane.scrollSpeed.normal: Normal
+auto.components.settings.TerminalPane.scrollSpeed.normalDescription: Scrollback wheel multiplier.
+auto.components.settings.TerminalPane.scrollSpeed.reset: Reset
+auto.components.settings.TerminalPane.scrollSpeed.title: Scroll Speed
+auto.components.settings.TerminalPane.scrollSpeed.tui: TUI
+auto.components.settings.TerminalPane.scrollSpeed.tuiDescription: Discrete wheel reports for full-screen terminal apps.
+auto.components.settings.TerminalWindowSection.292a4c7316: Blue
+auto.components.settings.TerminalWindowSection.c9e1fdf42f: Cursor
+auto.components.settings.VoicePane.6fa734ed95: Delete {{value0}}
+auto.components.settings.VoicePane.91980ce124: {{value0}} MB
+auto.components.settings.accounts.search.0b4d948eb5: wsl
+auto.components.settings.accounts.search.70d1b8def5: codex
+auto.components.settings.accounts.search.8dcbef1856: opencode
+auto.components.settings.accounts.search.e14049e1a8: claude
+auto.components.settings.accounts.search.e8e1ff3887: gemini
+auto.components.settings.advanced.search.48a1c8f534: http
+auto.components.settings.advanced.search.4b4ae4345a: http2
+auto.components.settings.advanced.search.621233008b: http/1.1
+auto.components.settings.advanced.search.a0f71bd909: http/2
+auto.components.settings.advanced.search.f8ff125ebe: http1
+auto.components.settings.agents.search.5ded38b843: codex
+auto.components.settings.agents.search.96ba2373b6: agent
+auto.components.settings.agents.search.bb9ad95777: Agents
+auto.components.settings.agents.search.d608654c03: wsl
+auto.components.settings.agents.search.f412abbba5: claude
+auto.components.settings.appearance.search.1f2880a9d5: orca
+auto.components.settings.appearance.search.2804a920ad: gemini
+auto.components.settings.appearance.search.8dfd676c28: codex
+auto.components.settings.appearance.search.96b4fb0064: terminal
+auto.components.settings.appearance.search.a9d56852eb: opencode
+auto.components.settings.appearance.search.bce3ac317a: git
+auto.components.settings.appearance.search.c9fe3a7876: claude
+auto.components.settings.appearance.search.d77537b580: opencode-go
+auto.components.settings.appearance.search.dea0a9a665: anthropic
+auto.components.settings.auto.rename.branch.search.3ef3cbe98c: agent
+auto.components.settings.browser.search.68d1db8929: markdown
+auto.components.settings.browser.use.search.9d97446873: agent
+auto.components.settings.browser.use.search.f5b8fdddf5: orca-cli
+auto.components.settings.browser.use.search.ff05cbc344: orca
+auto.components.settings.cli.source.control.integration.cards.23cb5a0dee: Install the GitHub CLI to enable pull requests, issues, and checks.
+auto.components.settings.cli.source.control.integration.cards.2a6b359e75: glab
+auto.components.settings.cli.source.control.integration.cards.54a640af7a: Install GitLab CLI
+auto.components.settings.cli.source.control.integration.cards.6b2cfb52b4: gh
+auto.components.settings.cli.source.control.integration.cards.707180d09c: glab auth login
+auto.components.settings.cli.source.control.integration.cards.7755c28af5: Install GitHub CLI
+auto.components.settings.cli.source.control.integration.cards.8d90249d22: gh auth login
+auto.components.settings.cli.source.control.integration.cards.b56fd5676a: Install the GitLab CLI to enable merge requests, issues, and pipelines.
+auto.components.settings.commit.message.ai.search.127d512e75: commit
+auto.components.settings.commit.message.ai.search.3766941527: agent
+auto.components.settings.commit.message.ai.search.53e8504fb2: ci
+auto.components.settings.commit.message.ai.search.542e1a00a7: codex
+auto.components.settings.commit.message.ai.search.f121bec167: claude
+auto.components.settings.computerUseSummary.unavailableDescription: Computer Use permissions are unavailable because {{value0}}.
+auto.components.settings.developer.permissions.search.1e6e27b202: ffmpeg
+auto.components.settings.experimental.search.5f067ba0f9: agent
+auto.components.settings.experimental.search.9bb3bd5098: terminal
+auto.components.settings.experimental.search.agentHibernation.agent: agent
+auto.components.settings.experimental.search.agentHibernation.agents: agents
+auto.components.settings.experimental.search.fa72e71f05: agents
+auto.components.settings.experimental.search.newWorktreeCardStyle.worktree: worktree
+auto.components.settings.experimental.search.newWorktreeCardStyle.worktrees: worktrees
+auto.components.settings.floating.workspace.search.6410fe83d8: terminal
+auto.components.settings.floating.workspace.search.884e5e6132: markdown
+auto.components.settings.general.search.0cb3d94f00: cursor
+auto.components.settings.general.search.27d9b996ba: codex
+auto.components.settings.general.search.327e3fa70d: Orca CLI
+auto.components.settings.general.search.3c30fe2d51: gemini
+auto.components.settings.general.search.5d9ba08673: copilot
+auto.components.settings.general.search.882c4896fd: opencode
+auto.components.settings.general.search.88d3df9ce9: terminal
+auto.components.settings.general.search.8ea37a05bc: agent
+auto.components.settings.general.search.91a46caafc: no_proxy
+auto.components.settings.general.search.95b63edde7: claude
+auto.components.settings.general.search.9b0bc30160: pi
+auto.components.settings.general.search.aea7d2cccb: openclaude
+auto.components.settings.general.search.baa263d6d8: agents
+auto.components.settings.general.search.c61b14be7c: grok
+auto.components.settings.general.search.d05f629d2c: markdown
+auto.components.settings.git.search.16f53f7323: gh
+auto.components.settings.git.search.28192e3a63: master
+auto.components.settings.git.search.61eab13403: orca
+auto.components.settings.git.search.e3e9adde59: main
+auto.components.settings.input.search.71905435dd: x11
+auto.components.settings.integrations.search.2ec2bd328c: api token
+auto.components.settings.integrations.search.41ccade05c: gh
+auto.components.settings.integrations.search.b40cbe5de4: glab
+auto.components.settings.jira.integration.card.09742875cd: Jira
+auto.components.settings.jira.integration.card.27dae4ab60: https://example.atlassian.net
+auto.components.settings.mobile.emulator.search.3211e7acf9: xcrun
+auto.components.settings.mobile.pane.search.1f70d63998: ip
+auto.components.settings.mobile.pane.search.3c1807a81a: qr
+auto.components.settings.mobile.pane.search.b34ad5b3a7: terminal
+auto.components.settings.mobile.settings.search.87816d1c59: qr
+auto.components.settings.notifications.search.5362074f19: mp3
+auto.components.settings.notifications.search.7fa07e9600: agent
+auto.components.settings.notifications.search.c638ae989d: terminal
+auto.components.settings.notifications.search.dd9d3e5f0f: idle
+auto.components.settings.orchestration.search.13ba5c6cbd: agents
+auto.components.settings.orchestration.search.32c5098e7b: claude
+auto.components.settings.orchestration.search.f278fd04db: codex
+auto.components.settings.privacy.search.5854a5c752: ci
+auto.components.settings.privacy.search.69637f4dc4: orca_telemetry_disabled
+auto.components.settings.quick.commands.search.0073cf8ce9: terminal
+auto.components.settings.quick.commands.search.3c316e6ef8: yarn
+auto.components.settings.quick.commands.search.89d2a9ad9f: repo
+auto.components.settings.repository.search.26f42fe773: .cursor/mcp.json
+auto.components.settings.repository.search.4733ec2395: ../worktrees
+auto.components.settings.repository.search.apfs: apfs
+auto.components.settings.repository.search.bc7e504b8e: .orca/issue-command
+auto.components.settings.repository.search.bf460fded8: yaml
+auto.components.settings.repository.search.clone: clone
+auto.components.settings.repository.search.copy: copy
+auto.components.settings.repository.search.d73fb47b45: .claude/mcp.json
+auto.components.settings.repository.search.db11b337c4: .claude.json
+auto.components.settings.repository.search.e760e3fae7: .mcp.json
+auto.components.settings.repository.search.eec3995dc6: Git AI Author
+auto.components.settings.repository.search.ssh: ssh
+auto.components.settings.repository.search.vm: vm
+auto.components.settings.shortcuts.search.0f8cb15582: agent
+auto.components.settings.shortcuts.search.7e3fc707aa: terminal
+auto.components.settings.task.tracker.integration.cards.3e7c10d286: Testing...
+auto.components.settings.task.tracker.integration.cards.9fa04a032e: {{value0}} site{{value1}} connected
+auto.components.settings.task.tracker.integration.cards.dd3529015d: Disconnect {{value0}}
+auto.components.settings.task.tracker.integration.cards.e1f5e6424c: {{value0}} workspace{{value1}} connected
+auto.components.settings.terminal.clipboard.search.4043e294d2: gnome
+auto.components.settings.terminal.clipboard.search.737cef6de1: x11
+auto.components.settings.terminal.search.a16224d16a: calt
+auto.components.settings.terminal.search.f66a7cf715: terminal
+auto.components.settings.terminal.search.scrollSpeed.description: Tune normal terminal scrollback, fast modifier scrolling, and full-screen TUI wheel speed.
+auto.components.settings.terminal.search.scrollSpeed.title: Scroll Speed
+auto.components.settings.terminal.search.warp_import.keyword_themes: themes
+auto.components.settings.terminal.search.warp_import.keyword_warp: warp
+auto.components.settings.terminal.search.warp_import.keyword_yaml: yaml
+auto.components.settings.terminal.search.yaml_import.keyword_yaml: yaml
+auto.components.settings.terminal.windows.search.07ec155fb6: bash.exe
+auto.components.settings.terminal.windows.search.2d99cd91be: powershell
+auto.components.settings.terminal.windows.search.5a2db98d23: bash
+auto.components.settings.terminal.windows.search.6e3adf4cba: wsl
+auto.components.settings.terminal.windows.search.768613e483: powershell 7
+auto.components.settings.terminal.windows.search.d414022016: pwsh
+auto.components.settings.terminal.windows.search.e7d2793b03: terminal
+auto.components.settings.token.source.control.integration.cards.0b5242f8a2: {{value0}} · Pull requests and commit statuses
+auto.components.settings.token.source.control.integration.cards.186a6689df: ORCA_AZURE_DEVOPS_API_BASE_URL
+auto.components.settings.token.source.control.integration.cards.19416c874c: ORCA_BITBUCKET_API_TOKEN
+auto.components.settings.token.source.control.integration.cards.48842720d2: ORCA_AZURE_DEVOPS_TOKEN
+auto.components.settings.token.source.control.integration.cards.63a7f47392: ORCA_BITBUCKET_EMAIL
+auto.components.settings.token.source.control.integration.cards.6d5c2a3005: ORCA_GITEA_TOKEN
+auto.components.settings.token.source.control.integration.cards.709057ad91: ORCA_GITEA_API_BASE_URL
+auto.components.settings.token.source.control.integration.cards.e63fe8f627: ORCA_BITBUCKET_ACCESS_TOKEN
+auto.components.settings.token.source.control.integration.cards.ea204f5e03: {{value0}} · Pull requests and build statuses
+auto.components.settings.token.source.control.integration.cards.fbfd237f5e: ORCA_AZURE_DEVOPS_ACCESS_TOKEN
+auto.components.settings.token.source.control.integration.cards.fc71a0e7aa: and
+auto.components.sidebar.AddRepoCreateStep.ssh_parent_manual: Enter an SSH parent path.
+auto.components.sidebar.AddRepoHostSelector.ssh: SSH
+auto.components.sidebar.AddRepoNestedImportStep.b20bb7c24f: Keeps these repos together in one group. Best for related repos like microservices.
+auto.components.sidebar.AddRepoNestedImportStep.e907ec8935: What is a monorepo name?
+auto.components.sidebar.AddRepoRemoteStep.6680289908: /home/user/project
+auto.components.sidebar.AddRepoRemoteStep.lockedDescription: Enter the path to a Git repository on {{value0}}.
+auto.components.sidebar.AddRepoRemoteStep.lockedDisconnected: {{value0}} is disconnected.
+auto.components.sidebar.AddRepoServerStartStep.92d25420a0: /home/user/project
+auto.components.sidebar.AddRepoSteps.b698a4a29d: https://github.com/user/repo.git
+auto.components.sidebar.AddRepoSteps.cloneOnHostDescription: Enter the Git URL and choose where to clone it on {{value0}}.
+auto.components.sidebar.CreateProjectLocationField.2a20a603a3: /home/user/projects
+auto.components.sidebar.HostRemoveDialog.1a2b3c4d5e: Removed {{value0}}
+auto.components.sidebar.HostRemoveDialog.3c4d5e6f7a: Remove {{value0}}?
+auto.components.sidebar.HostRemoveDialog.4d5e6f7a8b: This opens the Orca servers settings where you can remove this server.
+auto.components.sidebar.HostRemoveDialog.5e6f7a8b9c: This removes the saved SSH host and its credentials from this computer. Remote files are not deleted.
+auto.components.sidebar.HostSectionHeaderMenu.3c4d5e6f7a: Manage host…
+auto.components.sidebar.HostSectionHeaderMenu.4f2c8a9b10: Host actions for {{value0}}
+auto.components.sidebar.HostSectionHeaderMenu.7f1a2b3c4d: {{value0}} is reachable
+auto.components.sidebar.HostSectionHeaderMenu.8d1e2f3a4b: Rename…
+auto.components.sidebar.RemoteFileBrowser.largeInputNoMatches: No matches for this long input
+auto.components.sidebar.SidebarFilter.81ded53722: SSH
+auto.components.sidebar.SidebarHostScopeStrip.scopedTo: {{value0}} visible
+auto.components.sidebar.SidebarNav.1b5c41caee: Orca Mobile
+auto.components.sidebar.SidebarNav.9c95e1ce91: Agents
+auto.components.sidebar.SidebarRepositoryFilterSection.2656053db4: SSH
+auto.components.sidebar.SidebarSettingsHelpMenu.5687ab246a: GitHub
+auto.components.sidebar.SidebarSettingsHelpMenu.c4f8e1b72a: X
+auto.components.sidebar.SidebarSettingsHelpMenu.eb9884e55b: Discord
+auto.components.sidebar.SidebarWorkspaceOptionsMenu.0f9b959b31: PR
+auto.components.sidebar.SidebarWorkspaceOptionsMenu.automation: Automation
+auto.components.sidebar.SidebarWorkspaceOptionsMenu.c7591b6014: repo
+auto.components.sidebar.SshDisconnectedDialog.reconnecting: Reconnecting to the remote host...
+auto.components.sidebar.WorktreeCard.automationCreated: Created by automation
+auto.components.sidebar.WorktreeCard.runtimeHostDisconnected: Server disconnected
+auto.components.sidebar.WorktreeCard.runtimeHostProject: Project on Orca server
+auto.components.sidebar.WorktreeCardAgents.1b0a156717: Agents
+auto.components.sidebar.WorktreeCardMeta.5e982e6128: Linear {{value0}}
+auto.components.sidebar.WorktreeCardMetadataStatusBadges.29df45afa2: MR
+auto.components.sidebar.WorktreeCardReviewDetailSection.reviewHeader: {{value0}} #{{value1}}
+auto.components.sidebar.WorktreeList.2ca6e29a3c: repo
+auto.components.sidebar.WorktreeList.7a8b9c0d1e: Update required
+auto.components.sidebar.WorktreeList.b667b59632: Some projects could not be removed from Orca
+auto.components.sidebar.WorktreeList.ebadb7eadb: {{value0}} {{value1}} child {{value2}}
+auto.components.sidebar.WorktreeList.f94466bc39: {{value0}} of {{value1}} contained project{{value2}} remained after deleting the group.
+auto.components.sidebar.WorktreeList.groupDeleteFailed: Failed to delete group
+auto.components.sidebar.WorktreeList.groupDeleteFailedDesc: Something went wrong while deleting the group. No projects were removed.
+auto.components.sidebar.WorktreeList.hostAuthNeeded: Authentication needed
+auto.components.sidebar.WorktreeList.hostDisconnected: Disconnected
+auto.components.sidebar.add.repo.local.start.actions.runtimeBrowseDescription: Existing Git repository or folder on this host
+auto.components.sidebar.add.repo.local.start.actions.sshBrowseDescription: Existing Git repository or folder on this SSH host
+auto.components.sidebar.add.repo.local.start.actions.sshBrowseTitle: Open project on SSH host
+auto.components.sidebar.add.repo.local.start.actions.sshCreateUnavailable: Not available for SSH hosts yet
+auto.components.sidebar.local.base.ref.suggestion.toast.commit: commit
+auto.components.sidebar.local.base.ref.suggestion.toast.commits: commits
+auto.components.sidebar.sidebarHostOptions.visibleHostsCount: {{value0}} hosts
+auto.components.sidebar.workspace.status.1b81da243a: Violet
+auto.components.sidebar.workspace.status.2c19d1db33: Play
+auto.components.sidebar.workspace.status.52e3c6e2a4: Neutral
+auto.components.sidebar.workspace.status.6380517b10: Flag
+auto.components.sidebar.workspace.status.6437a8c253: Sky
+auto.components.sidebar.workspace.status.7adb43ecf0: Rose
+auto.components.sidebar.workspace.status.7cebab6d4a: Amber
+auto.components.sidebar.workspace.status.caabd5ca85: Zinc
+auto.components.sidebar.workspace.status.ddf25b6262: Emerald
+auto.components.sidebar.workspace.status.fc3b92756c: Blue
+auto.components.skills.SkillsPage.426be2aac6: Codex
+auto.components.skills.SkillsPage.fb6bf60b52: Claude
+auto.components.star.nag.StarNagToastHost.body: If you’re enjoying Orca so far, a GitHub star helps other developers discover it.
+auto.components.star.nag.StarNagToastHost.dismiss: Dismiss
+auto.components.star.nag.StarNagToastHost.githubOpened: GitHub opened
+auto.components.star.nag.StarNagToastHost.later: Later
+auto.components.star.nag.StarNagToastHost.onboardingCompleted: Onboarding completed!
+auto.components.star.nag.StarNagToastHost.openGithub: Open GitHub
+auto.components.star.nag.StarNagToastHost.opening: Opening…
+auto.components.star.nag.StarNagToastHost.starOnGithub: Star on GitHub
+auto.components.star.nag.StarNagToastHost.starredThanks: Starred — thank you!
+auto.components.star.nag.StarNagToastHost.starring: Starring…
+auto.components.stats.ShareUsageCard.0eb31e79ee: Orca IDE
+auto.components.stats.StatsPane.1e696db2f6: OpenCode
+auto.components.stats.StatsPane.7d26110cea: Codex
+auto.components.stats.StatsPane.85457c02fe: Claude
+auto.components.stats.StatsPane.908c470587: codex
+auto.components.stats.StatsPane.eb6a066185: claude
+auto.components.stats.StatsPane.eee19cfade: overview
+auto.components.stats.UsageBreakdownSection.247c93ca92: • inferred pricing
+auto.components.stats.UsageBreakdownSection.7765a4c3e1: n/a
+auto.components.stats.UsageSessionsTable.01476891c7: Last active
+auto.components.stats.UsageSessionsTable.0f03975d59: Events
+auto.components.stats.UsageSessionsTable.1afc25eb06: Turns
+auto.components.stats.UsageSessionsTable.21ea00bfa8: Cache
+auto.components.stats.UsageSessionsTable.a8b7487ff7: Output
+auto.components.stats.UsageSessionsTable.c17bed0416: Project
+auto.components.stats.UsageSessionsTable.cfe2282ffa: Unknown
+auto.components.stats.UsageSessionsTable.e0b988599d: Total
+auto.components.stats.UsageSessionsTable.f6a2c8d019: Model
+auto.components.stats.UsageSessionsTable.faf3444859: Input
+auto.components.stats.share.card.utils.19f4b4dc75: github.com/stablyai/orca
+auto.components.stats.stats.search.6953af58e6: opencode
+auto.components.stats.stats.search.b77826fca3: codex
+auto.components.stats.stats.search.ce8533f02e: agents
+auto.components.stats.stats.search.e9dc37d889: claude
+auto.components.stats.usage.overview.model.544d6d4c16: Claude
+auto.components.stats.usage.overview.model.bc474051e5: OpenCode
+auto.components.stats.usage.overview.model.eb220d193b: Codex
+auto.components.status.bar.ResourceUsageStatusSegment.288a4dd177: Orca
+auto.components.status.bar.StatusBar.2483c60695: ···
+auto.components.status.bar.StatusBar.25d8bbde69: Using reset…
+auto.components.status.bar.StatusBar.3d79122c3f: kimi
+auto.components.status.bar.StatusBar.4dff061aab: ·
+auto.components.status.bar.StatusBar.5e5f9f5160: 1 rate-limit reset available
+auto.components.status.bar.StatusBar.5ecae9197c: {{value0}} rate-limit resets available
+auto.components.status.bar.StatusBar.68efc0345c: gemini
+auto.components.status.bar.StatusBar.6d1042aa6f: This uses one Codex rate-limit reset credit for the active account and resets any eligible usage windows immediately.
+auto.components.status.bar.StatusBar.76b06d4da5: claude
+auto.components.status.bar.StatusBar.972a1ff497: Reset Codex limits?
+auto.components.status.bar.StatusBar.c0e972d726: Cancel
+auto.components.status.bar.StatusBar.d7a0668acc: opencode-go
+auto.components.status.bar.StatusBar.e159fc1fd7: Reset now
+auto.components.status.bar.StatusBar.f077f586db: Don't ask again
+auto.components.status.bar.WorkspaceSpaceManagerPanel.a8d9e0de79: Agents
+auto.components.status.bar.WorkspaceSpaceManagerPanel.e9528a89b3: Terminals
+auto.components.status.bar.tooltip.0d8d7cfe15: Waiting for Claude session
+auto.components.status.bar.tooltip.1804cd8c3f: Refreshing sign-in
+auto.components.status.bar.tooltip.20ad66aed1: Expires in {{value0}}
+auto.components.status.bar.tooltip.3d3c9c0c1f: Claude usage will refresh after the live Claude terminal rotates its credentials.
+auto.components.status.bar.tooltip.42fdd4da1d: Claude sign-in is being refreshed. Agent sessions may still be signed in.
+auto.components.status.bar.tooltip.45198c7d95: 1 rate-limit reset available
+auto.components.status.bar.tooltip.6cf9eaed10: Next expires in {{value0}}
+auto.components.status.bar.tooltip.7ec6e030a0: Next expires now
+auto.components.status.bar.tooltip.a7517cccb6: Claude usage is unavailable right now.
+auto.components.status.bar.tooltip.bce421cba3: {{value0}} rate-limit resets available
+auto.components.status.bar.tooltip.bf2e739f18: Sign-in unavailable
+auto.components.status.bar.tooltip.c06c1d215d: Claude usage could not be refreshed because the network request failed.
+auto.components.status.bar.tooltip.cabdc2a9e0: Claude sign-in credentials could not be read.
+auto.components.status.bar.tooltip.d1e442a9e5: Expires now
+auto.components.status.bar.tooltip.f8b8dbed85: Usage unavailable
+auto.components.status.bar.tooltip.f8f0f9d8cc: Network issue
+auto.components.tab.bar.SortableTabContextMenu.cb3eadefd2: Blue
+auto.components.tab.bar.TabBar.2148f65e04: PowerShell
+auto.components.tab.bar.TabBar.d1afac112b: WSL
+auto.components.tab.bar.TabBarQuickCommandsButton.c781f992e4: destructive
+auto.components.tab.bar.shell.icons.e9b2e70613: WSL
+auto.components.tab.bar.tab.create.menu.options.44caaf7b36: md
+auto.components.tab.bar.tab.create.menu.options.5501c2fb7a: terminal
+auto.components.tab.bar.tab.create.menu.options.5f17fb9d0c: markdown
+auto.components.tab.bar.tab.create.menu.options.9630dd5494: shell
+auto.components.tab.group.TabGroupPanel.586d2ac445: terminal
+auto.components.task.project.source.combobox.allProjects: All projects
+auto.components.task.project.source.combobox.hostCount: {{value0}} hosts
+auto.components.task.project.source.combobox.noMatches: No projects match your search.
+auto.components.task.project.source.combobox.noProjects: No projects
+auto.components.task.project.source.combobox.searchProjects: Search projects...
+auto.components.taskPageEmptyState.changeQueryDescription: Change the query or clear it.
+auto.components.taskPageEmptyState.noGitLabIssuesDescription: No GitLab issues match this filter.
+auto.components.taskPageEmptyState.noGitLabIssuesTitle: No GitLab issues
+auto.components.taskPageEmptyState.noGitLabMrsDescription: No GitLab MRs match this filter.
+auto.components.taskPageEmptyState.noGitLabMrsTitle: No GitLab merge requests
+auto.components.taskPageEmptyState.noGitLabWorkDescription: No GitLab work matches this filter.
+auto.components.taskPageEmptyState.noGitLabWorkTitle: No GitLab work
+auto.components.taskPageEmptyState.noMatchingGitHubWorkTitle: No matching GitHub work
+auto.components.taskPageEmptyState.noProjectSourcesDescription: Select at least one project source so Orca knows which host/account to fetch tasks from.
+auto.components.taskPageEmptyState.noProjectSourcesTitle: No project sources selected
+auto.components.taskSourceContextSummary.reconnectOrUpdateTitle: Reconnect or update {{value0}} to load this source.
+auto.components.taskSourceContextSummary.someSourceHostsUnavailable: Some {{value0}} source hosts unavailable: {{value1}}
+auto.components.taskSourceContextSummary.sourceUnavailable: {{value0}} source unavailable: {{value1}}
+auto.components.terminal.quick.commands.TerminalQuickCommandDialog.0adba8fa0c: Agent
+auto.components.terminal.quick.commands.TerminalQuickCommandDialog.79af0c0841: npm run dev
+auto.components.terminal.quick.commands.TerminalQuickCommandScopeField.f0631e4999: repo
+auto.components.ui.repo.multi.combobox.286ce70256: SSH
+auto.components.workspace.cleanup.WorkspaceCleanupDialog.0b1766738a: Repo
+auto.hooks.useSettingsNavigationMetadata.a9fb10afca: Terminal
+auto.hooks.useSettingsNavigationMetadata.b49abbd2f7: Agents
+auto.i18n.hostedReview.copy.91b5c8d7e6: GitLab
+auto.i18n.hostedReview.copy.c4e8f1a2b9: MR
+auto.i18n.hostedReview.copy.c7d1e5f9a8: GitHub
+auto.i18n.hostedReview.copy.f0a4b8c2d1: PR
+auto.lib.agent.catalog.0708ed89f1: Claude
+auto.lib.agent.catalog.09973b4d84: OMP
+auto.lib.agent.catalog.0baad2d5d2: Grok
+auto.lib.agent.catalog.12e6baa4f7: Gemini
+auto.lib.agent.catalog.1f8a19e9ad: Autohand Code
+auto.lib.agent.catalog.28810273af: Kimi
+auto.lib.agent.catalog.302934c5d9: Pi
+auto.lib.agent.catalog.4238b771b5: Codebuff
+auto.lib.agent.catalog.4e63c7b956: Rovo Dev
+auto.lib.agent.catalog.5dff448636: OpenClaw
+auto.lib.agent.catalog.5e8eff11b3: Auggie
+auto.lib.agent.catalog.667c104cff: Cursor
+auto.lib.agent.catalog.691dd11789: Antigravity
+auto.lib.agent.catalog.6f8056a565: Command Code
+auto.lib.agent.catalog.706b0fe68b: GitHub Copilot
+auto.lib.agent.catalog.739a930554: Droid
+auto.lib.agent.catalog.760bc6883d: Codex
+auto.lib.agent.catalog.8a9ba743cc: Hermes
+auto.lib.agent.catalog.8da11d876c: Goose
+auto.lib.agent.catalog.918ba4ffed: Kilocode
+auto.lib.agent.catalog.9477377a2a: Charm
+auto.lib.agent.catalog.9e2a9bb87b: Continue
+auto.lib.agent.catalog.a5fc0cb622: OpenClaude
+auto.lib.agent.catalog.b32627f09b: Aider
+auto.lib.agent.catalog.bee242fe3d: Qwen Code
+auto.lib.agent.catalog.bf53f09bf8: Claude Agent Teams
+auto.lib.agent.catalog.c73c573939: Amp
+auto.lib.agent.catalog.ca73055bd0: Mistral Vibe
+auto.lib.agent.catalog.cbaf0c2e0b: Cline
+auto.lib.agent.catalog.da41abbdd4: Ante
+auto.lib.agent.catalog.e0247254f2: Kiro
+auto.lib.agent.catalog.e7a4ca5103: OpenCode
+auto.lib.agent.catalog.fc80296033: Devin
+auto.lib.open.in.app.catalog.173553f73a: VS Code
+auto.lib.open.in.app.catalog.d62b12e98a: Cursor
+auto.lib.open.in.app.catalog.f8b8ca2711: Zed
+auto.lib.worktree.palette.search.ca40ffcbec: PR
+auto.store.slices.store.test.helpers.b9a8117c33: Terminal 1
+auto.web.WebConnect.27393856e4: orca://pair?code=...
+auto.web.web.runtime.environment.07f788de83: WebSocket
+settings.appearance.language.chinese: 中文（简体）
+settings.appearance.language.english: English
+settings.appearance.language.japanese: 日本語
+settings.appearance.language.korean: 한국어
+settings.appearance.language.spanish: Español
+worktreeJumpPalette.matchLabel.pr: PR

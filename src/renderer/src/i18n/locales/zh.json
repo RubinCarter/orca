@@ -752,7 +752,7 @@
         "5664681624": "显示上面的更多行",
         "b1574e8ac2": "重置代码上下文",
         "d43736d09c": "代码上下文控制",
-        "bd7be7b1fd": "comment L",
+        "bd7be7b1fd": "评论 L",
         "db61d76cd5": "正在加载代码上下文...",
         "f2d02cdf8c": "已查看文件",
         "1257d1435d": "显示文件树",
@@ -1095,7 +1095,7 @@
         "cloneHostSetup": "克隆",
         "importExistingFolderOnHost": "导入现有文件夹",
         "setupHostExistingFolderPlaceholder": "/path/to/project/on/host",
-        "setupKindGit": "Git repo",
+        "setupKindGit": "Git 仓库",
         "setupKindFolder": "文件夹",
         "setupHostExistingFolderHelp": "链接已存在的检出目录，然后在该主机上创建此工作区。",
         "importingHostSetup": "导入中...",
@@ -1207,7 +1207,7 @@
         "c9de94b07a": "显示上面的更多行",
         "5f3e293517": "重置代码上下文",
         "85d119be40": "代码上下文控制",
-        "791ddede19": "comment L",
+        "791ddede19": "评论 L",
         "4b960e5978": "正在加载代码上下文...",
         "89e80af1c7": "已查看文件",
         "319cf2d54b": "显示文件树",
@@ -1602,7 +1602,7 @@
         "fe28c9821f": "视图",
         "8d1e17a3ef": "在 GitHub 中打开 {{value0}}",
         "4ac8ff2275": "在 Jira 中打开 {{value0}}",
-        "40eaf2c27c": "Details"
+        "40eaf2c27c": "详情"
       },
       "Terminal": {
         "73768427cf": "关闭",
@@ -1619,8 +1619,8 @@
         "46e08bc5c8": "该文件有未保存的更改。",
         "61ed600d29": "“{{value0}}”有未保存的更改。您想在关闭前保存吗？",
         "cdc9ac4b2d": "编辑",
-        "e57db40c11": "Could not build launch command for {{value0}}.",
-        "5b2c1a9e44": "No agent CLI detected — install one or pick a default agent in Settings."
+        "e57db40c11": "无法为 {{value0}} 构建启动命令。",
+        "5b2c1a9e44": "未检测到 Agent CLI — 请安装一个或在设置中选择默认 Agent。"
       },
       "TerminalSearch": {
         "db234b7519": "关闭",
@@ -1783,7 +1783,7 @@
             "2e26a06c70": "添加标签",
             "36341ffc66": "分配",
             "e369bf4fec": "选择",
-            "ffeff79861": "PULL_REQUEST"
+            "ffeff79861": "拉取请求"
           },
           "ProjectGroupHeader": {
             "82a22d2079": "当前",
@@ -1819,7 +1819,7 @@
           "ProjectRow": {
             "75b5d816e3": "开始工作",
             "e12be8b4d4": "在 GitHub 中打开",
-            "c3b81ddea2": "DRAFT_ISSUE"
+            "c3b81ddea2": "草稿议题"
           },
           "ProjectViewList": {
             "989f81dc2a": "专栏",
@@ -2150,7 +2150,7 @@
             "a9957007eb": "忽略 {{value0}}",
             "1bffc07ba7": "查看{{value0}}",
             "bef0adef9b": "分支",
-            "0b1766738a": "Repo",
+            "0b1766738a": "仓库",
             "bbb1ab6a6f": "选择{{value0}}",
             "d1094dd529": "待评审",
             "4b93a235d8": "建议",
@@ -2958,7 +2958,7 @@
           "61c58f8976": "缓存读取",
           "7d2efeff5e": "输出",
           "d7fb787e6b": "输入",
-          "a7902d3c1d": "Token",
+          "a7902d3c1d": "令牌",
           "059945f71d": "按天汇总的输入、输出、缓存读取和缓存写入。",
           "c9f7cd30e9": "每日使用量"
         },
@@ -3012,7 +3012,7 @@
           "c646e1783c": "缓存输入",
           "7b596a88b2": "输出",
           "99a91d3143": "输入",
-          "e4bdcf0071": "Token",
+          "e4bdcf0071": "令牌",
           "c756cda6a8": "按天汇总的输入、缓存输入、输出和推理。",
           "609aa96e8b": "每日使用量"
         },
@@ -3174,7 +3174,7 @@
         "stats": {
           "search": {
             "cb6a9f0334": "缓存",
-            "eaf251e183": "Token",
+            "eaf251e183": "令牌",
             "6953af58e6": "opencode",
             "b77826fca3": "codex",
             "e9dc37d889": "claude",
@@ -3214,7 +3214,7 @@
               "7f270458af": "输出",
               "9365b14a4e": "新输入",
               "3de9bf87fc": "还没有型号",
-              "6762f6a682": "Token",
+              "6762f6a682": "令牌",
               "a7f937fb29": "{{value0}} 个会话 - {{value1}} {{value2}}",
               "c8f3a2d1e0b4": "轮次",
               "d9a4b3e2f1c5": "事件"
@@ -3234,7 +3234,7 @@
           "c17bed0416": "Project",
           "f6a2c8d019": "Model",
           "faf3444859": "Input",
-          "a8b7487ff7": "Output",
+          "a8b7487ff7": "输出",
           "cfe2282ffa": "Unknown"
         }
       },
@@ -3806,7 +3806,7 @@
           "3e65e11cc6": "工作区元数据",
           "c7fa72ead0": "编辑笔记",
           "93cbea12c2": "笔记",
-          "eace1d2cf6": "Neutral",
+          "eace1d2cf6": "中性",
           "dbe2d18972": "更多 {{value0}} 操作",
           "ae76907ca6": "取消链接 {{value0}}",
           "ad25c3ff05": "在 {{value0}} 上查看",
@@ -4093,8 +4093,8 @@
             "7cebab6d4a": "Amber",
             "1b81da243a": "Violet",
             "6437a8c253": "Sky",
-            "fc3b92756c": "Blue",
-            "52e3c6e2a4": "Neutral"
+            "fc3b92756c": "蓝色",
+            "52e3c6e2a4": "中性"
           }
         },
         "worktree": {
@@ -4140,8 +4140,8 @@
                   "3d260e1a5d": "设置 › {{value0}}",
                   "34a03a6565": "保持 {{value0}} 最新",
                   "4a18052018": "本地 {{value0}} 落后于 {{value1}}",
-                  "commit": "commit",
-                  "commits": "commits"
+                  "commit": "提交",
+                  "commits": "提交"
                 }
               }
             }
@@ -4740,7 +4740,7 @@
           "4ec89c319e": "agent",
           "34d0348e34": "产生",
           "8cd2be0948": "信息",
-          "ca433708cb": "commit",
+          "ca433708cb": "提交",
           "0b7eafe55f": "AI",
           "2c5436c018": "打开",
           "6c84ba6de3": "模板",
@@ -4946,7 +4946,7 @@
           "31fd7150cf": "正在检查更新...",
           "3394d1f663": "检查中",
           "d69a09b672": "启动时会自动检查更新。",
-          "7173352632": "idle"
+          "7173352632": "空闲"
         },
         "GeneralWorkspaceSettingsSection": {
           "3d538a98f7": "从工作区的“打开方式”菜单中选择可用的应用程序。",
@@ -5565,7 +5565,7 @@
           "hostSetupStateError": "错误",
           "hostSetupStateUnsupported": "不支持",
           "setupPathPending": "路径待定",
-          "openSetup": "Open",
+          "openSetup": "打开",
           "removeSetup": "Remove",
           "hostSetupBlockedVersion": "Orca 服务器版本不兼容",
           "hostSetupMissingCapability": "在此主机上更新 Orca 以设置项目",
@@ -5576,13 +5576,13 @@
           "setupExistingFolderPathPlaceholder": "/path/to/project/on/host",
           "cloneUrlPlaceholder": "仓库 URL",
           "cloneDestinationPlaceholder": "/destination/on/host",
-          "setupKindGit": "Git repo",
+          "setupKindGit": "Git 仓库",
           "setupKindFolder": "文件夹",
           "settingUpHost": "导入中...",
           "setupHost": "导入",
           "cloningHost": "克隆中...",
           "cloneHost": "克隆",
-          "creatingPendingSetup": "Creating...",
+          "creatingPendingSetup": "正在创建...",
           "createPendingSetup": "跟踪设置",
           "hostSetupCheckingCapability": "检查主机能力",
           "hostAvailability": "主机可用性",
@@ -5921,7 +5921,7 @@
           "9d3cc627f8": "已保存",
           "817128d94e": "未保存的更改",
           "7ab1437a12": "PR",
-          "e5b24893ba": "commit",
+          "e5b24893ba": "提交",
           "06a9dab64d": "检查",
           "cb67b938c5": "修复",
           "2037c78a6f": "模板",
@@ -6204,7 +6204,19 @@
           "ab20575a8a": "关",
           "ab3a1f9068": "执行程序",
           "ask_before_closing_running_terminals_title": "关闭运行中的 Terminal 前询问",
-          "ask_before_closing_running_terminals_description": "在关闭有运行中命令或 agent 的 terminal 前显示确认。"
+          "ask_before_closing_running_terminals_description": "在关闭有运行中命令或 agent 的 terminal 前显示确认。",
+          "scrollSpeed": {
+            "title": "滚动速度",
+            "description": "调整终端回滚、快速修饰键滚动和全屏 TUI 滚轮速度。",
+            "helper": "调整滚轮在回滚和鼠标感知终端应用中的感觉。",
+            "reset": "重置",
+            "normal": "正常",
+            "normalDescription": "回滚滚轮乘数。",
+            "fast": "快速",
+            "fastDescription": "使用修饰键滚动时的额外乘数。",
+            "tui": "TUI",
+            "tuiDescription": "全屏终端应用的离散滚轮报告。"
+          }
         },
         "TerminalSettingsPreview": {
           "a63953a48a": "预览 {{value0}} 主题",
@@ -6593,7 +6605,7 @@
             "c927a155d5": "在状态栏中显示 Kimi 订阅使用情况。",
             "3a6c028ea8": "基米用法",
             "edbf0f63a0": "成本",
-            "afbb6a3767": "Token",
+            "afbb6a3767": "令牌",
             "d77537b580": "opencode-go",
             "a9d56852eb": "opencode",
             "7f72de7cbe": "在状态栏中显示 OpenCode Go Token 和成本使用情况。",
@@ -6693,7 +6705,7 @@
             "072b7f5c1f": "默认缩放",
             "0bb34eacc9": "询问",
             "8b8ed06e4b": "多功能框",
-            "3538b3aaeb": "Token",
+            "3538b3aaeb": "令牌",
             "0732ebe6fb": "私人的",
             "e1c2a57f07": "卡吉",
             "ad40e75d13": "冰",
@@ -6766,7 +6778,7 @@
                 "001ca3f2af": "创建 PR 编辑器打开时使用的默认值。",
                 "eefd33788c": "PR 创建默认值",
                 "d32936bb2a": "分支",
-                "127d512e75": "commit",
+                "127d512e75": "提交",
                 "d22a6459e4": "冲突",
                 "53e8504fb2": "ci",
                 "c46e665f7e": "检查",
@@ -6959,7 +6971,7 @@
             "8ea37a05bc": "agent",
             "e2da948f59": "在新工作区编辑器中预先选择 AI 编码 Agent。",
             "db11502270": "默认 Agent",
-            "3462308bd3": "Token",
+            "3462308bd3": "令牌",
             "660528b048": "成本",
             "585beac3f8": "TTL",
             "0efc9d96ad": "提示词",
@@ -7348,7 +7360,7 @@
             "d3f1c48677": "当后台 terminal 发出响铃字符时发出通知。",
             "a5edee1d99": "Terminal 响铃",
             "193e1f107c": "任务",
-            "dd9d3e5f0f": "idle",
+            "dd9d3e5f0f": "空闲",
             "5f7472d3fb": "完全的",
             "7fa07e9600": "agent",
             "10d83ef8dc": "当编码 Agent 从工作状态转换为空闲状态时发出通知。",
@@ -7550,7 +7562,7 @@
             "keepForkUpToDateDescription": "从 upstream 安全地快进此 Fork。",
             "projectRuntime": "项目运行时",
             "projectRuntimeDescription": "选择此项目运行在 Windows 还是 WSL。",
-            "copy": "copy",
+            "copy": "复制",
             "clone": "clone",
             "apfs": "apfs"
           }
@@ -7840,7 +7852,11 @@
               "keyword_custom": "自定义"
             },
             "ask_before_closing_running_terminals_title": "关闭运行中的 Terminal 前询问",
-            "ask_before_closing_running_terminals_description": "在关闭有运行中命令或 agent 的 terminal 前显示确认。"
+            "ask_before_closing_running_terminals_description": "在关闭有运行中命令或 agent 的 terminal 前显示确认。",
+            "scrollSpeed": {
+              "title": "滚动速度",
+              "description": "调整终端回滚、快速修饰键滚动和全屏 TUI 滚轮速度。"
+            }
           },
           "windows": {
             "search": {
@@ -8097,7 +8113,7 @@
           "checkingTitle": "正在检查计算机控制访问权限。",
           "checkingDescription": "Orca 正在检查计算机控制助手的 macOS 隐私权限。",
           "unavailableTitle": "计算机控制不可用。",
-          "unavailableDescription": "Computer Use permissions are unavailable because {{value0}}.",
+          "unavailableDescription": "计算机使用权限不可用，因为 {{value0}}。",
           "readyTitle": "计算机控制已就绪。",
           "readyDescription": "当你要求时，Agent 可以检查并操作应用窗口。",
           "permissionsTitle": "完成设置以使用本地应用。"
@@ -8374,10 +8390,10 @@
             "d0fb0f4bf2": "刷新 commits",
             "9f7535d22b": "引用是指向该确切 commit 的分支或标记名称。它们仅出现在 Git 具有 commit 的命名引用的地方。",
             "9289ba0cb9": "什么是参考文献？",
-            "d836037d02": "Commits",
+            "d836037d02": "提交",
             "8232c8b2f2": "打开 commit {{value0}}: {{value1}}",
             "9a8b85882d": "加载中",
-            "62e685d5ec": "idle",
+            "62e685d5ec": "空闲",
             "111e1d0db4": "错误",
             "e5e81e59a6": "调整 commits 大小",
             "6d1e0a7c3b": "无法加载提交文件"
@@ -8718,15 +8734,15 @@
             "b99c33cec5": "设置",
             "15c5d85706": "Agent",
             "3e8f21954f": "错误",
-            "74168d7ada": "idle",
+            "74168d7ada": "空闲",
             "1d47db9bf0": "没有启用 Agent",
             "c7ff8cef11": "检测剂...",
             "013c9ac04a": "保存范围",
             "1bb611240f": "Use {basePrompt} for Orca's default prompt.",
             "23280cbab1": "This template does not include {basePrompt}, so the agent will not receive Orca's default prompt.",
             "5421a96acb": "保存并启动 Agent",
-            "6cefcdfba1": "You can change it later in Source Control AI settings.",
-            "c29f9cf266": "Save this prompt and don't show this review next time",
+            "6cefcdfba1": "您可以稍后在源代码控制 AI 设置中更改它。",
+            "c29f9cf266": "保存此提示，下次不再显示此审阅",
             "d8f40128ee": "{basePrompt} is Orca's default prompt.",
             "ea4788705e": "取消",
             "b0da3a4d3e": "启动配方已保存",
@@ -8753,7 +8769,7 @@
             "bar": {
               "buttons": {
                 "1fd284e931": "更多侧边栏选项卡",
-                "f1132ea95d": "Neutral"
+                "f1132ea95d": "中性"
               }
             }
           },
@@ -8814,7 +8830,7 @@
                 "b652f38caf": "检查失败",
                 "87cd07c69a": "该分支存在必须解决的冲突",
                 "0975eeaaef": "冲突的文件",
-                "6fa7f8723f": "commit",
+                "6fa7f8723f": "提交",
                 "2b2be92919": "添加评论",
                 "7440d09d2c": "开始对话",
                 "b37ebdc51c": "无法发表评论。",
@@ -8830,8 +8846,8 @@
                 "f5bc5c4cf1": "The hosting provider reports conflicts, but local Git did not reproduce them. Refresh the review or push the branch to recalculate mergeability.",
                 "5bc9bda2af": "Run from this worktree",
                 "e87fb3d929": "Copy mergeability refresh commands",
-                "1e53e45072": "Copied",
-                "084c516efb": "Copy commands",
+                "1e53e45072": "已复制",
+                "084c516efb": "复制命令",
                 "5dc3af25c0": "选择评论",
                 "d7a2f9c401": "Send unresolved {{value0}} comments",
                 "d91f2a6c39": "发送 {{value0}} 条已排队评论给 AI",
@@ -8841,13 +8857,13 @@
                 "b8c4e2a1f7": "View full logs",
                 "f8a2c91d04": "Queue for agent",
                 "b4e8a1c902": "Queued",
-                "7c1f0a2b11": "Open",
+                "7c1f0a2b11": "打开",
                 "e8b4c1a903": "Resolved · {{value0}}",
                 "c3a8e5d710": "Needs review · {{value0}}",
                 "a7f0c7e8d1": "Queue",
                 "8a621a2c4f": "Grouped",
                 "b13f85d75c": "Timeline",
-                "f5cf324efa": "Comment display options",
+                "f5cf324efa": "评论显示选项",
                 "5e6e5a13fa": "View"
               },
               "empty": {
@@ -8976,13 +8992,13 @@
                   "9e779995dd": "创建 {{value0}}",
                   "226b85a3a7": "fetch",
                   "323bb614aa": "Commit 并同步",
-                  "2b8e6595fd": "Commit",
+                  "2b8e6595fd": "提交",
                   "04d709801d": "Fetch from remote without merging"
                 }
               },
               "primary": {
                 "action": {
-                  "ed93b4f14f": "Commit",
+                  "ed93b4f14f": "提交",
                   "946a8a05ea": "为此分支创建 {{value0}}",
                   "e7ffa46946": "创建 {{value0}}",
                   "95550cff15": "推",
@@ -9013,15 +9029,15 @@
                   "b8e4f2a901": "Wait for the remote operation to finish.",
                   "c9f3a1b802": "Resolve conflicts before creating a {{value0}}.",
                   "d2a8c4e703": "No changes on this branch to include in a {{value0}}.",
-                  "e3b9d5f814": "Cannot create a {{value0}} from the default branch.",
-                  "f4c0e6a925": "Commit changes before creating a {{value0}}.",
+                  "e3b9d5f814": "无法从默认分支创建 {{value0}}。",
+                  "f4c0e6a925": "在创建 {{value0}} 前提交更改。",
                   "a5d1f7b036": "Publish commits before creating a {{value0}}.",
                   "b6e2a8c147": "Push commits before creating a {{value0}}.",
                   "c7f3b9d258": "Sync this branch before creating a {{value0}}.",
                   "d8a4c0e369": "Authenticate before creating a {{value0}}.",
-                  "e9b5d1f470": "Check out a branch before creating a {{value0}}.",
+                  "e9b5d1f470": "在创建 {{value0}} 前检出分支。",
                   "f0c6e2a581": "This branch is not ready for a {{value0}} yet.",
-                  "h3i4j5k607": "Checking whether this branch can create a {{value0}}…"
+                  "h3i4j5k607": "正在检查此分支能否创建 {{value0}}…"
                 }
               }
             }
@@ -9070,11 +9086,11 @@
             }
           },
           "AiVaultPanel": {
-            "resumeCommandCopied": "Resume command copied",
+            "resumeCommandCopied": "恢复命令已复制",
             "valueCopied": "{{value0}} copied",
             "valueCopyFailed": "无法复制 {{value0}}",
-            "openWorkspaceBeforeResuming": "Open a workspace before resuming a session.",
-            "localWorkspacesOnly": "Resume from history is only available in local workspaces.",
+            "openWorkspaceBeforeResuming": "在恢复会话前打开工作区。",
+            "localWorkspacesOnly": "从历史记录恢复仅在本地工作区可用。",
             "agentSessionQueued": "{{value0}} 会话已排队",
             "sessionHistory": "Agent 会话历史",
             "shownRecent": "已显示 {{value0}} 项 · 最近 {{value1}} 项",
@@ -9225,9 +9241,9 @@
                 "title": "Pull needs a policy",
                 "diverged": "Diverged",
                 "body": "This branch has local and remote commits. Run one command in this worktree or on the SSH host, then try Pull or Sync again.",
-                "copyAria": "Copy {{value0}} pull policy command",
-                "copied": "Copied",
-                "copyCommand": "Copy command"
+                "copyAria": "复制 {{value0}} 拉取策略命令",
+                "copied": "已复制",
+                "copyCommand": "复制命令"
               }
             }
           }
@@ -9300,9 +9316,9 @@
           "1eee1c7bd8": "PATH 中未检测到 agents。可选择一个稍后安装，或使用空白 terminal 继续。",
           "hideAgents": "隐藏 Agent",
           "showMoreAgents": "显示另外 {{value0}} 个 Agent→",
-          "yoloPermissionsLabel": "Yolo / Dangerously skip permissions",
-          "yoloPermissionsInfo": "Agent permission info",
-          "yoloPermissionsTooltip": "Skip permission checks for agents for less interruptions"
+          "yoloPermissionsLabel": "Yolo / 危险地跳过权限",
+          "yoloPermissionsInfo": "Agent 权限信息",
+          "yoloPermissionsTooltip": "跳过 Agent 权限检查以减少中断"
         },
         "FeatureSetupChecklist": {
           "77f74946f5": "Agent 可互相通信、领取任务并协调交接。",
@@ -9375,8 +9391,8 @@
           "322fc50a18": "Orca 支持所有 CLI Agent。选择你最常用的一个，随时可切换。",
           "198b148b3c": "选择默认 Agent",
           "a5e5da02f7": "集成",
-          "35bbaf5ae0": "notifications",
-          "984338477a": "theme",
+          "35bbaf5ae0": "通知",
+          "984338477a": "主题",
           "c47e1bd149": "智能体",
           "windowsTerminalTitle": "设置 Windows 终端默认值",
           "windowsTerminalSubtitle": "为新面板选择默认 Shell，以及终端中右键单击的行为。"
@@ -9536,12 +9552,12 @@
             "workspaceName": "工作区名称"
           },
           "ProjectHostSetupCombobox": {
-            "empty": "No hosts are ready for this project.",
-            "placeholder": "Choose host"
+            "empty": "此项目没有准备好的主机。",
+            "placeholder": "选择主机"
           },
           "ProjectCombobox": {
-            "search": "Search projects...",
-            "empty": "No projects match your search."
+            "search": "搜索项目...",
+            "empty": "没有匹配的项目。"
           }
         }
       },
@@ -9683,7 +9699,7 @@
           "WorktreeListSlide": {
             "357a519567": "当前",
             "79a24ff530": "已固定",
-            "22971156df": "Repo",
+            "22971156df": "仓库",
             "17f9e0d226": "最近的",
             "0e3e809a4b": "筛选",
             "b4271864bd": "MacBook Pro",
@@ -9706,7 +9722,7 @@
                 "ea8ad0bae8": "的",
                 "0a891e8935": "REST API",
                 "953f7c6062": "此 GitLab 主机未返回速率限制标头。",
-                "budget_scope_prefix": "Budget scope"
+                "budget_scope_prefix": "预算范围"
               }
             }
           }
@@ -9762,7 +9778,7 @@
             "82da3701e7": "无法为 {{value0}} 构建启动命令。",
             "109870e023": "最大化",
             "b5686fee1e": "恢复",
-            "1e502f1284": "Open"
+            "1e502f1284": "打开"
           }
         }
       },
@@ -9887,10 +9903,10 @@
             "56a0271428": "独立的工作区",
             "ef737dcee1": "GitHub 和 Linear 任务",
             "ac51c061e2": "codex",
-            "47f16ecf34": "Ship several things at once. Each workspace keeps its branch, terminal, and agent activity together.",
-            "70aa182266": "Hand off a goal and walk away. A coordinator agent fans out and ships parallel PRs.",
-            "f10c14dd9d": "Skip the tab-switching. Pick from your GitHub or Linear backlog and start a workspace in one click.",
-            "5d6ee181b6": "Open any workspace to return to its terminal, then split panes for tests, logs, and agents."
+            "47f16ecf34": "同时发布多个项目。每个工作区将其分支、终端和 Agent 活动整合在一起。",
+            "70aa182266": "移交目标然后离开。协调器 Agent 分发并发布并行 PR。",
+            "f10c14dd9d": "跳过标签切换。从您的 GitHub 或 Linear 待办列表中选择并一键启动工作区。",
+            "5d6ee181b6": "打开任何工作区以返回其终端，然后拆分窗格以进行测试、日志和 Agent。"
           },
           "FeatureWallBody": {
             "25ec5356d6": "设置"
@@ -9964,8 +9980,8 @@
             "ab2901bce6": "检查项",
             "d7f80060ca": "源代码控制",
             "8e715588e4": "搜索",
-            "a6c8b9e32f": "Checks passed",
-            "f4d5e1a7b2": "3 checks"
+            "a6c8b9e32f": "检查通过",
+            "f4d5e1a7b2": "3 个检查"
           },
           "ReviewShipAnimatedVisual": {
             "4d99496b8c": "创建PR",
@@ -9980,7 +9996,7 @@
             "c30cd930ff": "创建PR",
             "ea0100dd15": "查看全部",
             "e725000cd7": "变化",
-            "a079083a6c": "Commit",
+            "a079083a6c": "提交",
             "7347fa5839": "信息",
             "d1a7f15876": "使用 AI 生成 commit 消息",
             "cd8a3a39d7": "提前 3 次 commits"
@@ -10144,25 +10160,25 @@
             "c2df599513": "安装 CLI 和技能"
           },
           "ConnectIntegrationsList": {
-            "3dddb2d565": "connected for tasks",
-            "33b650af52": "Connect where your team tracks work. Orca starts workspaces with the issue title, link, and context already attached.",
-            "5b3577a492": "connected for review status",
-            "list_end": ", and ",
-            "list_pair": " and ",
-            "list_mid": ", ",
-            "code_host_tasks_summary": "issues available as tasks · add Linear or Jira if your team plans work there",
-            "code_host_tasks_caption": "Your code host's issues also work as tasks.",
-            "review_step_title": "See PR status while agents work",
-            "review_step_description": "Connect a review provider so Orca can show PR or MR status, checks, and reviews.",
-            "task_step_title": "Start agents on your tasks without leaving Orca"
+            "3dddb2d565": "已连接用于任务",
+            "33b650af52": "连接您的团队跟踪工作的地方。Orca 启动带有议题标题、链接和上下文的工作区。",
+            "5b3577a492": "已连接用于审阅状态",
+            "list_end": "，和 ",
+            "list_pair": " 和 ",
+            "list_mid": "，",
+            "code_host_tasks_summary": "可用作任务的议题 · 如果您的团队在那里规划工作，请添加 Linear 或 Jira",
+            "code_host_tasks_caption": "代码托管服务的议题也可以作为任务。",
+            "review_step_title": "在 Agent 工作时查看 PR 状态",
+            "review_step_description": "连接审阅提供商，以便 Orca 可以显示 PR 或 MR 状态、检查和审阅。",
+            "task_step_title": "在不离开 Orca 的情况下在您的任务上启动 Agent"
           },
           "connect": {
             "integration": {
               "step": {
-                "0f47ff17c6": "Change",
-                "5538eb6743": "Done",
-                "open_step": "Open",
-                "close_step": "Close"
+                "0f47ff17c6": "更改",
+                "5538eb6743": "完成",
+                "open_step": "打开",
+                "close_step": "关闭"
               }
             }
           },
@@ -10323,8 +10339,8 @@
             "3d8dc52c93": "在 agent shell 中注册用于模拟器控制的 orca 命令。",
             "21f5687c07": "Orca CLI 技能",
             "64fb057667": "教授 agents 此工作区的 orca 模拟器命令。",
-            "5c59ea96ca": "Mobile emulator Orca CLI skill setup",
-            "bff5341ac3": "Mobile emulator Orca CLI skill install terminal"
+            "5c59ea96ca": "移动模拟器 Orca CLI 技能设置",
+            "bff5341ac3": "移动模拟器 Orca CLI 技能安装终端"
           },
           "MobileEmulatorTabIntroCallout": {
             "1924982130": "关闭",
@@ -10344,9 +10360,9 @@
             }
           },
           "useEmulatorScreenKeyboard": {
-            "pasteTooLarge": "Paste is too large for emulator keyboard input.",
-            "unsupportedPasteText": "Emulator keyboard paste supports US keyboard text only.",
-            "pasteTargetUnavailable": "Emulator keyboard paste failed because the device is not ready."
+            "pasteTooLarge": "粘贴内容对于模拟器键盘输入来说过大。",
+            "unsupportedPasteText": "模拟器键盘粘贴仅支持美式键盘文本。",
+            "pasteTargetUnavailable": "模拟器键盘粘贴失败，因为设备未就绪。"
           }
         }
       },
@@ -10468,7 +10484,7 @@
           "3c6e71df22": "分支比较中此文件的文本差异不可用。",
           "d07e4b8553": "分支",
           "d16e037f40": "富有的",
-          "6c4f1a8d2e": "Check details are unavailable."
+          "6c4f1a8d2e": "检查详情不可用。"
         },
         "EditorPanelHeader": {
           "fb8331694e": "打开侧面预览",
@@ -10530,7 +10546,7 @@
           "9e06ae5d36": "运行笔记本代码？",
           "d6f37a640b": "空笔记本",
           "8c3b21369a": "nb格式",
-          "329764e9fc": "BETA",
+          "329764e9fc": "测试版",
           "15ec40a735": "保存笔记本",
           "07e7d96612": "细胞",
           "c1601b23b2": "无法渲染笔记本",
@@ -10583,7 +10599,7 @@
           "27d0a9c49a": "目录",
           "65b036a6c8": "展开 {{value0}}",
           "97ad46f11f": "折叠 {{value0}}",
-          "8f4d2c1a9b": "Resize table of contents"
+          "8f4d2c1a9b": "调整目录大小"
         },
         "MarkdownTemplatePicker": {
           "22cd94426f": "无标题.md",
@@ -10599,7 +10615,7 @@
         "MonacoEditor": {
           "68cb83f4a7": "在选定的文本上添加注释",
           "fd68ae03b3": "在文件中搜索",
-          "largePasteTooLarge": "Paste is too large."
+          "largePasteTooLarge": "粘贴内容过大。"
         },
         "MonacoGutterContextMenu": {
           "7b57b1b468": "复制远程 URL",
@@ -10837,32 +10853,32 @@
         "CheckRunDetailsPanel": {
           "8f2d0f5a91": "通过",
           "4c8e1b2d73": "失败",
-          "91a4c7e2b0": "Cancelled",
-          "2f6d8a1c45": "Timed out",
-          "7b3e9d4f12": "Skipped",
-          "5a1c8e3d67": "Neutral",
+          "91a4c7e2b0": "已取消",
+          "2f6d8a1c45": "已超时",
+          "7b3e9d4f12": "已跳过",
+          "5a1c8e3d67": "中性",
           "3d9f2b8e14": "待处理",
           "b7f5e2c91a": "刷新",
-          "a54ae21c6f": "Status:",
-          "fd46a70f1a": "Started",
+          "a54ae21c6f": "状态：",
+          "fd46a70f1a": "已开始",
           "00e1c1658a": "已完成",
           "aa8494ae3c": "检查 #",
-          "2dd5ddabc4": "workflow #",
-          "1f2b980522": "Loading check details…",
-          "d098e5529a": "Output",
-          "f2fe8a4e8f": "Annotations",
+          "2dd5ddabc4": "工作流 #",
+          "1f2b980522": "正在加载检查详情…",
+          "d098e5529a": "输出",
+          "f2fe8a4e8f": "注释",
           "cdbfda4dec": "批注",
-          "066fedd446": "Failed jobs",
-          "49731703ea": "Jobs",
-          "ee07b33924": "unknown",
-          "07eccfa397": "No details are available for this check.",
-          "a916648574": "Open details",
-          "834cb3f23d": "Fix with AI",
-          "c8f1a2d4e7": "Choose the agent and edit the full command input before launch.",
-          "b3e7f9a1c2": "Check fix context unavailable",
-          "d5a8c2f1b9": "Start the default AI agent to fix this check",
-          "e2b4d7c8a1": "Choose an agent for this check",
-          "f1c9e3a6d4": "Choose agent to fix check"
+          "066fedd446": "失败的作业",
+          "49731703ea": "作业",
+          "ee07b33924": "未知",
+          "07eccfa397": "此检查没有可用的详细信息。",
+          "a916648574": "打开详情",
+          "834cb3f23d": "使用 AI 修复",
+          "c8f1a2d4e7": "选择 Agent 并在启动前编辑完整的命令输入。",
+          "b3e7f9a1c2": "检查修复上下文不可用",
+          "d5a8c2f1b9": "启动默认 AI Agent 以修复此检查",
+          "e2b4d7c8a1": "选择用于此检查的 Agent",
+          "f1c9e3a6d4": "选择修复检查的 Agent"
         },
         "check": {
           "run": {
@@ -10870,11 +10886,11 @@
               "fix": {
                 "with": {
                   "ai": {
-                    "1a8c4e2b90": "Select a workspace before launching an AI action.",
-                    "4f2d9a8c17": "Select a repository before launching an AI action.",
-                    "7c3e1b5d42": "Open a PR or MR before launching an AI fix.",
-                    "9b2f6d4a81": "This check is not failing.",
-                    "2ef90c9819": "Started an AI agent for this check."
+                    "1a8c4e2b90": "在启动 AI 操作前选择工作区。",
+                    "4f2d9a8c17": "在启动 AI 操作前选择仓库。",
+                    "7c3e1b5d42": "在启动 AI 修复前打开 PR 或 MR。",
+                    "9b2f6d4a81": "此检查未失败。",
+                    "2ef90c9819": "已为此检查启动 AI Agent。"
                   }
                 }
               }
@@ -10882,7 +10898,7 @@
           }
         },
         "richMarkdownLargeTextPaste": {
-          "tooLarge": "Paste is too large."
+          "tooLarge": "粘贴内容过大。"
         }
       },
       "diff": {
@@ -10949,10 +10965,10 @@
             "8b8473c544": "已复制错误报告。",
             "b175e90213": "没有可用的错误报告。",
             "765591798d": "正在检查错误报告...",
-            "b2e36f53a1": "Failed to send crash report. Diagnostic ticket {{value0}} was uploaded but not linked.",
-            "ead6fc0510": "No automatic crash report was captured. You can still send details and include recent diagnostic logs when available.",
-            "b082f27490": "Attach recent diagnostic logs",
-            "e59f0b9427": "Sends a capped redacted log bundle with the report."
+            "b2e36f53a1": "发送崩溃报告失败。诊断工单 {{value0}} 已上传但未关联。",
+            "ead6fc0510": "未捕获到自动崩溃报告。您仍然可以发送详细信息，并在可用时包含最近的诊断日志。",
+            "b082f27490": "附加最近的诊断日志",
+            "e59f0b9427": "随报告发送有限制的脱敏日志包。"
           }
         }
       },
@@ -11118,7 +11134,7 @@
             "b733a91bd9": "为所选元素添加反馈。",
             "4328a0a062": "抓取失败：{{value0}}",
             "26615e116b": "错误",
-            "8aec5bc044": "idle",
+            "8aec5bc044": "空闲",
             "759f32af29": "正在下载",
             "c8bc7f1f9e": "要求的",
             "4300f38145": "从 {{value0}}{{value1}} 下载",
@@ -11131,15 +11147,15 @@
             "c13693fe27": "{{value0}} 条注释",
             "074f0ed10b": "{{value0}} 条注释已准备好。请选择另一个元素或复制所有反馈。",
             "a2164a6e5a": "{{value0}} 条注释已准备好。请选择另一个元素或复制所有反馈。",
-            "9f6f2e8c19": "The downloaded file path is unavailable.",
-            "0c79b7634d": "Could not open the downloaded file. It may have been moved or deleted.",
-            "397d9dc923": "Could not show the downloaded file. It may have been moved or deleted.",
-            "39c04fed61": "Downloading paused",
-            "5c3d530a68": "Downloaded",
-            "4bb7424d6b": "Canceled",
-            "6e776f9ef9": "Download failed",
-            "756bfc25c9": "Open",
-            "09a9489aa5": "Show"
+            "9f6f2e8c19": "下载的文件路径不可用。",
+            "0c79b7634d": "无法打开下载的文件。文件可能已被移动或删除。",
+            "397d9dc923": "无法显示下载的文件。文件可能已被移动或删除。",
+            "39c04fed61": "下载已暂停",
+            "5c3d530a68": "已下载",
+            "4bb7424d6b": "已取消",
+            "6e776f9ef9": "下载失败",
+            "756bfc25c9": "打开",
+            "09a9489aa5": "显示"
           },
           "BrowserToolbarMenu": {
             "429ef481f9": "取消",
@@ -11203,7 +11219,7 @@
         "AutomationDetail": {
           "007c8ad874": "迅速的",
           "a1d52c2189": "使用范围",
-          "449fc83bf7": "Token",
+          "449fc83bf7": "令牌",
           "401f40ae79": "预计。花费",
           "a7c312430d": "最后一次运行",
           "2df8970cd5": "Agent",
@@ -11283,7 +11299,7 @@
         "AutomationRunHistory": {
           "402651bfb6": "还没有运行。",
           "9974a2b429": "状态",
-          "13988187b3": "Token",
+          "13988187b3": "令牌",
           "86a248187e": "花费",
           "149c0b49c7": "工作区",
           "8faaa00726": "跑步",
@@ -11381,8 +11397,8 @@
           "7b2e285552": "SSH 连接在此客户端中不可用。",
           "d441032f7e": "暂停",
           "5918020edc": "跑步",
-          "a21f6c33ad": "Automation source refreshed.",
-          "53f06f0ad5": "Retry source",
+          "a21f6c33ad": "自动化来源已刷新。",
+          "53f06f0ad5": "重试来源",
           "pendingAutomationMissing": "自动化已不可用。",
           "pendingAutomationRunMissing": "运行历史已不可用。"
         },
@@ -11487,11 +11503,11 @@
           }
         },
         "AutomationProjectCombobox": {
-          "search": "Search projects/folders...",
-          "empty": "No projects/folders match your search.",
-          "chooseHost": "Choose automation host",
-          "adding": "Adding project…",
-          "addProject": "Add project"
+          "search": "搜索项目/文件夹...",
+          "empty": "没有匹配的项目/文件夹。",
+          "chooseHost": "选择自动化主机",
+          "adding": "正在添加项目…",
+          "addProject": "添加项目"
         }
       },
       "agent": {
@@ -11552,18 +11568,18 @@
         "connect": {
           "dialog": {
             "63ce735809": "连接",
-            "4a2ab52781": "Verifying…",
+            "4a2ab52781": "正在验证…",
             "79e7aaed39": "取消",
-            "fdd26d81cc": "Atlassian account settings",
-            "8090504a3e": "Create a token in",
-            "7b3967c12f": "Atlassian API token",
-            "3d81bf3ab3": "API token",
+            "fdd26d81cc": "Atlassian 账户设置",
+            "8090504a3e": "在以下位置创建令牌",
+            "7b3967c12f": "Atlassian API 令牌",
+            "3d81bf3ab3": "API 令牌",
             "e91b9a4073": "you@example.com",
-            "2849ddb295": "Atlassian email",
+            "2849ddb295": "Atlassian 邮箱",
             "70fcd360c4": "https://example.atlassian.net",
-            "e176f9d0c5": "Jira Cloud site URL",
-            "d785c42b8b": "Use a Jira Cloud site URL, Atlassian email, and API token to browse issues.",
-            "8388bdea2b": "Connect Jira site"
+            "e176f9d0c5": "Jira Cloud 站点 URL",
+            "d785c42b8b": "使用 Jira Cloud 站点 URL、Atlassian 邮箱和 API 令牌来浏览议题。",
+            "8388bdea2b": "连接 Jira 站点"
           }
         }
       },
@@ -11672,8 +11688,8 @@
               "noProjects": "No projects",
               "allProjects": "All projects",
               "hostCount": "{{value0}} hosts",
-              "searchProjects": "Search projects...",
-              "noMatches": "No projects match your search.",
+              "searchProjects": "搜索项目...",
+              "noMatches": "没有匹配的项目。",
               "chooseSource": "选择任务来源"
             }
           }
@@ -11683,7 +11699,7 @@
         "noProjectSourcesTitle": "No project sources selected",
         "noProjectSourcesDescription": "Select at least one project source so Orca knows which host/account to fetch tasks from.",
         "noMatchingGitHubWorkTitle": "No matching GitHub work",
-        "changeQueryDescription": "Change the query or clear it.",
+        "changeQueryDescription": "更改查询或清除它。",
         "noGitLabIssuesTitle": "No GitLab issues",
         "noGitLabIssuesDescription": "No GitLab issues match this filter.",
         "noGitLabMrsTitle": "No GitLab merge requests",
@@ -11697,7 +11713,7 @@
         "reconnectOrUpdateTitle": "Reconnect or update {{value0}} to load this source."
       },
       "ShortcutKeyCombo": {
-        "07eb4985a1": "Double-tap {{value0}}"
+        "07eb4985a1": "双击 {{value0}}"
       },
       "star": {
         "nag": {
@@ -11710,7 +11726,7 @@
             "starOnGithub": "Star on GitHub",
             "onboardingCompleted": "Onboarding completed!",
             "body": "If you’re enjoying Orca so far, a GitHub star helps other developers discover it.",
-            "dismiss": "Dismiss",
+            "dismiss": "关闭",
             "later": "Later"
           }
         }
