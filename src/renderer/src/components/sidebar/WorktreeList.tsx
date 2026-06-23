@@ -223,8 +223,7 @@ import {
   LINEAGE_CHILDREN_INLINE_OFFSET,
   getFolderBackedRepoWorktreeCardContentIndent,
   getFolderBackedRepoWorktreeCardSurfaceInset,
-  getFolderWorkspaceCardContentIndent,
-  getFolderWorkspaceCardSurfaceInset,
+  getFolderWorkspaceRowGeometry,
   getLineageChildrenInlineStyle,
   getLineageNestedRowGeometry,
   getProjectGroupHeaderPaddingLeft,
@@ -4492,28 +4491,13 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   folderWorkspacePathStatus.reason === 'ambiguous-connection')
               const isFolderBackedWorkspaceChild =
                 groupBy === 'repo' && folderWorkspaceRow.projectGroup.createdFrom === 'folder-scan'
-              const contentIndent = isFolderBackedWorkspaceChild
-                ? getFolderWorkspaceCardContentIndent({
-                    groupDepth: folderWorkspaceRow.groupDepth
-                  })
-                : getWorktreeCardContentIndent({
-                    isGrouped: groupBy !== 'none',
-                    groupDepth: folderWorkspaceRow.groupDepth,
-                    lineageDepth: folderWorkspaceRow.depth
-                  })
-              // Why: folder workspace surfaces should step inward with their
-              // project-group nesting, matching lineage child card surfaces
-              // instead of spanning from the sidebar edge at every depth.
-              const surfaceInset = isFolderBackedWorkspaceChild
-                ? getFolderWorkspaceCardSurfaceInset({
-                    isGrouped: true,
-                    groupDepth: folderWorkspaceRow.groupDepth
-                  })
-                : getWorktreeCardSurfaceInset({
-                    isGrouped: groupBy !== 'none',
-                    groupDepth: folderWorkspaceRow.groupDepth
-                  })
-              const insetContentIndent = Math.max(0, contentIndent - surfaceInset)
+              const { surfaceInset, cardContentIndent } = getFolderWorkspaceRowGeometry({
+                experimentalNewWorktreeCardStyle: newCardStyle,
+                isFolderBackedWorkspaceChild,
+                isGrouped: groupBy !== 'none',
+                groupDepth: folderWorkspaceRow.groupDepth,
+                lineageDepth: folderWorkspaceRow.depth
+              })
               return (
                 <div
                   key={vItem.key}
@@ -4544,7 +4528,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                       repo={undefined}
                       isActive={activeWorktreeId === folderWorktree.id}
                       isCurrentWorktree={currentWorktreeId === folderWorktree.id}
-                      contentIndent={insetContentIndent}
+                      contentIndent={cardContentIndent}
                       flushSurface
                       nativeDragEnabled={false}
                       onImmediateActivate={
