@@ -1856,6 +1856,200 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('does not include stored SSH worktrees from another host during metadata fallback', async () => {
+    const conn1Repo = {
+      id: 'remote-repo',
+      path: '/home/conn-1/repo',
+      displayName: 'remote 1',
+      badgeColor: 'blue',
+      addedAt: 1,
+      connectionId: 'ssh-1'
+    }
+    const conn2Repo = {
+      ...conn1Repo,
+      path: '/home/conn-2/repo',
+      displayName: 'remote 2',
+      connectionId: 'ssh-2'
+    }
+    const conn1Id = makeSshTestWorktreeId(conn1Repo.id, conn1Repo.connectionId, '/home/conn-1/wt')
+    const conn2Id = makeSshTestWorktreeId(conn2Repo.id, conn2Repo.connectionId, '/home/conn-2/wt')
+    const legacyConn2Id = `${conn2Repo.id}::/home/conn-2/legacy-wt`
+    const ambiguousLegacyId = `${conn2Repo.id}::/home/conn-2/ambiguous-legacy-wt`
+    const metaById: Record<string, WorktreeMeta> = {
+      [conn1Id]: makeWorktreeMeta({ displayName: 'Conn 1' }),
+      [conn2Id]: makeWorktreeMeta({ displayName: 'Conn 2' }),
+      [legacyConn2Id]: makeWorktreeMeta({ hostId: 'ssh:ssh-2', displayName: 'Conn 2 legacy' }),
+      [ambiguousLegacyId]: makeWorktreeMeta({ displayName: 'Ambiguous legacy' })
+    }
+    const runtimeStore = {
+      ...store,
+      getRepos: () => [conn1Repo, conn2Repo],
+      getRepo: (repoId: string) => [conn1Repo, conn2Repo].find((repo) => repo.id === repoId),
+      getAllWorktreeMeta: () => metaById,
+      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
+      setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
+        metaById[worktreeId] = { ...metaById[worktreeId], ...meta }
+        return metaById[worktreeId]
+      }
+    }
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+
+    const listed = await runtime.listDetectedManagedWorktrees('path:/home/conn-1/repo')
+
+    expect(listed).toMatchObject({
+      repoId: conn1Repo.id,
+      authoritative: false,
+      source: 'metadata-fallback',
+      worktrees: [
+        {
+          id: conn1Id,
+          path: '/home/conn-1/wt',
+          displayName: 'Conn 1'
+        }
+      ]
+    })
+  })
+
+  it('resolves explicit canonical worktree ids against the parsed host', async () => {
+    const conn1Repo = {
+      id: 'remote-repo',
+      path: '/home/conn-1/repo',
+      displayName: 'remote 1',
+      badgeColor: 'blue',
+      addedAt: 1,
+      connectionId: 'ssh-1'
+    }
+    const conn2Repo = {
+      ...conn1Repo,
+      path: '/home/conn-2/repo',
+      displayName: 'remote 2',
+      connectionId: 'ssh-2'
+    }
+    const conn1Id = makeSshTestWorktreeId(conn1Repo.id, conn1Repo.connectionId, '/home/conn-1/wt')
+    const conn2Id = makeSshTestWorktreeId(conn2Repo.id, conn2Repo.connectionId, '/home/conn-2/wt')
+    const metaById: Record<string, WorktreeMeta> = {
+      [conn1Id]: makeWorktreeMeta({ displayName: 'Conn 1' }),
+      [conn2Id]: makeWorktreeMeta({ displayName: 'Conn 2' })
+    }
+    const runtimeStore = {
+      ...store,
+      getRepos: () => [conn1Repo, conn2Repo],
+      getRepo: (repoId: string) => [conn1Repo, conn2Repo].find((repo) => repo.id === repoId),
+      getAllWorktreeMeta: () => metaById,
+      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
+      setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
+        metaById[worktreeId] = { ...metaById[worktreeId], ...meta }
+        return metaById[worktreeId]
+      }
+    }
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    const conn1Provider = { listWorktrees: vi.fn().mockResolvedValue([]) }
+    const conn2Provider = { listWorktrees: vi.fn().mockResolvedValue([]) }
+    registerSshGitProvider(conn1Repo.connectionId, conn1Provider as never)
+    registerSshGitProvider(conn2Repo.connectionId, conn2Provider as never)
+
+    try {
+      const resolved = await runtime.showManagedWorktree(`id:${conn2Id}`)
+
+      expect(resolved).toMatchObject({
+        id: conn2Id,
+        path: '/home/conn-2/wt',
+        displayName: 'Conn 2',
+        hostId: 'ssh:ssh-2'
+      })
+    } finally {
+      unregisterSshGitProvider(conn1Repo.connectionId)
+      unregisterSshGitProvider(conn2Repo.connectionId)
+    }
+  })
+
+  it('does not migrate hostless legacy metadata for canonical ids when the repo id spans hosts', async () => {
+    const conn1Repo = {
+      id: 'remote-repo',
+      path: '/home/conn-1/repo',
+      displayName: 'remote 1',
+      badgeColor: 'blue',
+      addedAt: 1,
+      connectionId: 'ssh-1'
+    }
+    const conn2Repo = {
+      ...conn1Repo,
+      path: '/home/conn-2/repo',
+      displayName: 'remote 2',
+      connectionId: 'ssh-2'
+    }
+    const worktreePath = '/home/shared/wt'
+    const conn2Id = makeSshTestWorktreeId(conn2Repo.id, conn2Repo.connectionId, worktreePath)
+    const legacyId = `${conn2Repo.id}::${worktreePath}`
+    const metaById: Record<string, WorktreeMeta> = {
+      [legacyId]: makeWorktreeMeta({ displayName: 'Ambiguous legacy' })
+    }
+    const migrateWorktreeIdentity = vi.fn()
+    const runtimeStore = {
+      ...store,
+      getRepos: () => [conn1Repo, conn2Repo],
+      getRepo: (repoId: string) => [conn1Repo, conn2Repo].find((repo) => repo.id === repoId),
+      getAllWorktreeMeta: () => ({}),
+      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
+      migrateWorktreeIdentity,
+      setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
+        metaById[worktreeId] = { ...metaById[worktreeId], ...meta }
+        return metaById[worktreeId]
+      }
+    }
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+
+    const resolved = await runtime.showManagedWorktree(`id:${conn2Id}`)
+
+    expect(resolved).toMatchObject({
+      id: conn2Id,
+      path: worktreePath,
+      hostId: 'ssh:ssh-2'
+    })
+    expect(resolved.displayName).not.toBe('Ambiguous legacy')
+    expect(migrateWorktreeIdentity).not.toHaveBeenCalled()
+  })
+
+  it('does not resolve hostless legacy worktree ids when the repo id spans hosts', async () => {
+    const conn1Repo = {
+      id: 'remote-repo',
+      path: '/home/conn-1/repo',
+      displayName: 'remote 1',
+      badgeColor: 'blue',
+      addedAt: 1,
+      connectionId: 'ssh-1'
+    }
+    const conn2Repo = {
+      ...conn1Repo,
+      path: '/home/conn-2/repo',
+      displayName: 'remote 2',
+      connectionId: 'ssh-2'
+    }
+    const legacyId = `${conn1Repo.id}::/home/conn-2/wt`
+    const metaById: Record<string, WorktreeMeta> = {
+      [legacyId]: makeWorktreeMeta({ displayName: 'Ambiguous legacy' })
+    }
+    const migrateWorktreeIdentity = vi.fn()
+    const runtimeStore = {
+      ...store,
+      getRepos: () => [conn1Repo, conn2Repo],
+      getRepo: (repoId: string) => [conn1Repo, conn2Repo].find((repo) => repo.id === repoId),
+      getAllWorktreeMeta: () => ({}),
+      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
+      migrateWorktreeIdentity,
+      setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
+        metaById[worktreeId] = { ...metaById[worktreeId], ...meta }
+        return metaById[worktreeId]
+      }
+    }
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+
+    await expect(runtime.showManagedWorktree(`id:${legacyId}`)).rejects.toThrow(
+      'selector_not_found'
+    )
+    expect(migrateWorktreeIdentity).not.toHaveBeenCalled()
+  })
+
   it('does not interpret active as a runtime-global worktree selector', async () => {
     const runtime = new OrcaRuntimeService(store)
 

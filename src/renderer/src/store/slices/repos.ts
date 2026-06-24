@@ -1967,8 +1967,10 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
         const nextProjects = s.projects.some((entry) => entry.id === result.project.id)
           ? s.projects.map((entry) => (entry.id === result.project.id ? result.project : entry))
           : [...s.projects, result.project]
-        const nextSetups = s.projectHostSetups.some((entry) => entry.id === setup.id)
-          ? s.projectHostSetups.map((entry) => (entry.id === setup.id ? setup : entry))
+        const nextSetups = s.projectHostSetups.some((entry) => isSameProjectHostSetup(entry, setup))
+          ? s.projectHostSetups.map((entry) =>
+              isSameProjectHostSetup(entry, setup) ? setup : entry
+            )
           : [...s.projectHostSetups, setup]
         return {
           repos: nextRepos,

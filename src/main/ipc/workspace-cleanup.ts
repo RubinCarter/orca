@@ -19,13 +19,7 @@ import type {
   WorktreeMeta
 } from '../../shared/types'
 import { mergeWorktree } from './worktree-logic'
-import {
-  getRepoWorktreeIdAliases,
-  isRepoWorktreeIdAlias,
-  makeRepoWorktreeKey,
-  parseWorktreeKey,
-  splitWorktreeId
-} from '../../shared/worktree-id'
+import { makeRepoWorktreeKey, parseWorktreeKey, splitWorktreeId } from '../../shared/worktree-id'
 import { getRepoExecutionHostId } from '../../shared/execution-host'
 import {
   WORKSPACE_CLEANUP_CLASSIFIER_VERSION,
@@ -203,14 +197,30 @@ export async function scanWorkspaceCleanup(
   const repos = store.getRepos()
   const errors: WorkspaceCleanupScanResult['errors'] = []
   const candidates: WorkspaceCleanupCandidate[] = []
+  const canonicalizeWorktreeId = createCanonicalWorktreeIdMapper(repos)
+  const targetWorktreeId =
+    args.worktreeId === undefined ? undefined : canonicalizeWorktreeId(args.worktreeId)
+
+  if (args.worktreeId !== undefined && targetWorktreeId === undefined) {
+    return { scannedAt, candidates, errors }
+  }
+
+  const skipGitWorktreeIds = new Set<string>()
+  for (const worktreeId of args.skipGitWorktreeIds ?? []) {
+    const canonicalWorktreeId = canonicalizeWorktreeId(worktreeId)
+    if (canonicalWorktreeId) {
+      skipGitWorktreeIds.add(canonicalWorktreeId)
+    }
+  }
 
   for (const repo of repos) {
     const result = await scanRepoWorkspaces({
       store,
+      repos,
       repo,
       scannedAt,
-      targetWorktreeId: args.worktreeId,
-      skipGitWorktreeIds: new Set(args.skipGitWorktreeIds ?? [])
+      targetWorktreeId,
+      skipGitWorktreeIds
     })
     appendListItems(candidates, result.candidates)
     appendListItems(errors, result.errors)
@@ -221,16 +231,18 @@ export async function scanWorkspaceCleanup(
 
 async function scanRepoWorkspaces(args: {
   store: Store
+  repos: Repo[]
   repo: Repo
   scannedAt: number
   targetWorktreeId?: string
   skipGitWorktreeIds: Set<string>
 }): Promise<WorkspaceCleanupScanResult> {
-  const { store, repo, scannedAt, targetWorktreeId, skipGitWorktreeIds } = args
+  const { store, repos, repo, scannedAt, targetWorktreeId, skipGitWorktreeIds } = args
   const errors: WorkspaceCleanupScanResult['errors'] = []
   let provider: IGitProvider | null = null
   let gitWorktrees: GitWorktreeInfo[] = []
   const repoIsFolder = isFolderRepo(repo)
+  const repoHostId = getRepoExecutionHostId(repo)
 
   try {
     if (repoIsFolder) {
@@ -243,7 +255,7 @@ async function scanRepoWorkspaces(args: {
         return {
           scannedAt,
           candidates: targetWorktreeId
-            ? synthesizeDisconnectedSshCandidates(store, repo, scannedAt, targetWorktreeId)
+            ? synthesizeDisconnectedSshCandidates(store, repos, repo, scannedAt, targetWorktreeId)
             : [],
           errors: []
         }
@@ -276,14 +288,14 @@ async function scanRepoWorkspaces(args: {
       const worktreeId = makeRepoWorktreeKey(repo, gitWorktree.path)
       const meta =
         store.getWorktreeMeta(worktreeId) ??
-        store.getWorktreeMeta(`${repo.id}::${gitWorktree.path}`)
+        getLegacyWorktreeMetaIfSafe(store, repos, repo, gitWorktree.path)
       return mergeWorktree(repo.id, gitWorktree, meta, repo.displayName, {
-        hostId: getRepoExecutionHostId(repo)
+        hostId: repoHostId
       })
     })
     .filter((worktree) => {
       if (targetWorktreeId) {
-        return isRepoWorktreeIdAlias(repo, worktree.path, targetWorktreeId)
+        return worktree.id === targetWorktreeId
       }
       return (
         !repoIsFolder &&
@@ -298,9 +310,7 @@ async function scanRepoWorkspaces(args: {
       worktree,
       scannedAt,
       provider,
-      skipGit: [...getRepoWorktreeIdAliases(repo, worktree.path)].some((id) =>
-        skipGitWorktreeIds.has(id)
-      ),
+      skipGit: skipGitWorktreeIds.has(worktree.id),
       forceGitCheck: Boolean(targetWorktreeId)
     }).catch((error) => {
       console.error('Workspace cleanup candidate scan failed', error)
@@ -309,6 +319,69 @@ async function scanRepoWorkspaces(args: {
   )
 
   return { scannedAt, candidates, errors }
+}
+
+function getLegacyWorktreeMetaIfSafe(
+  store: Store,
+  repos: Repo[],
+  repo: Repo,
+  worktreePath: string
+): WorktreeMeta | undefined {
+  const meta = store.getWorktreeMeta(`${repo.id}::${worktreePath}`)
+  if (!meta) {
+    return undefined
+  }
+  const repoHostId = getRepoExecutionHostId(repo)
+  if (meta.hostId !== undefined) {
+    return meta.hostId === repoHostId ? meta : undefined
+  }
+  // Why: legacy metadata keys do not name a host, so hostless rows are safe
+  // only while this repo id maps to exactly one execution host.
+  return hasSingleRepoExecutionHost(repos, repo) ? meta : undefined
+}
+
+function hasSingleRepoExecutionHost(repos: Repo[], repo: Repo): boolean {
+  const hostIds = new Set(
+    repos
+      .filter((candidateRepo) => candidateRepo.id === repo.id)
+      .map((candidateRepo) => getRepoExecutionHostId(candidateRepo))
+  )
+  return hostIds.size === 1
+}
+
+function createCanonicalWorktreeIdMapper(
+  repos: Repo[]
+): (worktreeId: string) => string | undefined {
+  const legacyToCanonicalIds = new Map<string, Set<string>>()
+
+  return (worktreeId: string): string | undefined => {
+    if (parseWorktreeKey(worktreeId)) {
+      return worktreeId
+    }
+
+    const parsed = splitWorktreeId(worktreeId)
+    if (!parsed) {
+      return undefined
+    }
+
+    const canonicalIds = legacyToCanonicalIds.get(worktreeId) ?? new Set<string>()
+    if (canonicalIds.size === 0) {
+      for (const repo of repos) {
+        if (repo.id === parsed.repoId) {
+          canonicalIds.add(makeRepoWorktreeKey(repo, parsed.worktreePath))
+        }
+      }
+      legacyToCanonicalIds.set(worktreeId, canonicalIds)
+    }
+
+    // Why: legacy IDs do not carry a host. In multi-host cleanup, accepting
+    // them is safe only when one canonical host-qualified workspace can own it.
+    if (canonicalIds.size !== 1) {
+      return undefined
+    }
+
+    return [...canonicalIds][0]
+  }
 }
 
 async function buildCandidate(args: {
@@ -538,6 +611,7 @@ function buildCandidateFromError(
 
 function synthesizeDisconnectedSshCandidates(
   store: Store,
+  repos: Repo[],
   repo: Repo,
   scannedAt: number,
   targetWorktreeId?: string
@@ -564,10 +638,14 @@ function synthesizeDisconnectedSshCandidates(
         : targetWorktreeId
     const legacyTargetId =
       parsed && parsed.repoId === repo.id ? `${repo.id}::${parsed.worktreePath}` : targetWorktreeId
+    const legacyMeta =
+      parsed && parsed.repoId === repo.id
+        ? getLegacyWorktreeMetaIfSafe(store, repos, repo, parsed.worktreePath)
+        : undefined
     const meta =
       store.getWorktreeMeta(targetWorktreeId) ??
       store.getWorktreeMeta(canonicalTargetId) ??
-      store.getWorktreeMeta(legacyTargetId)
+      (legacyTargetId === canonicalTargetId ? undefined : legacyMeta)
     return meta ? [createDisconnectedSshCandidate(repo, scannedAt, targetWorktreeId, meta)] : []
   }
 

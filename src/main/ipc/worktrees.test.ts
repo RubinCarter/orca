@@ -4286,6 +4286,51 @@ describe('registerWorktreeHandlers', () => {
     ])
   })
 
+  it('does not reconstruct disconnected SSH rows from another host with the same repo id', async () => {
+    const repo = {
+      id: 'repo-ssh',
+      path: '/remote/repo',
+      displayName: 'SSH Repo',
+      badgeColor: '#000',
+      addedAt: 0,
+      connectionId: 'conn-1'
+    }
+    store.getRepo.mockReturnValue(repo)
+    store.getRepos.mockReturnValue([
+      repo,
+      {
+        ...repo,
+        path: '/remote/repo-2',
+        displayName: 'SSH Repo 2',
+        connectionId: 'conn-2'
+      }
+    ])
+    store.getAllWorktreeMeta.mockReturnValue({
+      [sshWorktreeKey('/remote/conn-1-wt')]: makeWorktreeMeta({
+        displayName: 'Conn 1 canonical'
+      }),
+      [sshWorktreeKey('/remote/conn-2-wt', 'repo-ssh', 'conn-2')]: makeWorktreeMeta({
+        displayName: 'Conn 2 canonical'
+      }),
+      'repo-ssh::/remote/legacy-conn-2-wt': makeWorktreeMeta({
+        hostId: 'ssh:conn-2',
+        displayName: 'Conn 2 legacy'
+      }),
+      'repo-ssh::/remote/ambiguous-legacy-wt': makeWorktreeMeta({
+        displayName: 'Ambiguous legacy'
+      })
+    })
+
+    const listed = await handlers['worktrees:list'](null, { repoId: 'repo-ssh' })
+
+    expect(listed).toEqual([
+      expect.objectContaining({
+        id: sshWorktreeKey('/remote/conn-1-wt'),
+        displayName: 'Conn 1 canonical'
+      })
+    ])
+  })
+
   it('keeps local listing failure behavior as an empty list', async () => {
     listWorktreesMock.mockRejectedValue(new Error('filesystem denied'))
     store.getAllWorktreeMeta.mockReturnValue({
@@ -4502,6 +4547,22 @@ describe('registerWorktreeHandlers', () => {
   })
 
   it('migrates matching legacy worktree metadata to the host-qualified key on discovery', async () => {
+    const localRepo = {
+      id: 'repo-1',
+      path: '/workspace/repo',
+      displayName: 'repo',
+      badgeColor: '#000',
+      addedAt: 0
+    }
+    store.getRepo.mockReturnValue(localRepo)
+    store.getRepos.mockReturnValue([
+      localRepo,
+      {
+        ...localRepo,
+        path: '/runtime/repo',
+        executionHostId: 'runtime:gpu'
+      }
+    ])
     listWorktreesMock.mockResolvedValue([
       {
         path: '/workspace/legacy-wt',
@@ -4512,10 +4573,7 @@ describe('registerWorktreeHandlers', () => {
       }
     ])
     const legacyWorktreeId = 'repo-1::/workspace/legacy-wt'
-    const canonicalWorktreeId = makeRepoWorktreeKey(
-      { id: 'repo-1', connectionId: null, executionHostId: null },
-      '/workspace/legacy-wt'
-    )
+    const canonicalWorktreeId = makeRepoWorktreeKey(localRepo, '/workspace/legacy-wt')
     const legacyMeta = makeWorktreeMeta({
       instanceId: 'legacy-instance',
       hostId: 'local',
@@ -4551,6 +4609,65 @@ describe('registerWorktreeHandlers', () => {
       })
     )
     expect(listed[0]).toMatchObject({ id: canonicalWorktreeId, lastActivityAt: 42 })
+  })
+
+  it('does not migrate hostless legacy worktree metadata when the repo id spans hosts', async () => {
+    const localRepo = {
+      id: 'repo-1',
+      path: '/workspace/repo',
+      displayName: 'repo',
+      badgeColor: '#000',
+      addedAt: 0
+    }
+    store.getRepo.mockReturnValue(localRepo)
+    store.getRepos.mockReturnValue([
+      localRepo,
+      {
+        ...localRepo,
+        path: '/runtime/repo',
+        executionHostId: 'runtime:gpu'
+      }
+    ])
+    listWorktreesMock.mockResolvedValue([
+      {
+        path: '/workspace/legacy-wt',
+        head: 'abc123',
+        branch: 'refs/heads/feature',
+        isBare: false,
+        isMainWorktree: false
+      }
+    ])
+    const legacyWorktreeId = 'repo-1::/workspace/legacy-wt'
+    const canonicalWorktreeId = makeRepoWorktreeKey(localRepo, '/workspace/legacy-wt')
+    store.getWorktreeMeta.mockImplementation((worktreeId: string) =>
+      worktreeId === legacyWorktreeId
+        ? makeWorktreeMeta({ instanceId: 'legacy-instance', lastActivityAt: 42 })
+        : undefined
+    )
+    store.setWorktreeMeta.mockImplementation((_worktreeId, meta) => ({
+      ...makeWorktreeMeta(),
+      ...meta
+    }))
+
+    const listed = (await handlers['worktrees:list'](null, { repoId: 'repo-1' })) as {
+      id: string
+      lastActivityAt: number
+    }[]
+
+    expect(store.migrateWorktreeIdentity).not.toHaveBeenCalled()
+    expect(store.setWorktreeMeta).toHaveBeenCalledWith(
+      canonicalWorktreeId,
+      expect.objectContaining({
+        lastActivityAt: expect.any(Number),
+        hostId: 'local'
+      })
+    )
+    expect(store.setWorktreeMeta.mock.calls[0]?.[1]?.lastActivityAt).not.toBe(42)
+    expect(listed[0]).toMatchObject({
+      id: canonicalWorktreeId,
+      lastActivityAt: expect.any(Number)
+    })
+    expect(listed[0]?.lastActivityAt).not.toBe(42)
   })
 
   it('backfills project-host ownership without re-stamping lastActivityAt for existing meta', async () => {

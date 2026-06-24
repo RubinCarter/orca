@@ -10,6 +10,7 @@ import { createTestStore } from './store-test-helpers'
 const projectsCreateHostSetup = vi.fn()
 const projectsUpdateHostSetup = vi.fn()
 const projectsDeleteHostSetup = vi.fn()
+const projectsSetupExistingFolder = vi.fn()
 const runtimeEnvironmentCall = vi.fn()
 const runtimeEnvironmentTransportCall = vi.fn()
 
@@ -49,6 +50,7 @@ beforeEach(() => {
   projectsCreateHostSetup.mockReset()
   projectsUpdateHostSetup.mockReset()
   projectsDeleteHostSetup.mockReset()
+  projectsSetupExistingFolder.mockReset()
   runtimeEnvironmentCall.mockReset()
   runtimeEnvironmentTransportCall.mockReset()
   runtimeEnvironmentTransportCall.mockImplementation((args: RuntimeEnvironmentCallRequest) => {
@@ -62,7 +64,8 @@ beforeEach(() => {
       projects: {
         createHostSetup: projectsCreateHostSetup,
         updateHostSetup: projectsUpdateHostSetup,
-        deleteHostSetup: projectsDeleteHostSetup
+        deleteHostSetup: projectsDeleteHostSetup,
+        setupExistingFolder: projectsSetupExistingFolder
       },
       runtimeEnvironments: { call: runtimeEnvironmentTransportCall }
     }
@@ -263,6 +266,63 @@ describe('repo slice project host setup lifecycle', () => {
       params: {
         setupId: runtimeSetup.id,
         hostId: runtimeSetup.hostId
+      },
+      timeoutMs: 15_000
+    })
+  })
+
+  it('keeps same-id setup metadata on other hosts when setting up an existing folder', async () => {
+    const localSetup: ProjectHostSetup = {
+      ...runtimeSetup,
+      hostId: 'local',
+      displayName: 'Local'
+    }
+    const completedRuntimeSetup: ProjectHostSetup = {
+      ...runtimeSetup,
+      displayName: 'GPU VM connected',
+      repoId: runtimeRepo.id
+    }
+    runtimeEnvironmentCall.mockResolvedValue({
+      id: 'rpc-setup-existing-folder',
+      ok: true,
+      result: {
+        result: {
+          project,
+          repo: runtimeRepo,
+          setup: completedRuntimeSetup
+        }
+      },
+      _meta: { runtimeId: 'runtime-remote' }
+    })
+    const store = createTestStore()
+    store.setState({
+      projects: [project],
+      repos: [],
+      projectHostSetups: [localSetup, runtimeSetup],
+      settings: { activeRuntimeEnvironmentId: null } as never
+    })
+
+    await expect(
+      store.getState().setupProjectExistingFolder({
+        projectId: project.id,
+        hostId: runtimeSetup.hostId,
+        path: runtimeRepo.path
+      })
+    ).resolves.toEqual({
+      project,
+      repo: runtimeRepo,
+      setup: completedRuntimeSetup
+    })
+
+    expect(store.getState().projectHostSetups).toEqual([localSetup, completedRuntimeSetup])
+    expect(projectsSetupExistingFolder).not.toHaveBeenCalled()
+    expect(runtimeEnvironmentCall).toHaveBeenCalledWith({
+      selector: 'env-1',
+      method: 'projectHostSetup.setupExistingFolder',
+      params: {
+        projectId: project.id,
+        hostId: runtimeSetup.hostId,
+        path: runtimeRepo.path
       },
       timeoutMs: 15_000
     })

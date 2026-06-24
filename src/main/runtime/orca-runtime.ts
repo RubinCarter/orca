@@ -1282,10 +1282,21 @@ function getRuntimeWorktreeMetaForRepoPath(
   path: string
 ): WorktreeMeta | undefined {
   migrateRuntimeLegacyWorktreeMetaIfSafe(store, repo, path)
-  return (
-    store.getWorktreeMeta(getRuntimeRepoWorktreeId(repo, path)) ??
-    store.getWorktreeMeta(getRuntimeLegacyRepoWorktreeId(repo, path))
-  )
+  const canonicalMeta = store.getWorktreeMeta(getRuntimeRepoWorktreeId(repo, path))
+  if (canonicalMeta) {
+    return canonicalMeta
+  }
+  const legacyMeta = store.getWorktreeMeta(getRuntimeLegacyRepoWorktreeId(repo, path))
+  if (!legacyMeta) {
+    return undefined
+  }
+  const repoHostId = getRepoExecutionHostId(repo)
+  if (legacyMeta.hostId !== undefined) {
+    return legacyMeta.hostId === repoHostId ? legacyMeta : undefined
+  }
+  // Why: hostless legacy metadata cannot distinguish two SSH hosts with the
+  // same repo id, even when the selector itself names a canonical host.
+  return hasRuntimeAmbiguousRepoHost(store.getRepos(), repo) ? undefined : legacyMeta
 }
 
 function migrateRuntimeLegacyWorktreeMetaIfSafe(
@@ -1309,12 +1320,58 @@ function migrateRuntimeLegacyWorktreeMetaIfSafe(
   if (legacyMeta.hostId !== undefined && legacyMeta.hostId !== repoHostId) {
     return
   }
+  if (legacyMeta.hostId === undefined && hasRuntimeAmbiguousRepoHost(store.getRepos(), repo)) {
+    return
+  }
   store.migrateWorktreeIdentity(legacyId, canonicalId)
 }
 
 function isRuntimeCanonicalWorktreeIdForRepoHost(repo: Repo, worktreeId: string): boolean {
   const parsed = parseWorktreeKey(worktreeId)
   return parsed?.repoId === repo.id && parsed.hostId === getRepoExecutionHostId(repo)
+}
+
+function isRuntimeWorktreeMetadataForRepoHost(
+  repos: Repo[],
+  repo: Repo,
+  worktreeId: string,
+  meta: WorktreeMeta
+): boolean {
+  const parsed = splitWorktreeId(worktreeId)
+  if (!parsed || parsed.repoId !== repo.id) {
+    return false
+  }
+  const repoHostId = getRepoExecutionHostId(repo)
+  if (parsed.hostId !== undefined) {
+    return parsed.hostId === repoHostId
+  }
+  if (meta.hostId !== undefined) {
+    return meta.hostId === repoHostId
+  }
+  return !hasRuntimeAmbiguousRepoHost(repos, repo)
+}
+
+function hasRuntimeAmbiguousRepoHost(repos: Repo[], repo: Repo): boolean {
+  const hostIds = new Set(
+    repos
+      .filter((candidateRepo) => candidateRepo.id === repo.id)
+      .map((candidateRepo) => getRepoExecutionHostId(candidateRepo))
+  )
+  return hostIds.size > 1
+}
+
+function findRuntimeRepoForParsedWorktree(
+  repos: Repo[],
+  parsed: { repoId: string; hostId?: string }
+): Repo | undefined {
+  const matchingRepos = repos.filter((repo) => repo.id === parsed.repoId)
+  if (parsed.hostId !== undefined) {
+    return matchingRepos.find((repo) => parsed.hostId === getRepoExecutionHostId(repo))
+  }
+  const matchingHostIds = new Set(matchingRepos.map((repo) => getRepoExecutionHostId(repo)))
+  // Why: hostless legacy worktree IDs can name only repo+path, so resolving
+  // them is safe only when that repo id belongs to one execution host.
+  return matchingHostIds.size === 1 ? matchingRepos[0] : undefined
 }
 
 function isRuntimeWorktreeIdAliasForResolved(
@@ -15875,7 +15932,14 @@ export class OrcaRuntimeService {
     const parsed = parseWorkspaceKey(workspaceSelector)
     const worktreeSelector = parsed?.type === 'worktree' ? `id:${parsed.worktreeId}` : selector
     const worktree = await this.resolveWorktreeSelector(worktreeSelector)
-    const repo = this.store?.getRepo(worktree.repoId) ?? null
+    const repo = this.store
+      ? (findRuntimeRepoForParsedWorktree(this.store.getRepos(), {
+          repoId: worktree.repoId,
+          hostId: worktree.hostId
+        }) ??
+        this.store.getRepo(worktree.repoId) ??
+        null)
+      : null
     return {
       id: worktree.id,
       path: worktree.path,
@@ -15928,12 +15992,19 @@ export class OrcaRuntimeService {
       }
       if (candidates.length === 0) {
         const parsed = splitWorktreeIdForFilesystem(worktreeId)
-        const repo = parsed ? this.store?.getRepo(parsed.repoId) : null
-        const fallback =
-          repo?.connectionId && parsed
+        const repo =
+          parsed && this.store
+            ? findRuntimeRepoForParsedWorktree(this.store.getRepos(), parsed)
+            : null
+        const hasStoredMeta =
+          repo && parsed
             ? getRuntimeWorktreeMetaForRepoPath(this.requireStore(), repo, parsed.worktreePath)
-              ? this.buildResolvedWorktreeFromId(worktreeId)
-              : null
+            : undefined
+        const hasCanonicalHostMatch =
+          repo && parsed?.hostId !== undefined && parsed.hostId === getRepoExecutionHostId(repo)
+        const fallback =
+          repo?.connectionId && parsed && (hasStoredMeta || hasCanonicalHostMatch)
+            ? this.buildResolvedWorktreeFromId(worktreeId)
             : null
         if (fallback !== null) {
           candidates = [fallback]
@@ -16429,7 +16500,9 @@ export class OrcaRuntimeService {
     if (!parsed?.repoId || !parsed.worktreePath) {
       return null
     }
-    const repo = this.store?.getRepos().find((entry) => entry.id === parsed.repoId)
+    const repo = this.store
+      ? findRuntimeRepoForParsedWorktree(this.store.getRepos(), parsed)
+      : undefined
     const canonicalWorktreeId =
       repo && (parsed.hostId === undefined || parsed.hostId === getRepoExecutionHostId(repo))
         ? getRuntimeRepoWorktreeId(repo, parsed.worktreePath)
@@ -16730,9 +16803,13 @@ export class OrcaRuntimeService {
       return []
     }
     const byWorktreeId = new Map<string, GitWorktreeInfo>()
+    const repos = store.getRepos()
     for (const [worktreeId, meta] of Object.entries(store.getAllWorktreeMeta())) {
+      if (!isRuntimeWorktreeMetadataForRepoHost(repos, repo, worktreeId, meta)) {
+        continue
+      }
       const parsed = splitWorktreeId(worktreeId)
-      if (!parsed || parsed.repoId !== repo.id) {
+      if (!parsed) {
         continue
       }
       // Why: this mirrors desktop worktrees:list's disconnected-SSH fallback.

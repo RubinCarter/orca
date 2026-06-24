@@ -118,6 +118,12 @@ import { titleHasAgentName } from '../../../shared/agent-detection'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { translate } from '@/i18n/i18n'
 import { closeTerminalTab } from '@/components/terminal/terminal-tab-actions'
+import {
+  getRepoExecutionHostId,
+  LOCAL_EXECUTION_HOST_ID,
+  toRuntimeExecutionHostId,
+  type ExecutionHostId
+} from '../../../shared/execution-host'
 
 function getShortcutPlatform(): NodeJS.Platform {
   if (navigator.userAgent.includes('Mac')) {
@@ -409,26 +415,33 @@ async function prepareRemoteWorkspaceTarget(targetId: string): Promise<boolean> 
     await store.fetchRepos()
     repos = useAppStore.getState().repos.filter((repo) => repo.connectionId === targetId)
   }
-  await Promise.all(repos.map((repo) => useAppStore.getState().fetchWorktrees(repo.id)))
+  await Promise.all(
+    repos.map((repo) =>
+      useAppStore.getState().fetchWorktrees(repo.id, { ownerHostId: getRepoExecutionHostId(repo) })
+    )
+  )
   await useAppStore.getState().fetchWorktreeLineage()
   return true
 }
 
-function targetRepoIds(targetId: string): Set<string> {
-  return new Set(
-    useAppStore
-      .getState()
-      .repos.filter((repo) => repo.connectionId === targetId)
-      .map((repo) => repo.id)
-  )
-}
-
 function targetWorktreeIds(targetId: string): Set<string> {
-  const repoIds = targetRepoIds(targetId)
+  const repoHosts = useAppStore
+    .getState()
+    .repos.filter((repo) => repo.connectionId === targetId)
+    .map((repo) => ({
+      repoId: repo.id,
+      hostId: getRepoExecutionHostId(repo)
+    }))
   return new Set(
     Object.values(useAppStore.getState().worktreesByRepo)
       .flat()
-      .filter((worktree) => repoIds.has(worktree.repoId))
+      .filter((worktree) =>
+        repoHosts.some(
+          (repo) =>
+            repo.repoId === worktree.repoId &&
+            repo.hostId === (worktree.hostId ?? LOCAL_EXECUTION_HOST_ID)
+        )
+      )
       .map((worktree) => worktree.id)
   )
 }
@@ -954,7 +967,10 @@ export function useIpcEvents(): void {
       }
       if (event.type === 'worktreesChanged') {
         void ensureRuntimeEventRepoKnown(environmentId, event.repoId).then(() =>
-          worktreeChangeRefreshQueue.enqueue({ repoId: event.repoId })
+          worktreeChangeRefreshQueue.enqueue({
+            repoId: event.repoId,
+            ownerHostId: toRuntimeExecutionHostId(environmentId)
+          })
         )
         return
       }
@@ -2534,7 +2550,11 @@ export function useIpcEvents(): void {
       }
 
       if (state.status === 'connected') {
-        void Promise.all(remoteRepos.map((r) => store.fetchWorktrees(r.id))).then(async () => {
+        void Promise.all(
+          remoteRepos.map((repo) =>
+            store.fetchWorktrees(repo.id, { ownerHostId: getRepoExecutionHostId(repo) })
+          )
+        ).then(async () => {
           await useAppStore.getState().fetchWorktreeLineage()
           // Why: terminal panes that failed to spawn (no PTY provider on cold
           // start) sit inert. Bumping generation forces TerminalPane to remount

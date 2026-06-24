@@ -193,7 +193,12 @@ function getRepoLegacyWorktreeId(repo: Pick<Repo, 'id'>, path: string): string {
   return makeLegacyWorktreeId(repo.id, path)
 }
 
-function migrateLegacyWorktreeMetaIfSafe(store: Store, repo: Repo, path: string): void {
+function migrateLegacyWorktreeMetaIfSafe(
+  store: Store,
+  repos: Repo[],
+  repo: Repo,
+  path: string
+): void {
   const canonicalId = getRepoWorktreeId(repo, path)
   if (store.getWorktreeMeta(canonicalId)) {
     return
@@ -205,6 +210,9 @@ function migrateLegacyWorktreeMetaIfSafe(store: Store, repo: Repo, path: string)
   }
   const repoHostId = getRepoExecutionHostId(repo)
   if (legacyMeta.hostId !== undefined && legacyMeta.hostId !== repoHostId) {
+    return
+  }
+  if (legacyMeta.hostId === undefined && hasAmbiguousRepoHost(repos, repo)) {
     return
   }
   store.migrateWorktreeIdentity(legacyId, canonicalId)
@@ -592,6 +600,7 @@ function pruneLineageForMissingRepoWorktrees(
 
 type SshWorktreeMetaCandidate = {
   id: string
+  hostId?: string
   path: string
   meta: WorktreeMeta
 }
@@ -601,7 +610,7 @@ type SshWorktreeMetaIndex = Map<string, SshWorktreeMetaCandidate[]>
 function createSshWorktreeMetaIndex(entries: [string, WorktreeMeta][]): SshWorktreeMetaIndex {
   const index: SshWorktreeMetaIndex = new Map()
   for (const [worktreeId, meta] of entries) {
-    let parsed: { repoId: string; worktreePath: string }
+    let parsed: { repoId: string; worktreePath: string; hostId?: string }
     try {
       parsed = parseWorktreeId(worktreeId)
     } catch (err) {
@@ -615,10 +624,34 @@ function createSshWorktreeMetaIndex(entries: [string, WorktreeMeta][]): SshWorkt
     }
 
     const candidates = index.get(parsed.repoId) ?? []
-    candidates.push({ id: worktreeId, path: parsed.worktreePath, meta })
+    candidates.push({ id: worktreeId, hostId: parsed.hostId, path: parsed.worktreePath, meta })
     index.set(parsed.repoId, candidates)
   }
   return index
+}
+
+function hasAmbiguousRepoHost(repos: Repo[], repo: Repo): boolean {
+  const hostIds = new Set(
+    repos
+      .filter((candidateRepo) => candidateRepo.id === repo.id)
+      .map((candidateRepo) => getRepoExecutionHostId(candidateRepo))
+  )
+  return hostIds.size > 1
+}
+
+function isSshWorktreeMetaCandidateForRepo(
+  repos: Repo[],
+  repo: Repo,
+  candidate: SshWorktreeMetaCandidate
+): boolean {
+  const repoHostId = getRepoExecutionHostId(repo)
+  if (candidate.hostId !== undefined) {
+    return candidate.hostId === repoHostId
+  }
+  if (candidate.meta.hostId !== undefined) {
+    return candidate.meta.hostId === repoHostId
+  }
+  return !hasAmbiguousRepoHost(repos, repo)
 }
 
 function synthesizeSshGitWorktree(repo: Repo, path: string, meta: WorktreeMeta): GitWorktreeInfo {
@@ -638,12 +671,16 @@ function synthesizeSshGitWorktree(repo: Repo, path: string, meta: WorktreeMeta):
 
 function listDisconnectedSshWorktrees(
   store: Store,
+  repos: Repo[],
   repo: Repo,
   metaIndex: SshWorktreeMetaIndex
 ): ReturnType<typeof mergeWorktree>[] {
   const byWorktreeId = new Map<string, ReturnType<typeof mergeWorktree>>()
   for (const candidate of metaIndex.get(repo.id) ?? []) {
-    migrateLegacyWorktreeMetaIfSafe(store, repo, candidate.path)
+    if (!isSshWorktreeMetaCandidateForRepo(repos, repo, candidate)) {
+      continue
+    }
+    migrateLegacyWorktreeMetaIfSafe(store, repos, repo, candidate.path)
     const canonicalId = getRepoWorktreeId(repo, candidate.path)
     const candidateMeta = store.getWorktreeMeta(canonicalId) ?? candidate.meta
     const ownershipUpdates = getProjectHostSetupMetaUpdates(store, repo, candidateMeta)
@@ -658,7 +695,7 @@ function listDisconnectedSshWorktrees(
       repo.id,
       synthesizeSshGitWorktree(repo, candidate.path, meta),
       meta,
-      repo.displayName,
+      undefined,
       { hostId: getRepoExecutionHostId(repo) }
     )
     byWorktreeId.delete(worktree.id)
@@ -669,6 +706,7 @@ function listDisconnectedSshWorktrees(
 
 function buildDetectedGitWorktrees(
   store: Store,
+  repos: Repo[],
   repo: Repo,
   gitWorktrees: GitWorktreeInfo[]
 ): DetectedWorktree[] {
@@ -676,7 +714,7 @@ function buildDetectedGitWorktrees(
   const knownOrcaLayouts = buildKnownOrcaWorkspaceLayouts(settings, repo)
   const isLegacyRepoForVisibility = isLegacyRepoForExternalWorktreeVisibility(repo)
   return dedupeGitWorktreesByPath(gitWorktrees).map((gitWorktree) => {
-    migrateLegacyWorktreeMetaIfSafe(store, repo, gitWorktree.path)
+    migrateLegacyWorktreeMetaIfSafe(store, repos, repo, gitWorktree.path)
     const worktreeId = getRepoWorktreeId(repo, gitWorktree.path)
     let meta = store.getWorktreeMeta(worktreeId)
     const worktree = mergeWorktree(repo.id, gitWorktree, meta, repo.displayName, {
@@ -710,10 +748,11 @@ function buildDetectedGitWorktrees(
 
 function stampAndMergeVisibleDetectedWorktree(
   store: Store,
+  repos: Repo[],
   repo: Repo,
   detected: DetectedWorktree
 ) {
-  migrateLegacyWorktreeMetaIfSafe(store, repo, detected.path)
+  migrateLegacyWorktreeMetaIfSafe(store, repos, repo, detected.path)
   const meta = resolveWorktreeMetaWithDiscoveryBackfill(store, repo, detected.id)
   return mergeWorktree(repo.id, detected, meta, repo.displayName, {
     hostId: getRepoExecutionHostId(repo)
@@ -1010,7 +1049,7 @@ export function registerWorktreeHandlers(
               `${repo.connectionId}:${repo.id}`,
               `[worktrees] SSH git provider unavailable; skipping worktree list for repo "${repo.displayName}" (${repo.id}) at ${repo.path} on connection ${repo.connectionId}`
             )
-            return listDisconnectedSshWorktrees(store, repo, sshWorktreeMetaIndex)
+            return listDisconnectedSshWorktrees(store, repos, repo, sshWorktreeMetaIndex)
           }
           loggedUnavailableSshGitProviders.delete(`${repo.connectionId}:${repo.id}`)
           try {
@@ -1022,7 +1061,7 @@ export function registerWorktreeHandlers(
               `[worktrees] failed to list worktrees for repo "${repo.displayName}" (${repo.id}) at ${repo.path}`,
               err
             )
-            return listDisconnectedSshWorktrees(store, repo, sshWorktreeMetaIndex)
+            return listDisconnectedSshWorktrees(store, repos, repo, sshWorktreeMetaIndex)
           }
         } else {
           gitWorktrees = await listRepoWorktrees(
@@ -1033,9 +1072,9 @@ export function registerWorktreeHandlers(
         rememberLocalWorktreeRoots(store, repo, gitWorktrees)
         pruneLineageForMissingRepoWorktrees(store, repo, gitWorktrees)
         loggedWorktreeListFailures.delete(`${repo.id}:${repo.path}`)
-        return buildDetectedGitWorktrees(store, repo, gitWorktrees)
+        return buildDetectedGitWorktrees(store, repos, repo, gitWorktrees)
           .filter((worktree) => worktree.visible)
-          .map((worktree) => stampAndMergeVisibleDetectedWorktree(store, repo, worktree))
+          .map((worktree) => stampAndMergeVisibleDetectedWorktree(store, repos, repo, worktree))
       } catch (err) {
         warnOnce(
           loggedWorktreeListFailures,
@@ -1062,6 +1101,7 @@ export function registerWorktreeHandlers(
     if (!repo) {
       return []
     }
+    const repos = store.getRepos()
     const sshWorktreeMetaIndex = repo.connectionId
       ? createSshWorktreeMetaIndex(Object.entries(store.getAllWorktreeMeta()))
       : new Map()
@@ -1078,7 +1118,7 @@ export function registerWorktreeHandlers(
             `${repo.connectionId}:${repo.id}`,
             `[worktrees] SSH git provider unavailable; skipping worktree list for repo "${repo.displayName}" (${repo.id}) at ${repo.path} on connection ${repo.connectionId}`
           )
-          return listDisconnectedSshWorktrees(store, repo, sshWorktreeMetaIndex)
+          return listDisconnectedSshWorktrees(store, repos, repo, sshWorktreeMetaIndex)
         }
         loggedUnavailableSshGitProviders.delete(`${repo.connectionId}:${repo.id}`)
         try {
@@ -1090,7 +1130,7 @@ export function registerWorktreeHandlers(
             `[worktrees] failed to list worktrees for repo "${repo.displayName}" (${repo.id}) at ${repo.path}`,
             err
           )
-          return listDisconnectedSshWorktrees(store, repo, sshWorktreeMetaIndex)
+          return listDisconnectedSshWorktrees(store, repos, repo, sshWorktreeMetaIndex)
         }
       } else {
         gitWorktrees = await listRepoWorktrees(repo, getLocalProjectWorktreeGitOptions(store, repo))
@@ -1098,9 +1138,9 @@ export function registerWorktreeHandlers(
       rememberLocalWorktreeRoots(store, repo, gitWorktrees)
       pruneLineageForMissingRepoWorktrees(store, repo, gitWorktrees)
       loggedWorktreeListFailures.delete(`${repo.id}:${repo.path}`)
-      return buildDetectedGitWorktrees(store, repo, gitWorktrees)
+      return buildDetectedGitWorktrees(store, repos, repo, gitWorktrees)
         .filter((worktree) => worktree.visible)
-        .map((worktree) => stampAndMergeVisibleDetectedWorktree(store, repo, worktree))
+        .map((worktree) => stampAndMergeVisibleDetectedWorktree(store, repos, repo, worktree))
     } catch (err) {
       warnOnce(
         loggedWorktreeListFailures,
@@ -1126,6 +1166,7 @@ export function registerWorktreeHandlers(
           worktrees: []
         }
       }
+      const repos = store.getRepos()
       const sshWorktreeMetaIndex = repo.connectionId
         ? createSshWorktreeMetaIndex(Object.entries(store.getAllWorktreeMeta()))
         : new Map()
@@ -1143,7 +1184,7 @@ export function registerWorktreeHandlers(
         } else if (repo.connectionId) {
           const provider = getSshGitProvider(repo.connectionId)
           if (!provider) {
-            const worktrees = listDisconnectedSshWorktrees(store, repo, sshWorktreeMetaIndex)
+            const worktrees = listDisconnectedSshWorktrees(store, repos, repo, sshWorktreeMetaIndex)
             return {
               repoId: repo.id,
               authoritative: false,
@@ -1166,7 +1207,7 @@ export function registerWorktreeHandlers(
           repoId: repo.id,
           authoritative: true,
           source: 'git',
-          worktrees: buildDetectedGitWorktrees(store, repo, gitWorktrees)
+          worktrees: buildDetectedGitWorktrees(store, repos, repo, gitWorktrees)
         }
       } catch (err) {
         warnOnce(
@@ -1176,7 +1217,7 @@ export function registerWorktreeHandlers(
           err
         )
         if (repo.connectionId) {
-          const worktrees = listDisconnectedSshWorktrees(store, repo, sshWorktreeMetaIndex)
+          const worktrees = listDisconnectedSshWorktrees(store, repos, repo, sshWorktreeMetaIndex)
           return {
             repoId: repo.id,
             authoritative: false,
