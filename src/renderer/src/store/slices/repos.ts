@@ -44,6 +44,7 @@ import { normalizeRepoBadgeColor } from '../../../../shared/repo-badge-color'
 import { getProjectGroupSubtreeIds } from '../../../../shared/project-groups'
 import { isPathInsideOrEqual } from '../../../../shared/cross-platform-path'
 import { selectProjectGroupRemovalTargets } from './project-group-removal-targets'
+import { getRepoIdFromWorktreeId } from './worktree-helpers'
 import { reconcileFetchedRepos } from './repo-identity-reconcile'
 import { splitRepoReorderByHost } from './repo-reorder-host-split'
 import {
@@ -2328,16 +2329,22 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
         // from worktreesByRepo (treats them as not-yet-hydrated SSH repos).
         // Drop this repo's timestamps explicitly so they cannot survive prune
         // forever after the repo is removed.
+        const nextRepos = s.repos.filter((r) => !repoMatchesHostIdentity(r, projectId, ownerHostId))
+        // Why: when no sibling host still owns this repo id, drop every persisted
+        // timestamp for the repo's worktrees — including unhydrated SSH/remote ones
+        // absent from worktreeIdSet, which pruneLastVisitedTimestamps would otherwise
+        // defer forever as "not yet hydrated" after the repo is gone. When a duplicate
+        // id remains on another host, stay host-scoped via worktreeIdSet.
+        const repoIdFullyRemoved = !nextRepos.some((r) => r.id === projectId)
         let nextLastVisitedAtByWorktreeId = s.lastVisitedAtByWorktreeId
         for (const id of Object.keys(s.lastVisitedAtByWorktreeId)) {
-          if (worktreeIdSet.has(id)) {
+          if (worktreeIdSet.has(id) || (repoIdFullyRemoved && getRepoIdFromWorktreeId(id) === projectId)) {
             if (nextLastVisitedAtByWorktreeId === s.lastVisitedAtByWorktreeId) {
               nextLastVisitedAtByWorktreeId = { ...s.lastVisitedAtByWorktreeId }
             }
             delete nextLastVisitedAtByWorktreeId[id]
           }
         }
-        const nextRepos = s.repos.filter((r) => !repoMatchesHostIdentity(r, projectId, ownerHostId))
         return {
           repos: nextRepos,
           ...mergeProjectCompatibilityForHostRepoChange({
