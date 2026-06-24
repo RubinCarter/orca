@@ -21,6 +21,7 @@ let tabsByWorktree: Record<string, { id: string }[]> = {}
 let ptyIdsByTabId: Record<string, string[]> = {}
 let browserTabsByWorktree: Record<string, { id: string }[]> = {}
 let settings: Partial<GlobalSettings> | null = null
+let projectGroups: unknown[] = []
 let workspaceDeleteModifierPressed = false
 let gitConflictOperationByWorktree: Record<string, GitConflictOperation> = {}
 let WorktreeCard: typeof WorktreeCardComponent
@@ -35,7 +36,7 @@ vi.mock('@/store', () => ({
       hostedReviewCache: {},
       issueCache: {},
       openModal,
-      projectGroups: [],
+      projectGroups,
       remoteBranchConflictByWorktreeId: {},
       settings,
       sshConnectionStates: new Map(),
@@ -144,6 +145,7 @@ describe('WorktreeCard quick actions', () => {
     ptyIdsByTabId = {}
     browserTabsByWorktree = {}
     settings = null
+    projectGroups = []
     workspaceDeleteModifierPressed = false
     gitConflictOperationByWorktree = {}
   })
@@ -215,6 +217,28 @@ describe('WorktreeCard quick actions', () => {
     expect(markup).not.toContain('>Folder</span>')
     expect(markup).toContain('>quick-action</span>')
     expect(markup).toContain('data-worktree-card-meta-row=""')
+  })
+
+  it('does not render a branch icon for synthetic folder workspace path identity', () => {
+    settings = { compactWorktreeCards: true, experimentalNewWorktreeCardStyle: true }
+    worktreeCardProperties = ['status', 'branch']
+    projectGroups = [{ id: 'project-group-1' }]
+
+    const markup = renderToStaticMarkup(
+      <WorktreeCard
+        worktree={makeWorktree({
+          id: 'folder:folder-1',
+          displayName: 'Docs folder',
+          branch: '',
+          path: '/repo/worktrees/quick-action'
+        })}
+        repo={undefined}
+        isActive={false}
+      />
+    )
+
+    expect(markup).toContain('/repo/worktrees/quick-action')
+    expect(markup).not.toContain('lucide-git-branch')
   })
 
   it('does not render a pending first-agent rename title badge', () => {

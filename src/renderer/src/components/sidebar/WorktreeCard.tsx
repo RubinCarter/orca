@@ -45,6 +45,7 @@ import {
 import { WorktreeCardPortsDetails, WorktreeCardPortsTrigger } from './WorktreeCardPorts'
 import { writeWorkspaceDragData } from './workspace-status'
 import { getWorktreeCardPrDisplay } from './worktree-card-pr-display'
+import type { WorktreeCardPrDisplay } from './worktree-card-pr-display'
 import {
   coerceWorktreeCardVisibleTitle,
   getWorktreeCardTitleDisplay
@@ -121,6 +122,7 @@ type WorktreeCardProps = {
   onCardDragEnd?: (event: React.DragEvent<HTMLDivElement>) => void
   nativeDragEnabled?: boolean
   affiliateListMode?: boolean
+  statusPrDisplay?: WorktreeCardPrDisplay | null
 }
 
 const EMPTY_WORKSPACE_PORTS = []
@@ -212,7 +214,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
   lineageChildrenStyle,
   onLineageToggle,
   isLineageDropTarget = false,
-  affiliateListMode = false
+  affiliateListMode = false,
+  statusPrDisplay = null
 }: WorktreeCardProps) {
   const openModal = useAppStore((s) => s.openModal)
   const openTaskPage = useAppStore((s) => s.openTaskPage)
@@ -380,12 +383,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const folderMetaRowContent = newCardStyle
     ? hasPathIdentityEnabled && Boolean(folderPathIdentityDisplay)
     : isFolder
-  const statusIdentityLabel = hasProjectGroups
-    ? translate(
-        'auto.components.sidebar.WorktreeCard.branchFolderPathIdentity',
-        'Branch or folder path'
-      )
-    : translate('auto.components.sidebar.WorktreeCard.branchIdentity', 'Branch')
   const hostedReviewCacheKey =
     repo && branch
       ? getHostedReviewCacheKey(
@@ -955,6 +952,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const hoverIssue = issueDisplay
   const hoverLinearIssue = linearIssueDisplay
   const hoverReview = prDisplay
+  const statusLaneReview = statusPrDisplay ?? hoverReview
   const hoverComment = worktree.comment
   const metaIssue = showIssue ? hoverIssue : null
   const metaLinearIssue = showLinearIssue ? hoverLinearIssue : null
@@ -1275,10 +1273,9 @@ const WorktreeCard = React.memo(function WorktreeCard({
             unreadTooltip={unreadTooltip}
             onPointerDown={stopQuickActionPointerPropagation}
             onToggleUnread={handleToggleUnreadQuick}
-            prDisplay={hoverReview}
+            prDisplay={statusLaneReview}
             newCardStyle={newCardStyle}
-            hasBranchIdentity={Boolean(identityDisplay)}
-            branchIdentityLabel={statusIdentityLabel}
+            hasBranchIdentity={Boolean(branchIdentityDisplay)}
           />
         </div>
       ) : null}

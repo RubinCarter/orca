@@ -57,6 +57,7 @@ import type {
   ProjectOrderBy,
   WorktreeLineage,
   WorktreeMeta,
+  WorkspaceLineage,
   WorkspaceStatus,
   WorkspaceStatusDefinition
 } from '../../../../shared/types'
@@ -255,6 +256,7 @@ import {
   getFolderWorkspaceExecutionHostIdForRows,
   getProjectGroupExecutionHostIdForRows
 } from './worktree-list-host-filtering'
+import { getFolderWorkspaceCardPrDisplay } from './folder-workspace-card-pr-display'
 
 export {
   getScrollTopToRevealBounds,
@@ -612,6 +614,7 @@ type VirtualizedWorktreeViewportProps = {
   repoMap: Map<string, Repo>
   worktreeMap: Map<string, Worktree>
   worktreeLineageById: Record<string, WorktreeLineage>
+  workspaceLineageByChildKey: Record<string, WorkspaceLineage>
   repoOrder: Map<string, number>
   // The full canonical state.repos id ordering — the drag controller commits
   // permutations of this list, even when some repos aren't currently visible
@@ -621,6 +624,7 @@ type VirtualizedWorktreeViewportProps = {
   onReorderHostSections: (orderedHostIds: ExecutionHostId[]) => void
   onHostDragActiveChange: (active: boolean) => void
   prCache: Record<string, unknown> | null
+  hostedReviewCache: Record<string, unknown> | null
   workspaceStatuses: readonly WorkspaceStatusDefinition[]
   projectGrouping?: ProjectGroupingModel
   projectGroups?: readonly ProjectGroup[]
@@ -1237,11 +1241,13 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
   repoMap,
   worktreeMap,
   worktreeLineageById,
+  workspaceLineageByChildKey,
   repoOrder,
   allRepoIds,
   onReorderHostSections,
   onHostDragActiveChange,
   prCache,
+  hostedReviewCache,
   workspaceStatuses,
   projectGrouping,
   projectGroups = EMPTY_PROJECT_GROUPS,
@@ -4760,6 +4766,16 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                 folderWorkspacePathStatus?.exists === false &&
                 (isConfirmedStaleFolderPathStatus(folderWorkspacePathStatus) ||
                   folderWorkspacePathStatus.reason === 'ambiguous-connection')
+              const folderPrDisplay = getFolderWorkspaceCardPrDisplay({
+                folderWorkspaceId: folderWorkspaceRow.folderWorkspace.id,
+                workspaceLineageByChildKey,
+                worktreeLineageById,
+                worktreeMap,
+                repoMap,
+                hostedReviewCache,
+                prCache,
+                settings
+              })
               const isFolderBackedWorkspaceChild =
                 groupBy === 'repo' && folderWorkspaceRow.projectGroup.createdFrom === 'folder-scan'
               const { surfaceInset, cardContentIndent } = getFolderWorkspaceRowGeometry({
@@ -4810,6 +4826,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                       activationRowKey={folderWorktree.id}
                       onSelectionGesture={onSelectionGesture}
                       onContextMenuSelect={onContextMenuSelect}
+                      statusPrDisplay={folderPrDisplay}
                     />
                     <div className="pointer-events-auto absolute right-3 top-1.5">
                       <FolderPathStatusIndicator status={folderWorkspacePathStatus} />
@@ -4894,6 +4911,7 @@ const WorktreeList = React.memo(function WorktreeList({
   const repoMap = useRepoMap()
   const worktreeMap = useWorktreeMap()
   const worktreeLineageById = useAppStore((s) => s.worktreeLineageById)
+  const workspaceLineageByChildKey = useAppStore((s) => s.workspaceLineageByChildKey)
   const worktreesByRepo = useAppStore((s) => s.worktreesByRepo)
   const detectedWorktreesByRepo = useAppStore((s) => s.detectedWorktreesByRepo)
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
@@ -4999,6 +5017,11 @@ const WorktreeList = React.memo(function WorktreeList({
       ? cardProps.includes('status')
       : cardProps.includes('pr'))
       ? s.prCache
+      : null
+  )
+  const hostedReviewCache = useAppStore((s) =>
+    s.settings?.experimentalNewWorktreeCardStyle === true && cardProps.includes('status')
+      ? s.hostedReviewCache
       : null
   )
   const settings = useAppStore((s) => s.settings)
@@ -6401,11 +6424,13 @@ const WorktreeList = React.memo(function WorktreeList({
         repoMap={repoMap}
         worktreeMap={worktreeMap}
         worktreeLineageById={worktreeLineageById}
+        workspaceLineageByChildKey={workspaceLineageByChildKey}
         repoOrder={repoOrder}
         allRepoIds={allRepoIds}
         onReorderHostSections={handleReorderHostSections}
         onHostDragActiveChange={setHostDragActive}
         prCache={prCache}
+        hostedReviewCache={hostedReviewCache}
         workspaceStatuses={workspaceStatuses}
         projectGrouping={projectGrouping}
         projectGroups={projectGroups}
