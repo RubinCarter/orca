@@ -14292,7 +14292,7 @@ describe('OrcaRuntimeService', () => {
   })
 
   it('does not dedupe mobile terminal creates across worktrees with the same clientMutationId', async () => {
-    const otherWorktreeId = `${TEST_REPO_ID}::/tmp/worktree-b`
+    const otherWorktreeId = makeLocalTestWorktreeId('/tmp/worktree-b')
     vi.mocked(listWorktrees).mockResolvedValue([
       ...MOCK_GIT_WORKTREES,
       {

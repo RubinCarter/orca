@@ -2371,7 +2371,9 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
             hostId: ownerHostId
           }),
           activeRepoId: s.activeRepoId === projectId ? null : s.activeRepoId,
-          filterRepoIds: s.filterRepoIds.filter((id) => id !== projectId),
+          filterRepoIds: nextRepos.some((repo) => repo.id === projectId)
+            ? s.filterRepoIds
+            : s.filterRepoIds.filter((id) => id !== projectId),
           worktreesByRepo: nextWorktrees,
           detectedWorktreesByRepo: nextDetectedWorktrees,
           tabsByWorktree: nextTabs,
