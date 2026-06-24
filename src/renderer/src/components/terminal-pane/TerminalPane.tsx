@@ -1760,27 +1760,24 @@ export default function TerminalPane({
     return subscribeTerminalPaneAttention(tabId, applyTerminalPaneAttention)
   }, [tabId, paneCount, applyTerminalPaneAttention])
 
-  // Sync the pane title reservation before paint. The title UI stays outside
-  // xterm's DOM, but xterm must still fit below it so the first terminal row is
-  // never hidden under the title strip.
+  // Sync the pane title reservation before paint. Text/banner chrome stays
+  // outside xterm's DOM, but xterm must still fit below it so the first
+  // terminal row is never hidden under meaningful status UI.
   useLayoutEffect(() => {
     const manager = managerRef.current
     if (!manager) {
       return
     }
-    // Show the title bar space when the pane has a title, is being
-    // inline-edited, or has transient startup chrome. Unread activity does
-    // not reserve this space; its overlay should not reflow terminal content.
+    // Show title space only for text/status chrome. Chromeless pane controls
+    // float over xterm so untitled panes keep their first row.
     const needsFit = syncSessionRestoredBannerTitleSpace({
       panes: manager.getPanes(),
       paneTitles,
       renamingPaneId,
-      sessionRestoredBannerPaneIds,
-      reservePaneHeaderSpace: isActive && (isVisible || shouldMeasureHiddenStartup)
+      sessionRestoredBannerPaneIds
     })
     if (needsFit && (isVisible || shouldMeasureHiddenStartup)) {
-      // Why: inactive terminal tabs can drop active-only header reservation.
-      // Fitting that hidden geometry changes PTY rows and wakes TUIs with
+      // Why: fitting hidden geometry changes PTY rows and wakes TUIs with
       // SIGWINCH; the visible resume path owns any real layout correction.
       fitPanes(manager)
     }
@@ -1790,7 +1787,6 @@ export default function TerminalPane({
     paneTitles,
     renamingPaneId,
     sessionRestoredBannerPaneIds,
-    isActive,
     isVisible,
     shouldMeasureHiddenStartup
   ])

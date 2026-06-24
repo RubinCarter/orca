@@ -353,6 +353,11 @@
   background: transparent;
   border-bottom: none;
   padding: 0 4px;
+  pointer-events: none;
+}
+
+.pane-title-bar[data-chromeless] .pane-title-actions {
+  pointer-events: auto;
 }
 
 .pane-title-close {
