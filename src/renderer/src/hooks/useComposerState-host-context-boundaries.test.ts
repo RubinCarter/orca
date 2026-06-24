@@ -399,4 +399,42 @@ describe('useComposerState host-context boundaries', () => {
     expect(quickSubmit).not.toContain('shouldPrepareQuickLinkedWorkItemAgentPrompt')
     expect(HOOK_SOURCE).not.toContain('resolveQuickWorkspaceSubmitAgent')
   })
+
+  it('keeps generated Linear source context out of CLI-gated/native prompt paths', () => {
+    expect(HOOK_SOURCE).not.toContain('isOrcaCliAvailableForLaunch')
+
+    const previewSection = sourceBetween(
+      HOOK_SOURCE,
+      'const shouldApplyLinkedOnlyTemplate =',
+      'const linkedOnlyTemplatePrompt'
+    )
+    expect(previewSection).toContain(
+      '(!linkedWorkItem?.linearIdentifier || issueCommandTemplate.trim().length > 0)'
+    )
+
+    const fullSubmit = sourceBetween(
+      HOOK_SOURCE,
+      'const submit = useCallback',
+      'const submitQuick = useCallback'
+    )
+    expect(fullSubmit).toContain(
+      'const shouldDraftGeneratedLinearContext =\n        hasGeneratedLinearSourceContext(submitLinkedWorkItem)'
+    )
+    expect(fullSubmit).toContain('prompt: shouldDraftGeneratedLinearContext ?')
+    expect(fullSubmit).toContain('startupPlan.draftPrompt = submitStartupPrompt')
+    expect(fullSubmit).toContain('const shouldSeedInitialAgentStatus =')
+    expect(fullSubmit).toContain('!shouldDraftGeneratedLinearContext &&')
+    expect(fullSubmit).toContain('...(shouldSeedInitialAgentStatus')
+
+    const quickSubmit = sourceBetween(
+      HOOK_SOURCE,
+      'const submitQuick = useCallback',
+      'const createGateInput'
+    )
+    expect(quickSubmit).toContain(
+      'const shouldDraftGeneratedLinearContext =\n          hasGeneratedLinearSourceContext(promptLinkedWorkItem)'
+    )
+    expect(quickSubmit).toContain('agent === null || !quickDraftPrompt ||')
+    expect(quickSubmit).toContain('startupPlan.draftPrompt = quickDraftPrompt')
+  })
 })

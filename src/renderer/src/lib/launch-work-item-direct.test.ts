@@ -320,6 +320,99 @@ describe('launchWorkItemDirect', () => {
     )
   })
 
+  it('pastes generated Linear source context after ready without submitting it', async () => {
+    mocks.ensureDetectedAgents.mockResolvedValue(['claude'])
+    const { launchWorkItemDirect } = await import('./launch-work-item-direct')
+
+    await expect(
+      launchWorkItemDirect({
+        repoId: 'repo-1',
+        launchSource: 'task_page',
+        openModalFallback: vi.fn(),
+        agentOverride: 'claude',
+        promptDelivery: 'submit-after-ready',
+        item: {
+          type: 'issue',
+          number: null,
+          title: 'Ship Linear parity',
+          url: 'https://linear.app/acme/issue/ENG-42/ship-linear-parity',
+          linearIdentifier: 'ENG-42',
+          linkedContext: {
+            provider: 'linear',
+            version: 1,
+            renderedText: [
+              'Linear issue context snapshot',
+              'Identifier: ENG-42',
+              'Title: Ship Linear parity',
+              'Description:',
+              'The distinctive Linear body text is here.'
+            ].join('\n')
+          }
+        }
+      })
+    ).resolves.toBe(true)
+
+    expect(buildAgentDraftLaunchPlan).not.toHaveBeenCalled()
+    expect(buildAgentStartupPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: 'claude',
+        prompt: '',
+        allowEmptyPromptLaunch: true
+      })
+    )
+    expect(pasteDraftWhenAgentReady).toHaveBeenCalledWith({
+      tabId: 'tab-1',
+      content: expect.stringContaining('The distinctive Linear body text is here.'),
+      agent: 'claude',
+      submit: false,
+      forcePaste: true,
+      onTimeout: expect.any(Function)
+    })
+    const pasted = vi.mocked(pasteDraftWhenAgentReady).mock.calls[0]?.[0]?.content
+    expect(pasted).toContain('Linked Linear issue: ENG-42')
+    expect(pasted).toContain('--- BEGIN LINKED WORK ITEM CONTEXT ---')
+    expect(pasted).toContain('--- END LINKED WORK ITEM CONTEXT ---')
+    expect(pasted).not.toContain('orca linear')
+  })
+
+  it('preserves explicit Linear paste content submit-after-ready behavior', async () => {
+    mocks.ensureDetectedAgents.mockResolvedValue(['claude'])
+    const { launchWorkItemDirect } = await import('./launch-work-item-direct')
+
+    await expect(
+      launchWorkItemDirect({
+        repoId: 'repo-1',
+        launchSource: 'task_page',
+        openModalFallback: vi.fn(),
+        agentOverride: 'claude',
+        promptDelivery: 'submit-after-ready',
+        item: {
+          type: 'issue',
+          number: null,
+          title: 'Ship Linear parity',
+          url: 'https://linear.app/acme/issue/ENG-42/ship-linear-parity',
+          linearIdentifier: 'ENG-42',
+          pasteContent: 'Use this explicit user prompt.',
+          linkedContext: {
+            provider: 'linear',
+            version: 1,
+            renderedText: 'This generated Linear source should not replace explicit paste content.'
+          }
+        }
+      })
+    ).resolves.toBe(true)
+
+    expect(buildAgentDraftLaunchPlan).not.toHaveBeenCalled()
+    expect(pasteDraftWhenAgentReady).toHaveBeenCalledWith({
+      tabId: 'tab-1',
+      content: 'Use this explicit user prompt.',
+      agent: 'claude',
+      submit: true,
+      forcePaste: true,
+      onTimeout: expect.any(Function)
+    })
+  })
+
   it('uses remote cursor-agent detection, trust preflight, and paste launch for SSH repos', async () => {
     mocks.store.repos = [
       {

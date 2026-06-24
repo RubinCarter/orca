@@ -386,6 +386,74 @@ describe('submitFolderWorkspaceCreate', () => {
     expect(mocks.ensureAgentStartupInTerminal).not.toHaveBeenCalled()
   })
 
+  it('pastes generated Linear source blocks instead of using native prefill', async () => {
+    const createFolderWorkspace = vi.fn(async () => makeFolderWorkspace())
+    const linkedWorkItem = {
+      provider: 'linear' as const,
+      type: 'issue' as const,
+      number: 0,
+      title: 'Ship Linear source drafts',
+      url: 'https://linear.app/acme/issue/ENG-77/ship-linear-source-drafts',
+      linearIdentifier: 'ENG-77',
+      linkedContext: {
+        provider: 'linear' as const,
+        version: 1 as const,
+        renderedText: [
+          'Linear issue context snapshot',
+          'Identifier: ENG-77',
+          'Title: Ship Linear source drafts',
+          'Description:',
+          'Distinctive folder Linear body.'
+        ].join('\n')
+      }
+    }
+
+    await submitFolderWorkspaceCreate({
+      projectGroup: makeProjectGroup(),
+      name: '',
+      lastAutoName: '',
+      linkedWorkItem,
+      note: 'User note stays above source',
+      quickAgent: 'claude',
+      autoRenameBranchFromWork: true,
+      agentCmdOverrides: {},
+      createFolderWorkspace,
+      onOpenChange: vi.fn()
+    })
+
+    expect(createFolderWorkspace).toHaveBeenCalledWith({
+      projectGroupId: 'group-1',
+      name: 'ENG-77 Ship Linear source drafts',
+      connectionId: null,
+      linkedTask: {
+        provider: 'linear',
+        type: 'issue',
+        number: 0,
+        title: 'Ship Linear source drafts',
+        url: 'https://linear.app/acme/issue/ENG-77/ship-linear-source-drafts',
+        linearIdentifier: 'ENG-77'
+      },
+      createdWithAgent: 'claude'
+    })
+    const startup = mocks.activateAndRevealFolderWorkspace.mock.calls[0]?.[1]?.startup
+    expect(startup?.command).toBe('claude')
+    expect(startup?.command).not.toContain('--prefill')
+    expect(mocks.ensureAgentStartupInTerminal).toHaveBeenCalledWith({
+      worktreeId: folderWorkspaceKey('folder-workspace-1'),
+      primaryTabId: 'tab-1',
+      startup: expect.objectContaining({
+        agent: 'claude',
+        launchCommand: 'claude',
+        followupPrompt: null,
+        draftPrompt: expect.stringContaining('Distinctive folder Linear body.')
+      })
+    })
+    const startupPlan = mocks.ensureAgentStartupInTerminal.mock.calls[0]?.[0]?.startup
+    expect(startupPlan.draftPrompt).toContain('User note stays above source')
+    expect(startupPlan.draftPrompt).toContain('--- BEGIN LINKED WORK ITEM CONTEXT ---')
+    expect(startupPlan.draftPrompt).not.toContain('orca linear')
+  })
+
   it('keeps explicit blank linked folder creates free of agent startup and draft paste', async () => {
     const createFolderWorkspace = vi.fn(async () => makeFolderWorkspace())
     const linkedWorkItem = {
