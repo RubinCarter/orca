@@ -12,6 +12,7 @@ type MobilePageContentProps = {
   copyInstallUrl: () => void
   copyPairingCode: () => void
   devices: PairedDevice[]
+  endpoint: string | null
   enterFlow: () => void
   generatePairing: (rotate: boolean) => void
   handleAddressChange: (address: string) => void
@@ -29,7 +30,7 @@ type MobilePageContentProps = {
   refreshingNetworkInterfaces: boolean
   revokeDevice: (id: string) => void
   revokingDeviceIds: string[]
-  selectedAddress: string | undefined
+  connectionAddress: string
   setPlatform: (platform: Platform) => void
   showMobileButton: boolean
   showPairedDevices: (deviceCount: number) => void
@@ -43,6 +44,7 @@ export function MobilePageContent({
   copyInstallUrl,
   copyPairingCode,
   devices,
+  endpoint,
   enterFlow,
   generatePairing,
   handleAddressChange,
@@ -60,7 +62,7 @@ export function MobilePageContent({
   refreshingNetworkInterfaces,
   revokeDevice,
   revokingDeviceIds,
-  selectedAddress,
+  connectionAddress,
   setPlatform,
   showMobileButton,
   showPairedDevices,
@@ -97,12 +99,13 @@ export function MobilePageContent({
               onCopyInstallUrl={copyInstallUrl}
               pairQrDataUrl={pairQrDataUrl}
               pairingUrl={pairingUrl}
+              endpoint={endpoint}
               pairLoading={pairLoading}
               onRegeneratePairing={() => generatePairing(true)}
               onCopyPairingCode={copyPairingCode}
               networkInterfaces={networkInterfaces}
-              selectedAddress={selectedAddress}
-              onSelectedAddressChange={handleAddressChange}
+              connectionAddress={connectionAddress}
+              onConnectionAddressChange={handleAddressChange}
               onRefreshNetworkInterfaces={loadNetworkInterfaces}
               refreshingNetworkInterfaces={refreshingNetworkInterfaces}
               onBack={handleBack}
