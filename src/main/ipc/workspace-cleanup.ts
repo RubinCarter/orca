@@ -618,12 +618,18 @@ function synthesizeDisconnectedSshCandidates(
 ): WorkspaceCleanupCandidate[] {
   const repoWorktreePrefix = `${repo.id}::`
   const repoHostId = getRepoExecutionHostId(repo)
-  const isRepoWorktreeId = (worktreeId: string): boolean => {
+  const isRepoWorktreeId = (worktreeId: string, meta?: WorktreeMeta): boolean => {
     const parsed = parseWorktreeKey(worktreeId)
     if (parsed) {
       return parsed.repoId === repo.id && parsed.hostId === repoHostId
     }
-    return worktreeId.startsWith(repoWorktreePrefix)
+    if (!worktreeId.startsWith(repoWorktreePrefix)) {
+      return false
+    }
+    if (meta?.hostId !== undefined) {
+      return meta.hostId === repoHostId
+    }
+    return hasSingleRepoExecutionHost(repos, repo)
   }
   if (targetWorktreeId) {
     if (!isRepoWorktreeId(targetWorktreeId)) {
@@ -652,14 +658,19 @@ function synthesizeDisconnectedSshCandidates(
   const candidates: WorkspaceCleanupCandidate[] = []
   const allMeta = store.getAllWorktreeMeta()
   for (const worktreeId in allMeta) {
-    if (!Object.hasOwn(allMeta, worktreeId) || !isRepoWorktreeId(worktreeId)) {
+    const meta = allMeta[worktreeId]
+    if (!Object.hasOwn(allMeta, worktreeId) || !isRepoWorktreeId(worktreeId, meta)) {
       continue
     }
-    const meta = allMeta[worktreeId]
     if (!meta || !isWorkspaceInactiveForCleanup(meta, scannedAt)) {
       continue
     }
-    candidates.push(createDisconnectedSshCandidate(repo, scannedAt, worktreeId, meta))
+    const parsed = splitWorktreeId(worktreeId)
+    const candidateWorktreeId =
+      parsed && parsed.repoId === repo.id
+        ? makeRepoWorktreeKey(repo, parsed.worktreePath)
+        : worktreeId
+    candidates.push(createDisconnectedSshCandidate(repo, scannedAt, candidateWorktreeId, meta))
   }
   return candidates
 }
