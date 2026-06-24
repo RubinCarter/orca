@@ -16,8 +16,7 @@ import type {
   WorktreeLineage,
   WorkspaceLineage,
   WorkspaceKey,
-  WorktreeMeta,
-  Repo
+  WorktreeMeta
 } from '../../../../shared/types'
 import type { RuntimeWorktreeListResult } from '../../../../shared/runtime-types'
 import {
@@ -450,6 +449,11 @@ function mergeDetectedWorktreesForHost(
   hostId: ExecutionHostId,
   options?: WorktreeHostMatchOptions
 ): DetectedWorktreeListResult {
+  if (!refreshed.authoritative && refreshed.worktrees.length === 0 && current) {
+    // Why: a non-authoritative empty scan means the backend could not prove the
+    // host is empty. Preserve cached rows instead of deleting display metadata.
+    return { ...refreshed, worktrees: current.worktrees }
+  }
   const refreshedForHost = refreshed.worktrees.map((worktree) => withRepoHostId(worktree, hostId))
   return {
     ...refreshed,
@@ -1770,7 +1774,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
   fetchWorktrees: async (repoId, options) => {
     try {
       const ownerState = get()
-      const hostId = repoHostId(ownerState, repoId)
+      const hostId = repoHostId(ownerState, repoId, options?.ownerHostId)
       const settings = settingsForRepoOwner(ownerState, repoId, hostId)
       const detected = await listDetectedWorktreesForRepo(settings, repoId)
       if (options?.requireAuthoritative && !detected.authoritative) {

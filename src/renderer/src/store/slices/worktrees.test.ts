@@ -425,6 +425,7 @@ describe('fetchWorktrees', () => {
   it('keeps the last known worktree list when a refresh transiently returns empty', async () => {
     const store = createTestStore()
     const existing = makeWorktree({ id: 'repo1::/path/wt1', repoId: 'repo1', path: '/path/wt1' })
+    const previousDetected = makeDetectedResult('repo1', [existing])
 
     mockApi.worktrees.listDetected.mockResolvedValueOnce(
       makeDetectedResult('repo1', [], {
@@ -432,11 +433,18 @@ describe('fetchWorktrees', () => {
         source: 'metadata-fallback'
       })
     )
-    store.setState({ worktreesByRepo: { repo1: [existing] }, sortEpoch: 7 } as Partial<AppState>)
+    store.setState({
+      worktreesByRepo: { repo1: [existing] },
+      detectedWorktreesByRepo: { repo1: previousDetected },
+      sortEpoch: 7
+    } as Partial<AppState>)
 
     const result = await store.getState().fetchWorktrees('repo1')
 
     expect(store.getState().worktreesByRepo.repo1).toEqual([existing])
+    expect(store.getState().detectedWorktreesByRepo.repo1.worktrees).toEqual(
+      previousDetected.worktrees
+    )
     expect(store.getState().sortEpoch).toBe(7)
     expect(result).toBe(false)
   })

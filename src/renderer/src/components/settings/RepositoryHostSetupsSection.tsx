@@ -25,6 +25,7 @@ type RepositoryHostSetupsSectionProps = {
 }
 
 function getProjectHostSetupKey(setup: Pick<ProjectHostSetup, 'hostId' | 'id'>): string {
+  // Why: setup IDs can repeat across hosts after compatibility merges.
   return `${setup.hostId}\0${setup.id}`
 }
 
@@ -219,8 +220,11 @@ export function RepositoryHostSetupsSection({
                   size="sm"
                   onClick={async () => {
                     setDeletingSetupKey(setupKey)
-                    await deleteProjectHostSetup({ setupId: setup.id, hostId: setup.hostId })
-                    setDeletingSetupKey(null)
+                    try {
+                      await deleteProjectHostSetup({ setupId: setup.id, hostId: setup.hostId })
+                    } finally {
+                      setDeletingSetupKey(null)
+                    }
                   }}
                 >
                   {translate('auto.components.settings.RepositoryPane.removeSetup', 'Remove')}

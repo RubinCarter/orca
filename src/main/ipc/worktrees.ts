@@ -657,7 +657,9 @@ function listDisconnectedSshWorktrees(
     const worktree = mergeWorktree(
       repo.id,
       synthesizeSshGitWorktree(repo, candidate.path, meta),
-      meta
+      meta,
+      repo.displayName,
+      { hostId: getRepoExecutionHostId(repo) }
     )
     byWorktreeId.delete(worktree.id)
     byWorktreeId.set(worktree.id, worktree)

@@ -74,6 +74,7 @@ export async function hydrateLocalPtyRegistryAtBoot(store: Pick<Store, 'getRepos
     // sessions (`repoId::path`) hydrate into the new host-qualified bucket.
     const repos = store.getRepos()
     const canonicalWorktreeIdByAlias = new Map<string, string>()
+    const ambiguousAliases = new Set<string>()
 
     for (const repo of repos) {
       const connectionId = repo.connectionId ?? null
@@ -86,6 +87,15 @@ export async function hydrateLocalPtyRegistryAtBoot(store: Pick<Store, 'getRepos
       for (const wt of worktrees) {
         const canonicalWorktreeId = makeRepoWorktreeKey(repo, wt.path)
         for (const alias of getRepoWorktreeIdAliases(repo, wt.path)) {
+          const existing = canonicalWorktreeIdByAlias.get(alias)
+          if (existing && existing !== canonicalWorktreeId) {
+            ambiguousAliases.add(alias)
+            canonicalWorktreeIdByAlias.delete(alias)
+            continue
+          }
+          if (ambiguousAliases.has(alias)) {
+            continue
+          }
           canonicalWorktreeIdByAlias.set(alias, canonicalWorktreeId)
         }
       }

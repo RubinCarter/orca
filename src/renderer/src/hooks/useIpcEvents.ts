@@ -816,6 +816,7 @@ export function useIpcEvents(): void {
 
     const handleWorktreesChanged = async (
       repoId: string,
+      ownerHostId?: ExecutionHostId,
       renamed?: { oldWorktreeId: string; newWorktreeId: string }
     ): Promise<void> => {
       // Why: a folder rename changes the worktree's path-derived id. Re-key every
@@ -842,7 +843,7 @@ export function useIpcEvents(): void {
       const before =
         getAuthoritativeDetectedWorktreeIds(state, repoId) ??
         getVisibleWorktreeIdsForRepo(state, repoId)
-      await state.fetchWorktrees(repoId)
+      await state.fetchWorktrees(repoId, { ownerHostId })
       await useAppStore.getState().fetchWorktreeLineage()
       // Why: changing the worktree's id unmounts the active pane without
       // re-rendering it under the new id. Now that the list has refreshed,

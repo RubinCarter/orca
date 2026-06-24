@@ -48,7 +48,11 @@ vi.mock('../repo-worktrees', () => ({
 // test schema-compliant without coupling to anything the hydrator doesn't
 // touch.
 function makeStore(
-  repos: { id: string; connectionId?: string | null }[] = []
+  repos: {
+    id: string
+    connectionId?: string | null
+    executionHostId?: Repo['executionHostId']
+  }[] = []
 ): Pick<Store, 'getRepos'> {
   const built: Repo[] = repos.map((r) => ({
     id: r.id,
@@ -56,7 +60,8 @@ function makeStore(
     displayName: r.id,
     badgeColor: '#000000',
     addedAt: 0,
-    connectionId: r.connectionId ?? null
+    connectionId: r.connectionId ?? null,
+    executionHostId: r.executionHostId ?? null
   }))
   return { getRepos: () => built }
 }
@@ -231,6 +236,28 @@ describe('hydrateLocalPtyRegistryAtBoot', () => {
         '/local/Triton'
       )
     )
+  })
+
+  it('skips legacy session ids that map to multiple host-qualified worktrees', async () => {
+    const { hydrate, listRegisteredPtys } = await loadFresh()
+
+    const ptyId = 'repo-a::/shared/Triton@@cafebabe'
+    const provider = makeProvider([
+      { sessionId: ptyId, pid: 4242, cwd: '/shared/Triton' } as unknown as SessionInfo
+    ])
+    getDaemonProviderMock.mockReturnValue(provider)
+    listRepoWorktreesMock.mockResolvedValue([
+      { path: '/shared/Triton', head: '', branch: '', isBare: false, isMainWorktree: true }
+    ])
+
+    await hydrate(
+      makeStore([
+        { id: 'repo-a', connectionId: null },
+        { id: 'repo-a', connectionId: null, executionHostId: 'runtime:server-1' }
+      ])
+    )
+
+    expect(listRegisteredPtys()).toHaveLength(0)
   })
 
   it('hydrates large daemon session lists', async () => {
