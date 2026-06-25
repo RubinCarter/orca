@@ -46,13 +46,12 @@ export type LaunchAgentBackgroundSessionArgs = {
   onExit?: (ptyId: string, code: number) => void
   onAgentStatus?: (payload: ParsedAgentStatusPayload) => void
 }
-
 export type LaunchAgentBackgroundSessionResult = {
   tabId: string
+  paneKey: string
   ptyId: string
   startupPlan: AgentStartupPlan
 }
-
 export async function launchAgentBackgroundSession(
   args: LaunchAgentBackgroundSessionArgs
 ): Promise<LaunchAgentBackgroundSessionResult | null> {
@@ -245,8 +244,8 @@ export async function launchAgentBackgroundSession(
     )
   }
   let exitHandled = false
-  let unsubscribeExit = (): void => {}
-  let unsubscribeData = (): void => {}
+  let unsubscribeExit = (): void => {},
+    unsubscribeData = (): void => {}
   const handleExit = (ptyId: string, code: number): void => {
     if (exitHandled) {
       return
@@ -321,5 +320,5 @@ export async function launchAgentBackgroundSession(
     })
   }
 
-  return { tabId: tab.id, ptyId, startupPlan }
+  return { tabId: tab.id, paneKey, ptyId, startupPlan }
 }
