@@ -663,6 +663,7 @@ import {
   createNestedProjectGroupResolver,
   resolveNestedRepoSelection
 } from '../project-groups/nested-repo-import'
+import { createNestedRepoImportTargetResolver } from '../project-groups/nested-repo-import-target'
 
 function sanitizeNestedRepoRuntimeImportError(context: string, error: unknown): string {
   console.warn(`[project-groups] ${context}`, error)
@@ -9288,27 +9289,41 @@ export class OrcaRuntimeService {
         error: 'Repository was not found in the nested repo scan result'
       })
     )
+    const importedProjectIdsByRepoPath = new Map<string, string>()
+    const importTargetResolver = createNestedRepoImportTargetResolver()
     for (const [projectGroupOrder, repoPath] of selection.selectedPaths.entries()) {
       try {
         if (!isGitRepo(repoPath)) {
           results.push({ path: repoPath, status: 'failed', error: 'Not a valid git repository' })
           continue
         }
+        const importRepoPath = await importTargetResolver.resolveLocal(repoPath)
+        const normalizedImportRepoPath = normalizeRuntimePathForComparison(importRepoPath)
+        const alreadyImportedProjectId = importedProjectIdsByRepoPath.get(normalizedImportRepoPath)
+        if (alreadyImportedProjectId) {
+          results.push({
+            path: repoPath,
+            projectId: alreadyImportedProjectId,
+            status: 'already-known'
+          })
+          continue
+        }
         const existing = this.store
           .getRepos()
-          .find((repo) => runtimePathsEqual(repo.path, repoPath))
+          .find((repo) => normalizeRuntimePathForComparison(repo.path) === normalizedImportRepoPath)
         const group = groupResolver.getGroupForRepo(repoPath)
         if (existing) {
           if (group) {
             this.store.moveProjectToGroup(existing.id, group.id, projectGroupOrder)
           }
+          importedProjectIdsByRepoPath.set(normalizedImportRepoPath, existing.id)
           results.push({ path: repoPath, projectId: existing.id, status: 'already-known' })
           continue
         }
         const repo: Repo = {
           id: randomUUID(),
-          path: repoPath,
-          displayName: getRepoName(repoPath),
+          path: importRepoPath,
+          displayName: getRepoName(importRepoPath),
           badgeColor: DEFAULT_REPO_BADGE_COLOR,
           addedAt: Date.now(),
           kind: 'git',
@@ -9322,6 +9337,7 @@ export class OrcaRuntimeService {
             : {})
         }
         this.store.addRepo(repo)
+        importedProjectIdsByRepoPath.set(normalizedImportRepoPath, repo.id)
         results.push({ path: repoPath, projectId: repo.id, status: 'imported' })
       } catch (error) {
         results.push({
