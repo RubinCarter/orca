@@ -58,8 +58,11 @@ import {
 } from '@/lib/pane-manager/pane-terminal-output-scheduler'
 import { recordAgentHibernationPaneOutput } from '@/lib/agent-hibernation-output-activity'
 import { isLocalNativeWindowsConpty } from '@/lib/pane-manager/windows-pty-compatibility'
-import { recordTerminalOutput, restoreScrollStateAfterLayout } from '@/lib/pane-manager/pane-scroll'
-import type { ScrollState } from '@/lib/pane-manager/pane-manager-types'
+import { recordTerminalOutput } from '@/lib/pane-manager/pane-scroll'
+import {
+  captureTerminalWriteScrollIntent,
+  enforceTerminalWriteScrollIntent
+} from '@/lib/pane-manager/terminal-scroll-intent'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import { makePaneKey, parseLegacyNumericPaneKey } from '../../../../shared/stable-pane-id'
 import { createTerminalCommandLifecycle } from './terminal-command-lifecycle'
@@ -1288,7 +1291,12 @@ export function connectPanePty(
   const onExit = (ptyId: string): void => {
     agentCompletionCoordinator.dispose()
     clearPanePtyFitBinding()
-    deps.syncPanePtyLayoutBinding(pane.id, null)
+    const isSuppressedExit = deps.consumeSuppressedPtyExit(ptyId)
+    if (isSuppressedExit) {
+      deps.syncPanePtyLayoutBinding(pane.id, null)
+    } else {
+      deps.clearExitedPanePtyLayoutBinding(pane.id, ptyId)
+    }
     deps.clearRuntimePaneTitle(deps.tabId, pane.id)
     deps.clearTabPtyId(deps.tabId, ptyId)
     // Why: if the PTY exits abruptly (Ctrl-D, crash, shell termination) without
@@ -1306,7 +1314,7 @@ export function connectPanePty(
     // pane stays mounted and can reconnect in place. Without consuming the
     // suppression here, split-pane Codex restarts would still close the pane
     // because this handler runs before the tab-level close logic sees the exit.
-    if (deps.consumeSuppressedPtyExit(ptyId)) {
+    if (isSuppressedExit) {
       manager.setPaneGpuRendering(pane.id, true)
       return
     }
@@ -3114,40 +3122,13 @@ export function connectPanePty(
       })
     }
 
-    function captureScrollStateForSnapshotReplay(): ScrollState | null {
-      const buf = pane.terminal.buffer?.active
-      if (!buf) {
-        return null
-      }
-      const viewportY = buf.viewportY
-      const baseY = buf.baseY
-      if (!Number.isFinite(viewportY) || !Number.isFinite(baseY)) {
-        return null
-      }
-      return {
-        bufferType: buf.type,
-        wasAtBottom: viewportY >= baseY,
-        viewportY,
-        baseY
-      }
-    }
-
-    function restoreScrollStateAfterSnapshotReplay(state: ScrollState | null): void {
-      if (!state || state.wasAtBottom) {
-        return
-      }
-      // Why: hidden-backlog replay clears xterm after visibility scroll restore;
-      // re-apply a scrolled-up viewport so recovery does not jump to bottom.
-      restoreScrollStateAfterLayout(pane.terminal, state)
-    }
-
     function applyMainBufferSnapshot(snapshot: {
       data: string
       cols: number
       rows: number
       seq?: number
     }): void {
-      const scrollState = captureScrollStateForSnapshotReplay()
+      const scrollIntent = captureTerminalWriteScrollIntent(pane.terminal)
       const colsBeforeReplay = pane.terminal.cols
       const rowsBeforeReplay = pane.terminal.rows
       const hasSnapshotDimensions =
@@ -3191,7 +3172,9 @@ export function connectPanePty(
         }
         scheduleReattachIdleAgentCursorReset()
       }
-      restoreScrollStateAfterSnapshotReplay(scrollState)
+      // Why: snapshot replay clears and rebuilds xterm state; re-apply the
+      // user's scroll intent once so hidden catch-up cannot repin the viewport.
+      enforceTerminalWriteScrollIntent(pane.terminal, scrollIntent)
     }
 
     function requestHiddenOutputRestoreIfNeeded(opts?: { bypassScheduler?: boolean }): boolean {
@@ -3450,7 +3433,11 @@ export function connectPanePty(
         })
         // Why: a stale restored daemon/SSH session can fail reattach after the
         // pane is mounted. Do not leave xterm alive without a backing PTY.
-        deps.syncPanePtyLayoutBinding(pane.id, null)
+        if (staleSessionId) {
+          deps.clearExitedPanePtyLayoutBinding(pane.id, staleSessionId)
+        } else {
+          deps.syncPanePtyLayoutBinding(pane.id, null)
+        }
         if (staleSessionId) {
           deps.clearTabPtyId(deps.tabId, staleSessionId)
         }
@@ -3462,7 +3449,11 @@ export function connectPanePty(
         ...(coldRestoreStartup ? { launchAgent: coldRestoreStartup.agent } : {})
       })
       if (connectResult?.sessionExpired) {
-        deps.syncPanePtyLayoutBinding(pane.id, null)
+        if (staleSessionId) {
+          deps.clearExitedPanePtyLayoutBinding(pane.id, staleSessionId)
+        } else {
+          deps.syncPanePtyLayoutBinding(pane.id, null)
+        }
         if (staleSessionId) {
           deps.clearTabPtyId(deps.tabId, staleSessionId)
         }
@@ -3778,7 +3769,7 @@ export function connectPanePty(
                   if (disposed) {
                     return
                   }
-                  deps.syncPanePtyLayoutBinding(pane.id, null)
+                  deps.clearExitedPanePtyLayoutBinding(pane.id, pendingSessionId)
                   deps.clearTabPtyId(deps.tabId, pendingSessionId)
                   startFreshColdRestoreAgentResume(coldRestoreStartup)
                   return
@@ -3801,7 +3792,7 @@ export function connectPanePty(
                   return
                 }
                 if (isSshSessionExpiredError(err)) {
-                  deps.syncPanePtyLayoutBinding(pane.id, null)
+                  deps.clearExitedPanePtyLayoutBinding(pane.id, pendingSessionId)
                   deps.clearTabPtyId(deps.tabId, pendingSessionId)
                   startFreshColdRestoreAgentResume(coldRestoreStartup)
                   return
@@ -3947,7 +3938,7 @@ export function connectPanePty(
             if (disposed) {
               return
             }
-            deps.syncPanePtyLayoutBinding(pane.id, null)
+            deps.clearExitedPanePtyLayoutBinding(pane.id, deferredReattachSessionId)
             deps.clearTabPtyId(deps.tabId, deferredReattachSessionId)
             startFreshColdRestoreAgentResume(coldRestoreStartup)
             return
@@ -3974,7 +3965,7 @@ export function connectPanePty(
             ptyId: deferredReattachSessionId,
             reason: message
           })
-          deps.syncPanePtyLayoutBinding(pane.id, null)
+          deps.clearExitedPanePtyLayoutBinding(pane.id, deferredReattachSessionId)
           deps.clearTabPtyId(deps.tabId, deferredReattachSessionId)
           if (connectionId && isSshSessionExpiredError(err)) {
             startFreshColdRestoreAgentResume(coldRestoreStartup)

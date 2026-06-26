@@ -46,7 +46,7 @@ import type {
   GitDiffResult,
   GitStatusEntry
 } from '../../../../shared/types'
-import { Check, Copy, MessageSquare, PanelLeftOpen, Sparkles, Trash2 } from 'lucide-react'
+import { Check, Copy, MessageSquare, PanelLeftOpen, Sparkles, Trash2, WrapText } from 'lucide-react'
 import { toast } from 'sonner'
 import { DiffSectionItem } from './DiffSectionItem'
 import { DiffNotesSendMenu } from './DiffNotesSendMenu'
@@ -55,10 +55,7 @@ import {
   createCombinedDiffSectionIndexMap,
   handleCombinedDiffFileTreeNavigation
 } from './CombinedDiffFileTree'
-import {
-  getCombinedDiffFileTreeSectionKey,
-  type CombinedDiffFileTreeMode
-} from './combined-diff-file-tree-model'
+import { getCombinedDiffFileTreeSectionKey } from './combined-diff-file-tree-model'
 import {
   ORCA_EDITOR_EXTERNAL_FILE_CHANGE_EVENT,
   type EditorPathMutationTarget
@@ -66,6 +63,7 @@ import {
 import {
   getCombinedBranchEntries,
   getCombinedUncommittedEntries,
+  resolveCombinedUncommittedSnapshotEntries,
   shouldAutoReloadCombinedDiffFromGitStatus
 } from './combined-diff-entries'
 import { getCombinedDiffCommitMessageBody } from './combined-diff-commit-message'
@@ -76,6 +74,7 @@ import type { DiffSection } from './diff-section-types'
 import { getInitialCombinedDiffSectionLoadIndices } from './combined-diff-initial-section-load'
 import { removeDiffSectionMeasuredHeight } from './diff-section-height-cache'
 import { createCombinedDiffLoadScheduler } from './combined-diff-load-scheduler'
+import { combinedDiffSectionsMatchEntryMetadata } from './combined-diff-section-cache-match'
 import {
   beginCombinedDiffScrollbarDrag,
   type CombinedDiffScrollbarDragCleanup
@@ -125,6 +124,23 @@ function invalidateCombinedDiffCachesForRelativePath(relativePath: string): void
       combinedDiffViewStateCache.delete(key)
     }
   }
+}
+
+function getRetainedResolvedSnapshotEntries(sections: readonly DiffSection[]): GitStatusEntry[] {
+  return sections.flatMap((section) =>
+    section.area === undefined
+      ? []
+      : [
+          {
+            path: section.path,
+            status: section.status as GitStatusEntry['status'],
+            area: section.area,
+            oldPath: section.oldPath,
+            added: section.added,
+            removed: section.removed
+          }
+        ]
+  )
 }
 
 if (typeof window !== 'undefined') {
@@ -192,26 +208,6 @@ function getInitialCombinedDiffFileTreeCollapsed(
   return combinedDiffFileTreeCollapsedPreference ?? combinedDiffFileTreeVisibleByDefault !== true
 }
 
-function cachedCombinedDiffSectionsMatchEntries({
-  entries,
-  sections,
-  treeMode
-}: {
-  entries: readonly (GitStatusEntry | GitBranchChangeEntry)[]
-  sections: readonly DiffSection[]
-  treeMode: CombinedDiffFileTreeMode
-}): boolean {
-  return (
-    sections.length === entries.length &&
-    sections.every((section, index) => {
-      const entry = entries[index]
-      return (
-        entry !== undefined && section.key === getCombinedDiffFileTreeSectionKey(treeMode, entry)
-      )
-    })
-  )
-}
-
 export default function CombinedDiffViewer({
   file,
   viewStateKey
@@ -233,6 +229,7 @@ export default function CombinedDiffViewer({
   const openCommitDiff = useAppStore((s) => s.openCommitDiff)
   const openConflictReview = useAppStore((s) => s.openConflictReview)
   const openBranchAllDiffs = useAppStore((s) => s.openBranchAllDiffs)
+  const updateSettings = useAppStore((s) => s.updateSettings)
   const clearDiffComments = useAppStore((s) => s.clearDiffComments)
   const diffCommentsForWorktree = useAppStore((s) => s.getDiffComments(file.worktreeId))
   const activeGroupId = useAppStore((s) => s.activeGroupIdByWorktree[file.worktreeId])
@@ -423,11 +420,18 @@ export default function CombinedDiffViewer({
     () => file.uncommittedEntriesSnapshot?.filter((e) => e.conflictStatus !== 'unresolved'),
     [file.uncommittedEntriesSnapshot]
   )
-  const uncommittedEntries = React.useMemo(
-    () =>
-      snapshotEntries ?? getCombinedUncommittedEntries(gitStatusEntries, file.combinedAreaFilter),
-    [snapshotEntries, gitStatusEntries, file.combinedAreaFilter]
-  )
+  const uncommittedEntries = React.useMemo(() => {
+    if (!snapshotEntries) {
+      return getCombinedUncommittedEntries(gitStatusEntries, file.combinedAreaFilter)
+    }
+    // Why: row load state changes must not rebuild the snapshot entry list;
+    // the ref is only consulted when live Git status changes.
+    return resolveCombinedUncommittedSnapshotEntries(
+      snapshotEntries,
+      gitStatusEntries,
+      getRetainedResolvedSnapshotEntries(sectionsRef.current)
+    )
+  }, [snapshotEntries, gitStatusEntries, file.combinedAreaFilter])
   const branchEntries = React.useMemo<GitBranchChangeEntry[]>(() => {
     return getCombinedBranchEntries(file.branchEntriesSnapshot, liveBranchEntries)
   }, [file.branchEntriesSnapshot, liveBranchEntries])
@@ -515,7 +519,7 @@ export default function CombinedDiffViewer({
     const canRestoreSnapshotSectionsByKey =
       hasUncommittedEntriesSnapshot &&
       cached !== undefined &&
-      cachedCombinedDiffSectionsMatchEntries({
+      combinedDiffSectionsMatchEntryMetadata({
         entries,
         sections: cached.sections,
         treeMode
@@ -1103,6 +1107,10 @@ export default function CombinedDiffViewer({
       return next
     })
   }, [])
+
+  const toggleDiffWordWrap = useCallback(() => {
+    void updateSettings({ diffWordWrap: settings?.diffWordWrap !== true })
+  }, [settings?.diffWordWrap, updateSettings])
 
   const openSection = useCallback(
     (index: number) => {
@@ -1812,6 +1820,20 @@ export default function CombinedDiffViewer({
               {sideBySide
                 ? translate('auto.components.editor.CombinedDiffViewer.f786fd54e1', 'Inline')
                 : translate('auto.components.editor.CombinedDiffViewer.ec5053c7f5', 'Side by Side')}
+            </button>
+            <button
+              className={`inline-flex h-6 items-center gap-1 rounded border border-border px-2 text-xs transition-colors hover:text-foreground ${
+                settings?.diffWordWrap === true
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground'
+              }`}
+              onClick={toggleDiffWordWrap}
+              aria-pressed={settings?.diffWordWrap === true}
+            >
+              <WrapText className="size-3.5" />
+              {settings?.diffWordWrap === true
+                ? translate('auto.components.editor.CombinedDiffViewer.a4420ca1f7', 'Wrap On')
+                : translate('auto.components.editor.CombinedDiffViewer.dde325ddfe', 'Wrap Off')}
             </button>
           </div>
         </div>
