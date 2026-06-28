@@ -389,6 +389,7 @@ export type ProjectGroupImportResult = {
 }
 
 export type SetupRunPolicy = 'ask' | 'run-by-default' | 'skip-by-default'
+export type SetupAgentStartupPolicy = 'start-immediately' | 'wait-for-setup'
 export type SetupDecision = 'inherit' | 'run' | 'skip'
 export type HookCommandSourcePolicy = 'shared-only' | 'local-only' | 'run-both'
 
@@ -1926,6 +1927,7 @@ export type RepoHookSettings = {
   // hook UI. Keep it in the shape so existing local state reads without a migration.
   mode: 'auto' | 'override'
   setupRunPolicy?: SetupRunPolicy
+  setupAgentStartupPolicy?: SetupAgentStartupPolicy
   commandSourcePolicy?: HookCommandSourcePolicy
   scripts: {
     setup: string
@@ -1936,6 +1938,8 @@ export type RepoHookSettings = {
 export type WorktreeSetupLaunch = {
   runnerScriptPath: string
   envVars: Record<string, string>
+  command?: string
+  waitForAgentStartup?: boolean
 }
 
 export type WorktreeStartupLaunch = {
