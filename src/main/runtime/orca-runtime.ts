@@ -179,7 +179,11 @@ import {
   resolveTuiAgentLaunchArgs,
   resolveTuiAgentLaunchEnv
 } from '../../shared/tui-agent-launch-defaults'
-import { isTuiAgent, TUI_AGENT_CONFIG } from '../../shared/tui-agent-config'
+import {
+  getTuiAgentLaunchCommand,
+  isTuiAgent,
+  TUI_AGENT_CONFIG
+} from '../../shared/tui-agent-config'
 import { detectInstalledAgentsWithShellPathHydration, detectRemoteAgents } from '../ipc/preflight'
 import {
   markCodexProjectTrusted,
@@ -926,6 +930,31 @@ type RuntimePtyWorktreeRecord = {
   waitBlockedAt: number | null
 }
 
+type TerminalCreateOptions = {
+  command?: string
+  claudeAgentTeamsSourceCommand?: string
+  env?: Record<string, string>
+  launchConfig?: WorktreeStartupLaunch['launchConfig']
+  launchToken?: string
+  launchAgent?: TuiAgent
+  startupCommandDelivery?: WorktreeStartupLaunch['startupCommandDelivery']
+  telemetry?: WorktreeStartupLaunch['telemetry']
+  title?: string
+  focus?: boolean
+  rendererBacked?: boolean
+  activate?: boolean
+  presentation?: RuntimeTerminalPresentation
+  tabId?: string
+  leafId?: string
+  sessionId?: string
+  persistHostSessionBinding?: boolean
+  // Why: the headless mobile-session create publishes its own authoritative
+  // snapshot (with the correct target group) right after spawn. Skip the
+  // intermediate pty-backed publish so the new tab doesn't briefly flash in
+  // the wrong (active) group before the corrected snapshot lands.
+  deferMobileSessionPublish?: boolean
+}
+
 function copySleepingAgentLaunchConfig(
   config: SleepingAgentLaunchConfig
 ): SleepingAgentLaunchConfig {
@@ -934,6 +963,43 @@ function copySleepingAgentLaunchConfig(
     agentArgs: config.agentArgs,
     agentEnv: { ...config.agentEnv }
   }
+}
+
+function normalizeAgentLaunchCommandForMatch(command: string): string {
+  return command.trim().replace(/\s+/g, ' ')
+}
+
+function resolveBareAgentLaunchCommand(args: {
+  command: string | undefined
+  settings: {
+    agentCmdOverrides?: Partial<Record<TuiAgent, string>> | null
+    disabledTuiAgents?: Iterable<unknown> | null
+  }
+  platform: NodeJS.Platform
+  isRemote: boolean
+}): TuiAgent | null {
+  const command = args.command ? normalizeAgentLaunchCommandForMatch(args.command) : ''
+  if (!command) {
+    return null
+  }
+
+  const cmdOverrides = args.settings.agentCmdOverrides ?? {}
+  for (const agent of Object.keys(TUI_AGENT_CONFIG) as TuiAgent[]) {
+    if (!isTuiAgentEnabled(agent, args.settings.disabledTuiAgents)) {
+      continue
+    }
+    const override = cmdOverrides[agent]?.trim()
+    const launchCommand =
+      override ||
+      getTuiAgentLaunchCommand(TUI_AGENT_CONFIG[agent], args.platform, {
+        isRemote: args.isRemote
+      })
+    if (command === normalizeAgentLaunchCommandForMatch(launchCommand)) {
+      return agent
+    }
+  }
+
+  return null
 }
 
 function inferCapturedClaudeAgentTeamsMode(
@@ -14940,32 +15006,65 @@ export class OrcaRuntimeService {
     return { handle, tabId: leaf.tabId, title }
   }
 
+  private resolveAgentTerminalCreateOptions(
+    workspace: TerminalWorkspaceLaunchScope,
+    opts: TerminalCreateOptions
+  ): TerminalCreateOptions {
+    // Why: raw shell commands like `codex exec` must remain user-authored shell.
+    // Only unmanaged, repo-backed, bare agent launches get Settings defaults.
+    if (
+      !opts.command ||
+      opts.env ||
+      opts.launchConfig ||
+      opts.launchAgent ||
+      opts.startupCommandDelivery ||
+      opts.claudeAgentTeamsSourceCommand ||
+      !workspace.repo ||
+      !this.store
+    ) {
+      return opts
+    }
+
+    const settings = this.store.getSettings()
+    const platform = this.getAgentLaunchPlatformForWorkspace(workspace)
+    const isRemote = repoIsRemote(workspace.repo)
+    const agent = resolveBareAgentLaunchCommand({
+      command: opts.command,
+      settings,
+      platform,
+      isRemote
+    })
+    if (!agent) {
+      return opts
+    }
+
+    const startupPlan = buildAgentStartupPlan({
+      agent,
+      prompt: '',
+      cmdOverrides: settings.agentCmdOverrides ?? {},
+      agentArgs: resolveTuiAgentLaunchArgs(agent, settings.agentDefaultArgs),
+      agentEnv: resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv),
+      platform,
+      isRemote,
+      allowEmptyPromptLaunch: true
+    })
+    if (!startupPlan) {
+      return opts
+    }
+
+    return {
+      ...opts,
+      command: startupPlan.launchCommand,
+      ...(startupPlan.env ? { env: startupPlan.env } : {}),
+      launchConfig: startupPlan.launchConfig,
+      launchAgent: agent,
+      startupCommandDelivery: startupPlan.startupCommandDelivery
+    }
+  }
+
   async createTerminal(
     worktreeSelector?: string,
-    opts: {
-      command?: string
-      claudeAgentTeamsSourceCommand?: string
-      env?: Record<string, string>
-      launchConfig?: WorktreeStartupLaunch['launchConfig']
-      launchToken?: string
-      launchAgent?: TuiAgent
-      startupCommandDelivery?: WorktreeStartupLaunch['startupCommandDelivery']
-      telemetry?: WorktreeStartupLaunch['telemetry']
-      title?: string
-      focus?: boolean
-      rendererBacked?: boolean
-      activate?: boolean
-      presentation?: RuntimeTerminalPresentation
-      tabId?: string
-      leafId?: string
-      sessionId?: string
-      persistHostSessionBinding?: boolean
-      // Why: the headless mobile-session create publishes its own authoritative
-      // snapshot (with the correct target group) right after spawn. Skip the
-      // intermediate pty-backed publish so the new tab doesn't briefly flash in
-      // the wrong (active) group before the corrected snapshot lands.
-      deferMobileSessionPublish?: boolean
-    } = {}
+    opts: TerminalCreateOptions = {}
   ): Promise<RuntimeTerminalCreate> {
     const presentation = resolveTerminalPresentation(opts)
     const requiresRendererFocus = opts.presentation === 'focused' || opts.focus === true
@@ -14988,6 +15087,7 @@ export class OrcaRuntimeService {
         throw new Error('runtime_unavailable')
       }
       const workspace = await this.resolveTerminalWorkspaceLaunchScope(worktreeSelector)
+      const launchOpts = this.resolveAgentTerminalCreateOptions(workspace, opts)
       const preAllocatedHandle = this.createPreAllocatedTerminalHandle()
       // Why: mint tabId in main before spawn so paneKey is known at PTY env
       // build time. Hook-based agent status (Claude/Codex/Cursor/Gemini) keys
@@ -14995,25 +15095,27 @@ export class OrcaRuntimeService {
       // hook payload arrives with an empty paneKey and the renderer cannot
       // attribute the event. Use a stable UUID leaf because hooks reject the
       // legacy numeric pane keys after the pane-id migration.
-      const hintedTabId = opts.tabId?.trim()
+      const hintedTabId = launchOpts.tabId?.trim()
       const canAdoptPaneIdentity =
         hintedTabId !== undefined &&
         isValidHostTerminalTabId(hintedTabId) &&
-        opts.leafId !== undefined &&
-        isTerminalLeafId(opts.leafId)
+        launchOpts.leafId !== undefined &&
+        isTerminalLeafId(launchOpts.leafId)
       const tabId = canAdoptPaneIdentity ? (hintedTabId as string) : randomUUID()
-      const leafId = canAdoptPaneIdentity ? (opts.leafId as string) : randomUUID()
+      const leafId = canAdoptPaneIdentity ? (launchOpts.leafId as string) : randomUUID()
       const paneKey = makePaneKey(tabId, leafId)
-      const launchToken = opts.launchConfig ? (opts.launchToken ?? randomUUID()) : undefined
+      const launchToken = launchOpts.launchConfig
+        ? (launchOpts.launchToken ?? randomUUID())
+        : undefined
       const baseEnv = {
-        ...opts.env,
+        ...launchOpts.env,
         ...(launchToken ? { ORCA_AGENT_LAUNCH_TOKEN: launchToken } : {})
       }
       const claudeAgentTeamsSourceCommand =
-        opts.claudeAgentTeamsSourceCommand?.trim() || opts.command?.trim() || undefined
+        launchOpts.claudeAgentTeamsSourceCommand?.trim() || launchOpts.command?.trim() || undefined
       const claudeAgentTeamsMode = this.store?.getSettings?.().claudeAgentTeamsMode
       const effectiveClaudeAgentTeamsMode = inferCapturedClaudeAgentTeamsMode(
-        opts.launchConfig,
+        launchOpts.launchConfig,
         claudeAgentTeamsSourceCommand,
         claudeAgentTeamsMode
       )
@@ -15038,25 +15140,25 @@ export class OrcaRuntimeService {
       const sequencedStartupCommand =
         agentTeamsPlan &&
         claudeAgentTeamsSourceCommand &&
-        opts.command &&
-        claudeAgentTeamsSourceCommand !== opts.command
+        launchOpts.command &&
+        claudeAgentTeamsSourceCommand !== launchOpts.command
           ? agentTeamsPlan.command
           : undefined
       const effectiveLaunchConfig =
-        opts.launchConfig && agentTeamsPlan
+        launchOpts.launchConfig && agentTeamsPlan
           ? {
-              ...opts.launchConfig,
-              agentCommand: opts.launchConfig.agentCommand
+              ...launchOpts.launchConfig,
+              agentCommand: launchOpts.launchConfig.agentCommand
                 ? effectiveClaudeAgentTeamsMode === 'in-process' || process.platform === 'win32'
-                  ? addClaudeTeammateModeInProcess(opts.launchConfig.agentCommand)
-                  : addClaudeTeammateModeAuto(opts.launchConfig.agentCommand)
+                  ? addClaudeTeammateModeInProcess(launchOpts.launchConfig.agentCommand)
+                  : addClaudeTeammateModeAuto(launchOpts.launchConfig.agentCommand)
                 : agentTeamsPlan.command,
               agentEnv: {
-                ...opts.launchConfig.agentEnv,
+                ...launchOpts.launchConfig.agentEnv,
                 ...agentTeamsPlan.env
               }
             }
-          : opts.launchConfig
+          : launchOpts.launchConfig
       // Why: setup/agent sequencing wraps the PTY launch in a wait shell before
       // Claude Agent Teams runs. Preserve the direct Claude command separately
       // so the wrapper can exec the teammate-mode variant after setup completes.
@@ -15076,29 +15178,31 @@ export class OrcaRuntimeService {
         cols: 120,
         rows: 40,
         cwd: workspace.path,
-        command: sequencedStartupCommand ? opts.command : (agentTeamsPlan?.command ?? opts.command),
+        command: sequencedStartupCommand
+          ? launchOpts.command
+          : (agentTeamsPlan?.command ?? launchOpts.command),
         commandDelivery: 'provider',
-        startupCommandDelivery: opts.startupCommandDelivery,
+        startupCommandDelivery: launchOpts.startupCommandDelivery,
         env,
         envToDelete: agentTeamsPlan?.envToDelete,
-        telemetry: opts.telemetry,
+        telemetry: launchOpts.telemetry,
         connectionId: workspace.connectionId,
         worktreeId: workspace.id,
         preAllocatedHandle,
         tabId,
         leafId,
-        ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-        ...(opts.persistHostSessionBinding ? { persistHostSessionBinding: true } : {})
+        ...(launchOpts.sessionId ? { sessionId: launchOpts.sessionId } : {}),
+        ...(launchOpts.persistHostSessionBinding ? { persistHostSessionBinding: true } : {})
       })
       this.registerPreAllocatedHandleForPty(result.id, preAllocatedHandle)
       this.registerPty(result.id, workspace.id, workspace.connectionId)
       const pty = this.getOrCreatePtyWorktreeRecord(result.id)
       if (pty) {
-        if (opts.title) {
+        if (launchOpts.title) {
           const observedAt = this.nextTitleObservationSequence()
-          pty.title = opts.title
+          pty.title = launchOpts.title
           pty.titleUpdatedAt = observedAt
-          this.setPtyManagementTitleFromObservedTitle(pty, opts.title, observedAt)
+          this.setPtyManagementTitleFromObservedTitle(pty, launchOpts.title, observedAt)
         } else {
           pty.title = null
           pty.titleUpdatedAt = null
@@ -15109,14 +15213,14 @@ export class OrcaRuntimeService {
           ? copySleepingAgentLaunchConfig(effectiveLaunchConfig)
           : null
         pty.launchToken = launchToken ?? null
-        pty.launchAgent = opts.launchAgent ?? null
+        pty.launchAgent = launchOpts.launchAgent ?? null
       }
       const handle = pty ? this.issuePtyHandle(pty) : preAllocatedHandle
-      if (pty && opts.deferMobileSessionPublish !== true) {
+      if (pty && launchOpts.deferMobileSessionPublish !== true) {
         this.publishPtyBackedMobileSessionTerminal(workspace.id, pty, {
           tabId,
           leafId,
-          title: opts.title ?? null,
+          title: launchOpts.title ?? null,
           activate: presentation === 'focused',
           // Why: explicit background presentation may carry legacy activate
           // metadata from an already-owned renderer pane; don't select it on mobile.
@@ -15133,10 +15237,10 @@ export class OrcaRuntimeService {
           // already baked into the PTY env — keeps paneKey hook attribution intact.
           await this.notifier.revealTerminalSession(workspace.id, {
             ptyId: result.id,
-            title: opts.title ?? null,
+            title: launchOpts.title ?? null,
             ...(effectiveLaunchConfig ? { launchConfig: effectiveLaunchConfig } : {}),
             ...(launchToken ? { launchToken } : {}),
-            ...(opts.launchAgent ? { launchAgent: opts.launchAgent } : {}),
+            ...(launchOpts.launchAgent ? { launchAgent: launchOpts.launchAgent } : {}),
             activate: presentation === 'focused',
             ...(presentation ? { presentation } : {}),
             tabId,
@@ -15156,7 +15260,7 @@ export class OrcaRuntimeService {
         paneKey,
         ptyId: result.id,
         worktreeId: workspace.id,
-        title: opts.title ?? null,
+        title: launchOpts.title ?? null,
         surface,
         ...(warning ? { warning } : {})
       }
@@ -15166,9 +15270,11 @@ export class OrcaRuntimeService {
     const win = rendererWindow ?? this.getAuthoritativeWindow()
     // Why: mirrors browserTabCreate — when no worktree is specified, pass
     // undefined so the renderer uses its current active worktree.
-    const worktreeId = worktreeSelector
-      ? (await this.resolveTerminalWorkspaceLaunchScope(worktreeSelector)).id
-      : undefined
+    const workspace = worktreeSelector
+      ? await this.resolveTerminalWorkspaceLaunchScope(worktreeSelector)
+      : null
+    const launchOpts = workspace ? this.resolveAgentTerminalCreateOptions(workspace, opts) : opts
+    const worktreeId = workspace?.id
     const requestId = randomUUID()
 
     // Why: terminal creation is a renderer-side Zustand store operation (like
@@ -15192,20 +15298,20 @@ export class OrcaRuntimeService {
         if (r.error) {
           reject(new Error(r.error))
         } else {
-          resolve({ tabId: r.tabId!, title: r.title ?? opts.title ?? '' })
+          resolve({ tabId: r.tabId!, title: r.title ?? launchOpts.title ?? '' })
         }
       }
       ipcMain.on('terminal:tabCreateReply', handler)
       win.webContents.send('terminal:requestTabCreate', {
         requestId,
         worktreeId,
-        command: opts.command,
-        ...(opts.env ? { env: opts.env } : {}),
-        ...(opts.launchConfig ? { launchConfig: opts.launchConfig } : {}),
-        ...(opts.launchToken ? { launchToken: opts.launchToken } : {}),
-        ...(opts.launchAgent ? { launchAgent: opts.launchAgent } : {}),
-        startupCommandDelivery: opts.startupCommandDelivery,
-        title: opts.title,
+        command: launchOpts.command,
+        ...(launchOpts.env ? { env: launchOpts.env } : {}),
+        ...(launchOpts.launchConfig ? { launchConfig: launchOpts.launchConfig } : {}),
+        ...(launchOpts.launchToken ? { launchToken: launchOpts.launchToken } : {}),
+        ...(launchOpts.launchAgent ? { launchAgent: launchOpts.launchAgent } : {}),
+        startupCommandDelivery: launchOpts.startupCommandDelivery,
+        title: launchOpts.title,
         activate: presentation === 'focused',
         ...(presentation ? { presentation } : {})
       })
