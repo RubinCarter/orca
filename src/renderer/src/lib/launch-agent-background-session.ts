@@ -104,35 +104,25 @@ export async function launchAgentBackgroundSession(
     return null
   }
 
-  // Why: automation runs should start without revealing the workspace.
-  // Spawn the PTY immediately, then attach an inactive tab to the live session.
-  const tab = store.createTab(worktreeId, undefined, undefined, {
-    activate: false,
-    recordInteraction: false
-  })
-  if (title) {
-    store.setTabCustomTitle(tab.id, title, { recordInteraction: false })
-  }
   // Why: agent hook callbacks are keyed by pane, and background automation
-  // tabs never mount a TerminalPane to inject this env for us. createBrowserUuid
-  // (not crypto.randomUUID) because the latter is undefined in non-secure
-  // browser contexts — the LAN web client served over plain HTTP.
+  // tabs never mount a TerminalPane to inject this env for us. The tab id is
+  // preallocated so the commandful PTY can start before React can mount a pane.
+  // createBrowserUuid (not crypto.randomUUID) because the latter is undefined
+  // in non-secure browser contexts — the LAN web client served over plain HTTP.
+  const tabId = createBrowserUuid()
   const leafId = createBrowserUuid()
-  const paneKey = makePaneKey(tab.id, leafId)
+  const paneKey = makePaneKey(tabId, leafId)
   const launchToken = createBrowserUuid()
   store.registerAgentLaunchConfig(paneKey, startupPlan.launchConfig, {
     agentType: agent,
     launchToken,
-    tabId: tab.id,
+    tabId,
     leafId
   })
-  // Why: `title` labels the tab/worktree entry. Pane titles render as an
-  // in-terminal title row, so background sessions must not persist it there.
-  store.setTabLayout(tab.id, singlePaneLayoutSnapshot(leafId))
   const paneEnv = {
     ...startupPlan.env,
     ORCA_PANE_KEY: paneKey,
-    ORCA_TAB_ID: tab.id,
+    ORCA_TAB_ID: tabId,
     ORCA_WORKTREE_ID: worktreeId,
     ORCA_AGENT_LAUNCH_TOKEN: launchToken
   }
@@ -170,7 +160,7 @@ export async function launchAgentBackgroundSession(
             : {}),
           env: paneEnv,
           title,
-          tabId: tab.id,
+          tabId,
           leafId,
           // Why: local renderer owns the hidden tab; remote runtime should not reveal UI.
           presentation: 'background'
@@ -193,7 +183,7 @@ export async function launchAgentBackgroundSession(
         launchAgent: agent,
         connectionId: sshConnectionId,
         worktreeId,
-        tabId: tab.id,
+        tabId,
         leafId,
         telemetry: {
           agent_kind: tuiAgentToAgentKind(agent),
@@ -206,16 +196,28 @@ export async function launchAgentBackgroundSession(
         store.registerAgentLaunchConfig(paneKey, result.launchConfig, {
           agentType: agent,
           launchToken,
-          tabId: tab.id,
+          tabId,
           leafId
         })
       }
     }
   } catch (error) {
-    store.closeTab(tab.id, { recordInteraction: false })
+    store.clearAgentLaunchConfig(paneKey)
     throw error
   }
-  store.updateTabPtyId(tab.id, ptyId)
+  // Why: only publish a mountable hidden tab after the command-bearing PTY
+  // exists. Otherwise opening the workspace during launch can mount the pane
+  // first and race a plain shell against the agent command.
+  const tab = store.createTab(worktreeId, undefined, undefined, {
+    id: tabId,
+    initialPtyId: ptyId,
+    activate: false,
+    recordInteraction: false,
+    launchAgent: agent
+  })
+  if (title) {
+    store.setTabCustomTitle(tab.id, title, { recordInteraction: false })
+  }
   store.setTabLayout(tab.id, singlePaneLayoutSnapshot(leafId, ptyId))
   if (agent === 'command-code' && hasPrompt && !isFollowupPath) {
     // Why: Command Code does not expose a prompt-start hook; seed working for
