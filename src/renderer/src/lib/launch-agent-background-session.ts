@@ -10,6 +10,7 @@ import { tuiAgentToAgentKind } from '@/lib/telemetry'
 import { pasteDraftWhenAgentReady } from '@/lib/agent-paste-draft'
 import { showAutomationPromptNotSentToast } from '@/lib/agent-background-session-timeout-toast'
 import { getLocalProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
+import { BACKGROUND_MOUNT_TERMINAL_WORKTREE_EVENT } from '@/constants/terminal'
 import {
   resolveTuiAgentLaunchArgs,
   resolveTuiAgentLaunchEnv
@@ -75,7 +76,8 @@ export async function launchAgentBackgroundSession(
   const runtimeTarget = getActiveRuntimeTarget(
     getSettingsForWorktreeRuntimeOwner(store, worktreeId)
   )
-  const trimmedPrompt = prompt?.trim() ?? ''
+  const rawPrompt = prompt ?? ''
+  const trimmedPrompt = rawPrompt.trim()
   const hasPrompt = trimmedPrompt.length > 0
   const shouldPastePromptAfterLaunch = hasPrompt
 
@@ -94,7 +96,7 @@ export async function launchAgentBackgroundSession(
       isRemote,
       allowEmptyPromptLaunch: true
     })
-    pasteDraftAfterLaunch = trimmedPrompt
+    pasteDraftAfterLaunch = rawPrompt
   } else {
     startupPlan = buildAgentStartupPlan({
       agent,
@@ -213,6 +215,13 @@ export async function launchAgentBackgroundSession(
   // Why: only publish a mountable hidden tab after the command-bearing PTY
   // exists. Otherwise opening the workspace during launch can mount the pane
   // first and race a plain shell against the agent command.
+  // Dispatch just before publication so the first hidden mount is measurable
+  // for xterm's eager-buffer flush without exposing a pre-command tab.
+  window.dispatchEvent(
+    new CustomEvent(BACKGROUND_MOUNT_TERMINAL_WORKTREE_EVENT, {
+      detail: { worktreeId }
+    })
+  )
   const tab = store.createTab(worktreeId, undefined, undefined, {
     id: tabId,
     initialPtyId: ptyId,

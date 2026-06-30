@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- Why: local/runtime launch tests share a mock harness. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { BACKGROUND_MOUNT_TERMINAL_WORKTREE_EVENT } from '@/constants/terminal'
 import { createCompatibleRuntimeStatusResponseIfNeeded } from '@/runtime/runtime-compatibility-test-fixture'
 import { clearRuntimeCompatibilityCacheForTests } from '@/runtime/runtime-rpc-client'
 
@@ -19,6 +20,7 @@ const mockSubscribeToPtyData = vi.fn()
 const mockSubscribeToPtyExit = vi.fn()
 const mockPasteDraftWhenAgentReady = vi.fn()
 const mockMarkTrusted = vi.fn()
+const mockDispatchEvent = vi.fn()
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
 function expectStablePaneSpawn(): { paneKey: string; tabId: string; leafId: string } {
@@ -144,6 +146,7 @@ describe('launchAgentBackgroundSession', () => {
     mockSubscribeToPtyData.mockReturnValue(vi.fn())
     mockSubscribeToPtyExit.mockReturnValue(vi.fn())
     vi.stubGlobal('window', {
+      dispatchEvent: mockDispatchEvent,
       api: {
         pty: {
           spawn: mockSpawn,
@@ -173,6 +176,15 @@ describe('launchAgentBackgroundSession', () => {
       title: 'Nightly audit'
     })
 
+    expect(mockDispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: BACKGROUND_MOUNT_TERMINAL_WORKTREE_EVENT,
+        detail: { worktreeId: 'wt-1' }
+      })
+    )
+    expect(mockDispatchEvent.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCreateTab.mock.invocationCallOrder[0] ?? 0
+    )
     expect(mockSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: '/repo/worktree',
@@ -252,12 +264,19 @@ describe('launchAgentBackgroundSession', () => {
     expect(mockSpawn).toHaveBeenCalled()
     expect(mockCreateTab).not.toHaveBeenCalled()
     expect(mockSetTabLayout).not.toHaveBeenCalled()
+    expect(mockDispatchEvent).not.toHaveBeenCalled()
 
     resolveSpawn({ id: 'pty-1' })
     await pendingLaunch
 
     expect(mockCreateTab).toHaveBeenCalled()
     expect(mockSetTabLayout).toHaveBeenCalled()
+    expect(mockDispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: BACKGROUND_MOUNT_TERMINAL_WORKTREE_EVENT,
+        detail: { worktreeId: 'wt-1' }
+      })
+    )
   })
 
   it('records effective launch config returned by local PTY spawn', async () => {
@@ -368,6 +387,28 @@ describe('launchAgentBackgroundSession', () => {
         tabId,
         content: prompt,
         agent: 'cursor',
+        submit: true,
+        forcePaste: true
+      })
+    )
+  })
+
+  it('preserves prompt whitespace when submitting after ready', async () => {
+    const prompt = '  keep leading and trailing whitespace  \n'
+    const { launchAgentBackgroundSession } = await import('./launch-agent-background-session')
+
+    await launchAgentBackgroundSession({
+      agent: 'claude',
+      worktreeId: 'wt-1',
+      prompt
+    })
+
+    const { tabId } = expectStablePaneSpawn()
+    expect(mockPasteDraftWhenAgentReady).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tabId,
+        content: prompt,
+        agent: 'claude',
         submit: true,
         forcePaste: true
       })

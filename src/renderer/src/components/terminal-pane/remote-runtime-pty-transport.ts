@@ -22,7 +22,10 @@ import {
   getRemoteRuntimeTerminalMultiplexer,
   type RemoteRuntimeMultiplexedTerminal
 } from '../../runtime/remote-runtime-terminal-multiplexer'
-import { toRuntimeWorktreeSelector } from '../../runtime/runtime-worktree-selector'
+import {
+  toRuntimeTerminalWorktreeSelector,
+  toRuntimeWorktreeSelector
+} from '../../runtime/runtime-worktree-selector'
 import {
   createRemoteRuntimePtyTextBatcher,
   createRemoteRuntimeViewportBatcher
@@ -45,6 +48,11 @@ function isRemoteTerminalGoneMessage(message: string): boolean {
   )
 }
 
+/**
+ * PTY transport backing a renderer terminal pane with a terminal on a remote Orca
+ * runtime, over runtime RPC plus the multiplexed stream (create, subscribe, input,
+ * resize, close, reattach).
+ */
 export function createRemoteRuntimePtyTransport(
   runtimeEnvironmentId: string,
   opts: IpcPtyTransportOptions = {}
@@ -467,7 +475,7 @@ export function createRemoteRuntimePtyTransport(
         const launchTokenToSend = options.launchToken ?? launchToken
         const launchAgentToSend = options.launchAgent ?? launchAgent
         const created = await callRuntime<{ terminal: RuntimeTerminalCreate }>('terminal.create', {
-          worktree: toRuntimeWorktreeSelector(worktreeId),
+          worktree: toRuntimeTerminalWorktreeSelector(worktreeId),
           ...(commandToSend !== undefined ? { command: commandToSend } : {}),
           ...(startupCommandDeliveryToSend !== undefined
             ? { startupCommandDelivery: startupCommandDeliveryToSend }

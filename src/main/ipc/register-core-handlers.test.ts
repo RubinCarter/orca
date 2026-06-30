@@ -52,8 +52,10 @@ const {
   registerSkillsHandlersMock,
   registerWorkspaceSpaceHandlersMock,
   registerWorkspacePortHandlersMock,
+  registerLocalhostWorktreeLabelHandlersMock,
   registerNativeChatHandlersMock,
-  registerEmulatorFrameStreamHandlersMock
+  registerEmulatorFrameStreamHandlersMock,
+  registerEmulatorVideoStreamHandlersMock
 } = vi.hoisted(() => ({
   registerCliHandlersMock: vi.fn(),
   registerPreflightHandlersMock: vi.fn(),
@@ -104,8 +106,10 @@ const {
   registerSkillsHandlersMock: vi.fn(),
   registerWorkspaceSpaceHandlersMock: vi.fn(),
   registerWorkspacePortHandlersMock: vi.fn(),
+  registerLocalhostWorktreeLabelHandlersMock: vi.fn(),
   registerNativeChatHandlersMock: vi.fn(),
-  registerEmulatorFrameStreamHandlersMock: vi.fn()
+  registerEmulatorFrameStreamHandlersMock: vi.fn(),
+  registerEmulatorVideoStreamHandlersMock: vi.fn()
 }))
 
 vi.mock('./onboarding', () => ({
@@ -188,6 +192,10 @@ vi.mock('./workspace-ports', () => ({
   registerWorkspacePortHandlers: registerWorkspacePortHandlersMock
 }))
 
+vi.mock('./localhost-worktree-labels', () => ({
+  registerLocalhostWorktreeLabelHandlers: registerLocalhostWorktreeLabelHandlersMock
+}))
+
 vi.mock('./keybindings', () => ({
   registerKeybindingHandlers: registerKeybindingHandlersMock
 }))
@@ -219,6 +227,10 @@ vi.mock('./ui', () => ({
 
 vi.mock('./emulator-frame-stream', () => ({
   registerEmulatorFrameStreamHandlers: registerEmulatorFrameStreamHandlersMock
+}))
+
+vi.mock('./emulator-video-stream', () => ({
+  registerEmulatorVideoStreamHandlers: registerEmulatorVideoStreamHandlersMock
 }))
 
 vi.mock('./filesystem', () => ({
@@ -352,8 +364,10 @@ describe('registerCoreHandlers', () => {
     registerSkillsHandlersMock.mockReset()
     registerWorkspaceSpaceHandlersMock.mockReset()
     registerWorkspacePortHandlersMock.mockReset()
+    registerLocalhostWorktreeLabelHandlersMock.mockReset()
     registerNativeChatHandlersMock.mockReset()
     registerEmulatorFrameStreamHandlersMock.mockReset()
+    registerEmulatorVideoStreamHandlersMock.mockReset()
   })
 
   it('passes the store through to handler registrars that need it', () => {
@@ -414,10 +428,12 @@ describe('registerCoreHandlers', () => {
     expect(registerSkillsHandlersMock).toHaveBeenCalledWith(store)
     expect(registerWorkspaceSpaceHandlersMock).toHaveBeenCalledWith(store)
     expect(registerWorkspacePortHandlersMock).toHaveBeenCalledWith(store)
+    expect(registerLocalhostWorktreeLabelHandlersMock).toHaveBeenCalledWith(store)
     expect(registerTelemetryHandlersMock).toHaveBeenCalledWith(store)
     expect(registerSessionHandlersMock).toHaveBeenCalledWith(store)
     expect(registerUIHandlersMock).toHaveBeenCalledWith(store)
     expect(registerEmulatorFrameStreamHandlersMock).toHaveBeenCalled()
+    expect(registerEmulatorVideoStreamHandlersMock).toHaveBeenCalled()
     expect(registerFilesystemHandlersMock).toHaveBeenCalledWith(store)
     expect(registerRuntimeHandlersMock).toHaveBeenCalledWith(runtime)
     expect(registerRuntimeEnvironmentHandlersMock).toHaveBeenCalled()

@@ -550,6 +550,30 @@ describe('createRemoteRuntimePtyTransport', () => {
     )
   })
 
+  it('scopes ephemeral setup terminals to the floating-terminal selector (#6789)', async () => {
+    const { brandEphemeralSetupTerminalWorktreeId } = await import(
+      '../../../../shared/ephemeral-setup-terminal-worktree-id'
+    )
+    const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+    const transport = createRemoteRuntimePtyTransport('env-1', {
+      worktreeId: brandEphemeralSetupTerminalWorktreeId('feature-wall-orchestration-skill-terminal'),
+      tabId: 'tab-1',
+      leafId: 'pane:1'
+    })
+
+    await transport.connect({ url: '', callbacks: {} })
+
+    expect(runtimeCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selector: 'env-1',
+        method: 'terminal.create',
+        params: expect.objectContaining({
+          worktree: 'id:global-floating-terminal'
+        })
+      })
+    )
+  })
+
   it('passes startup command delivery when creating the remote runtime terminal', async () => {
     const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
     const transport = createRemoteRuntimePtyTransport('env-1', {
