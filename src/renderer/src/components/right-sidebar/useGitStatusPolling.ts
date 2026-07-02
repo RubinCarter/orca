@@ -8,11 +8,18 @@ import { getRuntimeGitConflictOperation } from '@/runtime/runtime-git-client'
 import { refreshGitStatusForWorktree } from './git-status-refresh'
 import { type CoalescedPollRunner, createCoalescedPollRunner } from './coalesced-poll-runner'
 import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
-import { shouldPollActiveGitStatus } from '@/lib/passive-macos-app-data-access'
+import {
+  hasInteractiveActiveGitStatusConsumer,
+  shouldPollActiveGitStatus
+} from '@/lib/passive-macos-app-data-access'
 import { getRightSidebarWorktreeRuntimeSettings } from './file-explorer-runtime-owner'
 import { useGitStatusFileWatchRefresh } from './git-status-file-watch-refresh'
 
-const POLL_INTERVAL_MS = 3000
+const MIN_STATUS_REFRESH_INTERVAL_MS = 3000
+const INTERACTIVE_STATUS_POLL_INTERVAL_MS = MIN_STATUS_REFRESH_INTERVAL_MS
+// Why: file-watch refreshes cover content changes; terminal-only polling is
+// just a fallback for branch switches made inside shells.
+const TERMINAL_ONLY_STATUS_POLL_INTERVAL_MS = 30_000
 
 export function useGitStatusPolling(options: { enabled?: boolean } = {}): void {
   const enabled = options.enabled ?? true
@@ -44,6 +51,29 @@ export function useGitStatusPolling(options: { enabled?: boolean } = {}): void {
       !connectionId || sshConnectionStates.get(connectionId)?.status === 'connected',
     [sshConnectionStates]
   )
+  const activeGitStatusPollingArgs = {
+    activeWorktreeId,
+    worktreePath,
+    rightSidebarOpen,
+    rightSidebarTab,
+    rightSidebarExplorerView,
+    openFiles
+  }
+  const isActiveConnectionReady = isConnectionReady(activeConnectionId)
+  const shouldPollActiveWorktreeGitStatus =
+    enabled &&
+    !!activeWorktreeId &&
+    !!worktreePath &&
+    activeRepoSupportsGit &&
+    shouldPollActiveGitStatus(activeGitStatusPollingArgs) &&
+    isActiveConnectionReady &&
+    !gitStatusHugeByWorktree?.[activeWorktreeId]
+  const activeStatusPollIntervalMs = hasInteractiveActiveGitStatusConsumer(
+    activeGitStatusPollingArgs
+  )
+    ? INTERACTIVE_STATUS_POLL_INTERVAL_MS
+    : TERMINAL_ONLY_STATUS_POLL_INTERVAL_MS
+  const activeStatusPollScope = shouldPollActiveWorktreeGitStatus ? activeWorktreeId : null
 
   // Why: build a list of non-active worktrees that still have a known conflict
   // operation (merge/rebase/cherry-pick). These need lightweight polling so
@@ -68,34 +98,7 @@ export function useGitStatusPolling(options: { enabled?: boolean } = {}): void {
   }, [allWorktrees, conflictOperationByWorktree, activeWorktreeId, repoMap])
 
   const runFetchStatus = useCallback(async () => {
-    if (!enabled) {
-      return
-    }
-    if (!activeWorktreeId || !worktreePath) {
-      return
-    }
-    if (
-      !shouldPollActiveGitStatus({
-        activeWorktreeId,
-        worktreePath,
-        rightSidebarOpen,
-        rightSidebarTab,
-        rightSidebarExplorerView,
-        openFiles
-      }) ||
-      !activeRepoSupportsGit
-    ) {
-      return
-    }
-    if (!isConnectionReady(activeConnectionId)) {
-      return
-    }
-    // Why: once a repo's status was truncated at the entry limit, re-running git
-    // status every 3s just re-does expensive work and re-truncates. Pause the
-    // automatic poll while huge (a manual refresh still goes through its own
-    // path); resolving the changes (e.g. .gitignoring the huge folder) clears
-    // the flag and polling resumes. Mirrors a "huge repo" disabling auto status.
-    if (gitStatusHugeByWorktree?.[activeWorktreeId]) {
+    if (!shouldPollActiveWorktreeGitStatus || !activeWorktreeId || !worktreePath) {
       return
     }
     try {
@@ -117,18 +120,10 @@ export function useGitStatusPolling(options: { enabled?: boolean } = {}): void {
       // ignore
     }
   }, [
-    activeRepoSupportsGit,
-    activeConnectionId,
     activePushTarget,
     activeWorktreeId,
-    enabled,
     fetchUpstreamStatus,
-    gitStatusHugeByWorktree,
-    isConnectionReady,
-    openFiles,
-    rightSidebarExplorerView,
-    rightSidebarOpen,
-    rightSidebarTab,
+    shouldPollActiveWorktreeGitStatus,
     worktreePath,
     setGitStatus,
     setUpstreamStatus,
@@ -147,7 +142,7 @@ export function useGitStatusPolling(options: { enabled?: boolean } = {}): void {
   const statusPollRunnerRef = useRef<CoalescedPollRunner | null>(null)
   useEffect(() => {
     const runner = createCoalescedPollRunner(() => runFetchStatusRef.current(), {
-      minIntervalMs: POLL_INTERVAL_MS
+      minIntervalMs: MIN_STATUS_REFRESH_INTERVAL_MS
     })
     statusPollRunnerRef.current = runner
     return () => {
@@ -158,16 +153,19 @@ export function useGitStatusPolling(options: { enabled?: boolean } = {}): void {
 
   const fetchStatus = useCallback(() => {
     statusPollRunnerRef.current?.run()
-  }, [activeWorktreeId])
+  }, [])
 
   useEffect(() => {
-    if (!enabled) {
+    if (!activeStatusPollScope) {
       return
     }
     // Why: this root-level poll should pause while hidden, but visible
     // unfocused windows still need fresh status for second-display workflows.
-    return installWindowVisibilityInterval({ run: fetchStatus, intervalMs: POLL_INTERVAL_MS })
-  }, [enabled, fetchStatus])
+    return installWindowVisibilityInterval({
+      run: fetchStatus,
+      intervalMs: activeStatusPollIntervalMs
+    })
+  }, [activeStatusPollIntervalMs, activeStatusPollScope, fetchStatus])
 
   useGitStatusFileWatchRefresh({
     activeConnectionId,
@@ -225,7 +223,7 @@ export function useGitStatusPolling(options: { enabled?: boolean } = {}): void {
     // visible unfocused windows, but do not poll disconnected hidden windows.
     const stopVisiblePoll = installWindowVisibilityInterval({
       run: () => pollRunner.run(),
-      intervalMs: POLL_INTERVAL_MS
+      intervalMs: MIN_STATUS_REFRESH_INTERVAL_MS
     })
     return () => {
       pollRunner.dispose()

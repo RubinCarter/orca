@@ -46,6 +46,7 @@ async function usePollingOnce(
     sshStatus?: string
     enabled?: boolean
     expectStatusCall?: boolean
+    stateOverrides?: Partial<PollState>
   } = {}
 ): Promise<{ state: PollState; gitStatus: ReturnType<typeof vi.fn> }> {
   vi.resetModules()
@@ -67,6 +68,7 @@ async function usePollingOnce(
     rightSidebarTab: 'source-control',
     openFiles: []
   }
+  Object.assign(state, options.stateOverrides)
   const mockedRepo = { ...repo, connectionId: options.connectionId ?? null }
   const gitStatus = vi.fn().mockResolvedValue(status)
 
@@ -226,6 +228,27 @@ describe('useGitStatusPolling', () => {
 
     expect(gitStatus).not.toHaveBeenCalled()
     expect(state.setGitStatus).not.toHaveBeenCalled()
+    expect(globalThis.setInterval).not.toHaveBeenCalled()
+  })
+
+  it('uses a slower git status cadence when only terminal branch detection needs polling', async () => {
+    const { gitStatus } = await usePollingOnce(
+      {
+        entries: [],
+        conflictOperation: 'unknown',
+        head: 'abc123',
+        branch: 'refs/heads/main'
+      },
+      {
+        stateOverrides: {
+          rightSidebarOpen: false,
+          openFiles: []
+        }
+      }
+    )
+
+    expect(gitStatus).toHaveBeenCalledTimes(1)
+    expect(globalThis.setInterval).toHaveBeenCalledWith(expect.any(Function), 30_000)
   })
 
   it('does not install the visible git status poll while disabled', async () => {
