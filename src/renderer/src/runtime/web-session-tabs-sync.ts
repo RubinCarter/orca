@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import type { AppState } from '../store'
 import { useAppStore } from '../store'
 import type { RuntimeRpcResponse } from '../../../shared/runtime-rpc-envelope'
+import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
 import {
   AGENT_STATUS_STALE_AFTER_MS,
   type AgentStatusEntry
@@ -43,6 +44,10 @@ import {
   toWebTerminalSurfaceTabId,
   WEB_TERMINAL_SURFACE_TAB_PREFIX
 } from './web-runtime-session'
+import {
+  normalizeCompatibleAgentStatusEntryForOwner,
+  normalizeCompatibleAgentTitleForOwner
+} from '../../../shared/agent-title-owner'
 import { resolveTerminalLayoutRoot } from './remote-terminal-layout-resolution'
 import { toRuntimeWorktreeSelector } from './runtime-worktree-selector'
 import { clearWebSessionFocusIntent, peekWebSessionFocusIntent } from './web-session-focus-intent'
@@ -178,6 +183,13 @@ export function shouldApplyWebSessionTabsSnapshot(
     // a later replacement snapshot that may never arrive.
     clearWebSessionTabsTrackingForWorktree(environmentId, snapshot.worktree)
     return true
+  }
+  if (snapshot.worktree === FLOATING_TERMINAL_WORKTREE_ID) {
+    // Why: the floating workspace is a local synthetic terminal. A focused
+    // remote runtime can publish an empty same-id snapshot while the user has a
+    // local ssh/tmux tab open; treating that as authoritative deletes the local
+    // floating tabs.
+    return false
   }
   rememberHostTerminalTabCount(environmentId, snapshot)
   const current = latestSessionTabsSnapshotByWorktree.get(key)
@@ -479,6 +491,10 @@ function shouldReplaceTerminalTab(
   )
 }
 
+/**
+ * Constructs mirrored terminal tabs from the mobile session status payload,
+ * normalising Pi-compatible agent titles under launch ownership.
+ */
 function buildMirroredTerminalTabs(
   snapshot: RuntimeMobileSessionTabsResult,
   environmentId: string,
@@ -511,7 +527,16 @@ function buildMirroredTerminalTabs(
     const ptyIds = surfaces
       .map((surface) => ptyIdsByLeafId[surface.leafId]!)
       .filter((ptyId): ptyId is string => typeof ptyId === 'string' && ptyId.length > 0)
-    const title = activeSurface.title.trim() || surfaces[0]?.title.trim() || 'Terminal'
+    const launchAgent =
+      activeSurface.launchAgent ?? surfaces.find((surface) => surface.launchAgent)?.launchAgent
+    const ownerAgent =
+      launchAgent ??
+      activeSurface.agentStatus?.agentType ??
+      surfaces.find((surface) => surface.agentStatus?.agentType)?.agentStatus?.agentType
+    const title = normalizeCompatibleAgentTitleForOwner(
+      activeSurface.title.trim() || surfaces[0]?.title.trim() || 'Terminal',
+      ownerAgent
+    )
     const existing =
       existingById.get(localTabId) ??
       existingById.get(parentTabId) ??
@@ -522,8 +547,10 @@ function buildMirroredTerminalTabs(
       activeSurface.quickCommandLabel?.trim() ||
       surfaces.find((surface) => surface.quickCommandLabel?.trim())?.quickCommandLabel?.trim() ||
       existing?.quickCommandLabel?.trim()
-    const launchAgent =
-      activeSurface.launchAgent ?? surfaces.find((surface) => surface.launchAgent)?.launchAgent
+    // Why: startup cwd is host-owned launch metadata; once the host omits it,
+    // mirrored clients must not resurrect stale subdirectory intent.
+    const startupCwd =
+      activeSurface.startupCwd || surfaces.find((surface) => surface.startupCwd)?.startupCwd
     // Why: tab color/pin echo back through host snapshots, so prefer the client's
     // own record (kept authoritative in tabsByWorktree by the pin/color setters)
     // and fall back to the host value only when this client has no prior tab —
@@ -547,6 +574,7 @@ function buildMirroredTerminalTabs(
         title,
         defaultTitle: existing?.defaultTitle ?? title,
         ...(quickCommandLabel ? { quickCommandLabel } : {}),
+        ...(startupCwd ? { startupCwd } : {}),
         customTitle: existing?.customTitle ?? null,
         color,
         isPinned,
@@ -571,6 +599,10 @@ function toMirroredPaneKey(surface: TerminalSurface): string | null {
   return makePaneKey(toWebTerminalSurfaceTabId(surface.parentTabId), surface.leafId)
 }
 
+/**
+ * Normalises and mirrors agent status updates from the host payload,
+ * preserving authoritative ownership metadata.
+ */
 function remapHostAgentStatus(surface: TerminalSurface): AgentStatusEntry | null {
   if (!surface.agentStatus) {
     return null
@@ -579,8 +611,9 @@ function remapHostAgentStatus(surface: TerminalSurface): AgentStatusEntry | null
   if (!paneKey) {
     return null
   }
+  const ownerAgent = surface.launchAgent ?? surface.agentStatus.agentType
   return {
-    ...surface.agentStatus,
+    ...normalizeCompatibleAgentStatusEntryForOwner(surface.agentStatus, ownerAgent),
     paneKey
   }
 }
@@ -590,6 +623,10 @@ function isMirroredAgentPaneKeyForTabs(paneKey: string, tabIds: ReadonlySet<stri
   return parsed !== null && tabIds.has(parsed.tabId)
 }
 
+/**
+ * Generates a state patch for mirrored agent statuses, merging host
+ * status entries with client overrides defensively.
+ */
 function buildMirroredAgentStatusPatch(
   state: WebSessionTabsSyncState,
   currentTerminalTabs: readonly TerminalTab[],
@@ -620,10 +657,11 @@ function buildMirroredAgentStatusPatch(
     // Why: active web streams can report a fresher OSC 9999 status for the same
     // mirrored pane before the next host snapshot arrives. Do not rewind that
     // row with an older host publication.
-    nextByPaneKey.set(
-      entry.paneKey,
-      existing && existing.updatedAt > entry.updatedAt ? existing : entry
-    )
+    const nextEntry =
+      existing && existing.updatedAt > entry.updatedAt
+        ? normalizeCompatibleAgentStatusEntryForOwner(existing, entry.agentType)
+        : entry
+    nextByPaneKey.set(entry.paneKey, nextEntry)
   }
 
   let nextAgentStatusByPaneKey = state.agentStatusByPaneKey
@@ -1316,7 +1354,7 @@ function sanitizeRecentTabIds(recent: string[] | undefined, tabOrder: string[]):
     seen.add(id)
     reversed.push(id)
   }
-  return reversed.reverse()
+  return reversed.toReversed()
 }
 
 function pushRecentTabId(recent: string[] | undefined, tabId: string): string[] {
@@ -1353,6 +1391,7 @@ function terminalTabEqual(a: TerminalTab, b: TerminalTab): boolean {
     a.title === b.title &&
     a.defaultTitle === b.defaultTitle &&
     a.quickCommandLabel === b.quickCommandLabel &&
+    a.startupCwd === b.startupCwd &&
     a.generatedTitle === b.generatedTitle &&
     a.customTitle === b.customTitle &&
     a.color === b.color &&
@@ -1564,6 +1603,9 @@ export function applyWebSessionTabsSnapshot(
   now = Date.now()
 ): WebSessionTabsSyncState | Partial<WebSessionTabsSyncState> {
   const worktreeId = rawSnapshot.worktree
+  if (worktreeId === FLOATING_TERMINAL_WORKTREE_ID) {
+    return state
+  }
   // Why: a remote close prunes the local mirror immediately, but an in-flight
   // pre-close snapshot can still list the tab and flash it back. Drop any tab
   // the client is closing until the host confirms removal; reconcile the intents
