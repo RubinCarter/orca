@@ -206,6 +206,7 @@ import {
   normalizeRuntimePathForComparison
 } from '../../shared/cross-platform-path'
 import { resolveTerminalStartupCwd } from '../../shared/terminal-startup-cwd'
+import { localTerminalCwdCanonicalizer } from '../pty/terminal-cwd-realpath'
 import { isWslUncPath } from '../../shared/wsl-paths'
 import {
   folderWorkspaceKey,
@@ -13143,7 +13144,13 @@ export class OrcaRuntimeService {
         remoteTrackingBase,
         ...localWorktreeGitOptionArgs
       )
-      if (!refreshResult.ok) {
+      if (!refreshResult.ok && !hadLocalBaseRef) {
+        // Why: only block creation when the refresh failed AND there is no
+        // usable local base ref to fall back on. If a local remote-tracking ref
+        // already exists, `git worktree add` can create from it — a possibly
+        // stale but valid base — so a transient offline/auth failure must not
+        // make the workspace uncreatable. The compare-to-base view reflects any
+        // drift once the remote is reachable again.
         throw new Error(
           `Could not refresh base ref "${baseBranch}" from "${remoteTrackingBase.remote}". Check your network and try again.`
         )
@@ -15594,7 +15601,8 @@ export class OrcaRuntimeService {
       }
       const workspace = await this.resolveTerminalWorkspaceLaunchScope(worktreeSelector)
       const launchOpts = await this.resolveAgentTerminalCreateOptions(workspace, opts)
-      const cwd = resolveTerminalStartupCwd(workspace.path, launchOpts.cwd) ?? workspace.path
+      const cwd =
+        this.resolveGuardedWorkspaceTerminalCwd(workspace, launchOpts.cwd) ?? workspace.path
       const preAllocatedHandle = this.createPreAllocatedTerminalHandle()
       // Why: mint tabId in main before spawn so paneKey is known at PTY env
       // build time. Hook-based agent status (Claude/Codex/Cursor/Gemini) keys
@@ -15787,7 +15795,7 @@ export class OrcaRuntimeService {
       : opts
     const worktreeId = workspace?.id
     const cwd = workspace
-      ? resolveTerminalStartupCwd(workspace.path, launchOpts.cwd)
+      ? this.resolveGuardedWorkspaceTerminalCwd(workspace, launchOpts.cwd)
       : launchOpts.cwd
     const requestId = randomUUID()
 
@@ -15931,7 +15939,7 @@ export class OrcaRuntimeService {
     this.assertGraphReady()
     const workspace = await this.resolveTerminalWorkspaceLaunchScope(worktreeSelector)
     const worktreeId = workspace.id
-    const cwd = resolveTerminalStartupCwd(workspace.path, opts.cwd)
+    const cwd = this.resolveGuardedWorkspaceTerminalCwd(workspace, opts.cwd)
     this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession(worktreeId)
     let afterDesktopTabId: string | undefined
     if (opts.afterTabId) {
@@ -16135,7 +16143,7 @@ export class OrcaRuntimeService {
     } = {}
   ): Promise<RuntimeMobileSessionCreateTerminalResult> {
     const workspace = await this.resolveTerminalWorkspaceLaunchScope(`id:${worktreeId}`)
-    const cwd = resolveTerminalStartupCwd(workspace.path, opts.cwd)
+    const cwd = this.resolveGuardedWorkspaceTerminalCwd(workspace, opts.cwd)
     // Why: SshPtyProvider treats sessionId as a relay reattach request. Only
     // synthesize local serve ids; SSH fresh terminals must call pty.spawn.
     const stableSessionId =
@@ -17002,6 +17010,17 @@ export class OrcaRuntimeService {
         isMainWorktree: worktree.isMainWorktree
       }
     }
+  }
+
+  // Why: every terminal-creation path must apply the same symlink-aware cwd
+  // guard; keep the canonicalizer wiring in one place.
+  private resolveGuardedWorkspaceTerminalCwd(
+    workspace: Pick<TerminalWorkspaceLaunchScope, 'path' | 'connectionId'>,
+    requestedCwd?: string | null
+  ): string | undefined {
+    return resolveTerminalStartupCwd(workspace.path, requestedCwd, {
+      canonicalizePath: localTerminalCwdCanonicalizer(workspace.connectionId)
+    })
   }
 
   private async resolveTerminalWorkspaceLaunchScope(

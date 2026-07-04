@@ -2370,10 +2370,21 @@ describe('OrcaRuntimeService', () => {
     }
   })
 
-  it('does not create runtime local worktrees when remote-tracking base refresh fails', async () => {
+  it('creates a runtime local worktree from an existing local base ref when the refresh fails', async () => {
+    // Regression: an offline/auth failure while refreshing the remote-tracking
+    // base must not block creation when a usable local base ref already exists.
     const runtime = new OrcaRuntimeService(store)
-    computeWorktreePathMock.mockReturnValue('/tmp/workspaces/cli-refresh-fails')
-    ensurePathWithinWorkspaceMock.mockReturnValue('/tmp/workspaces/cli-refresh-fails')
+    const createdWorktree = {
+      path: '/tmp/workspaces/cli-refresh-fails',
+      head: 'base-sha',
+      branch: 'cli-refresh-fails',
+      isBare: false,
+      isMainWorktree: false
+    }
+    computeWorktreePathMock.mockReturnValue(createdWorktree.path)
+    ensurePathWithinWorkspaceMock.mockReturnValue(createdWorktree.path)
+    vi.mocked(addWorktree).mockResolvedValueOnce({})
+    vi.mocked(listWorktrees).mockResolvedValue([createdWorktree])
     const gitSpy = vi.spyOn(gitRunner, 'gitExecFileAsync').mockImplementation(async (args) => {
       if (args[0] === 'remote') {
         return { stdout: 'origin\n', stderr: '' }
@@ -2381,6 +2392,7 @@ describe('OrcaRuntimeService', () => {
       if (args[0] === 'rev-parse' && args.includes('--git-common-dir')) {
         return { stdout: '/tmp/repo/.git\n', stderr: '' }
       }
+      // Local remote-tracking base ref resolves -> usable fallback exists.
       if (args[0] === 'rev-parse' && args[1] === '--verify') {
         return { stdout: 'base-sha\n', stderr: '' }
       }
@@ -2394,6 +2406,40 @@ describe('OrcaRuntimeService', () => {
         runtime.createManagedWorktree({
           repoSelector: 'id:repo-1',
           name: 'cli-refresh-fails'
+        })
+      ).resolves.toBeDefined()
+
+      expect(addWorktree).toHaveBeenCalled()
+    } finally {
+      gitSpy.mockRestore()
+    }
+  })
+
+  it('does not create a runtime local worktree when the refresh fails and no local base ref exists', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    computeWorktreePathMock.mockReturnValue('/tmp/workspaces/cli-refresh-no-local')
+    ensurePathWithinWorkspaceMock.mockReturnValue('/tmp/workspaces/cli-refresh-no-local')
+    const gitSpy = vi.spyOn(gitRunner, 'gitExecFileAsync').mockImplementation(async (args) => {
+      if (args[0] === 'remote') {
+        return { stdout: 'origin\n', stderr: '' }
+      }
+      if (args[0] === 'rev-parse' && args.includes('--git-common-dir')) {
+        return { stdout: '/tmp/repo/.git\n', stderr: '' }
+      }
+      // No local remote-tracking base ref -> nothing to fall back on.
+      if (args[0] === 'rev-parse' && args[1] === '--verify') {
+        throw new Error('missing ref')
+      }
+      if (args[0] === 'fetch') {
+        throw new Error('network unavailable')
+      }
+      return { stdout: '', stderr: '' }
+    })
+    try {
+      await expect(
+        runtime.createManagedWorktree({
+          repoSelector: 'id:repo-1',
+          name: 'cli-refresh-no-local'
         })
       ).rejects.toThrow(
         'Could not refresh base ref "origin/main" from "origin". Check your network and try again.'
